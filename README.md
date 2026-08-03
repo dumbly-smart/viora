@@ -14,7 +14,7 @@ Viora is a fully local, offline-first Android academic dashboard for VIT student
 
 ## Status
 
-This repository starts with the product and technical design. See:
+The Android foundation and local persistence checkpoint are implemented. Current code includes the Compose shell, attendance engine, parser boundary, VTOP-only HTTP client, encrypted credential/cookie vault, Room timetable cache, session recovery, setup contract, and sync coordinator. See:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature plan](docs/FEATURES.md)
@@ -33,3 +33,7 @@ The VTOP integration is isolated behind a `VtopGateway` contract because VTOP is
 ## Repository policy
 
 Never commit VTOP usernames, passwords, cookies, CAPTCHA images, registration numbers, downloaded course material, or captured HTML containing student data. `.gitignore` includes common local secret and capture paths.
+
+## Session isolation
+
+Viora uses an app-private OkHttp cookie jar encrypted with Android Keystore. It does not share cookies with Chrome, WebView, the official VIT app, or another device. Viora logout erases only local app state and deliberately does not call VTOP's server logout endpoint.
