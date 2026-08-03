@@ -1,0 +1,32 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+local.properties
+captures/
+fixtures/private/
+downloads/
+*.apk
+*.aab
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+
+# Secrets and live VTOP data
+.env
+.env.*
+!.env.example
+*.cookies
+*.session
+*.keystore
+*.jks
+captcha*.jpg
+captcha*.png
+vtop-response*.html
+student-data/
+
+# Signing files must be provisioned outside Git
+keystore.properties
+
