@@ -1,4 +1,4 @@
-# Sync and authentication
+# Viora sync and authentication
 
 ## Login once, realistically
 
@@ -13,12 +13,14 @@ Unconfigured -> Authenticating -> Active
                       v
                     Active
 
-Active -> LoggedOut (user action; wipe all account data)
+Active -> LoggedOut (user action; wipe all Viora-local account data)
 ```
 
 Prefer persisting the authenticated cookie jar. If the session expires, attempt re-authentication only when policy permits and a CAPTCHA is not required. If a challenge appears, keep cached data readable and show one clear “Session expired—verify to sync” action.
 
 If password retention is required for re-authentication, encrypt it with an app-specific AES-GCM key in Android Keystore, exclude it from backup, redact it from logs, and delete it on logout. A safer setup option is “remember session only,” which may prompt for the password after a long expiry.
+
+Viora uses its own cookie jar and never imports browser cookies. App logout is local: cancel Viora sync work and delete Viora's cookies, credentials, database, and downloads. Do not call VTOP's server-side logout endpoint, because doing so could invalidate other sessions if VTOP links them server-side. Viora cannot override any single-session policy imposed by VTOP itself.
 
 ## Foreground sync
 
@@ -56,4 +58,3 @@ Notifications are change-driven: compare the new snapshot with the last committe
 - MITM: normal platform certificate validation; no trust-all client.
 - Rooted device: warn that hardware-backed protection cannot guarantee secrecy.
 - Supply chain: dependency locking, secret scanning, signed release builds.
-

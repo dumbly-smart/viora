@@ -1,6 +1,6 @@
-# VTOP Companion
+# Viora
 
-An offline-first Android academic dashboard for VIT students. Sign in during setup, then open the app to see a locally cached dashboard while a fresh VTOP sync runs in the background.
+Viora is a fully local, offline-first Android academic dashboard for VIT students. Sign in during setup, then open the app to see a locally cached dashboard while a fresh VTOP sync runs in the background.
 
 > This is an independent student project. It is not affiliated with or endorsed by VIT. It must not bypass CAPTCHA, access controls, or VTOP usage policies.
 
@@ -24,11 +24,12 @@ This repository starts with the product and technical design. See:
 
 ## Proposed stack
 
-Kotlin, Jetpack Compose, Material 3, Navigation, ViewModel + StateFlow, Hilt, Room, DataStore, OkHttp, Kotlinx Serialization, WorkManager, Android Keystore, and baseline/profile-guided performance tooling.
+Kotlin, Jetpack Compose, Material 3, Navigation, ViewModel + StateFlow, Room, DataStore, OkHttp, Jsoup, WorkManager, and Android Keystore.
+
+Viora has no application backend. Authentication, parsing, storage, calculations, sync, and notifications execute on the device. Its cookie jar is private to Viora, so clearing Viora's local session does not log out a browser or another device.
 
 The VTOP integration is isolated behind a `VtopGateway` contract because VTOP is an HTML application, not a stable public API. Parser fixtures and contract tests are mandatory before shipping.
 
 ## Repository policy
 
 Never commit VTOP usernames, passwords, cookies, CAPTCHA images, registration numbers, downloaded course material, or captured HTML containing student data. `.gitignore` includes common local secret and capture paths.
-

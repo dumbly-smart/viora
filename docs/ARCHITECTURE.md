@@ -1,4 +1,4 @@
-# Architecture
+# Viora architecture
 
 ## Decision
 
@@ -77,4 +77,3 @@ Use exact rational/integer comparisons to avoid floating-point boundary errors. 
 ## Why no backend initially
 
 A server would require holding student credentials or reusable sessions, creates a high-value breach target, and adds operating cost. Keep authentication and scraping on-device. A future backend may distribute app configuration or parser health metadata, but must not receive personal academic data or VTOP secrets.
-
