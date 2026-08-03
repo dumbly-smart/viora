@@ -29,7 +29,7 @@ class EncryptedCookieStore(
         val output = ByteArrayOutputStream()
         DataOutputStream(output).use { data ->
             data.writeInt(cookies.size)
-            cookies.forEach(data::writeCookie)
+            cookies.forEach { cookie -> data.writeCookie(cookie) }
         }
         output.toByteArray().also {
             try { blobs.put(KEY, it) } finally { it.fill(0) }
