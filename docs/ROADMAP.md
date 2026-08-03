@@ -14,6 +14,8 @@
 - Manual refresh, sync status, offline behavior, parser tests.
 - Exit: usable after process death and network loss; partial failures are visible.
 
+Current vertical slice: encrypted session restoration, semester discovery, direct VTOP timetable synchronization, transactional Room cache, Home/Schedule rendering, and six-hour WorkManager refresh are implemented. Live parser validation still requires redacted fixtures captured from an authorized test account.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.
@@ -30,4 +32,3 @@
 ## First engineering slice
 
 Implement one vertical slice end to end: redacted timetable fixture -> pure parser -> Room upsert -> repository Flow -> Compose “Today” screen. Then add authenticated fetching. This proves the boundaries before duplicating them across every VTOP page.
-
