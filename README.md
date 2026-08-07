@@ -14,7 +14,7 @@ Viora is a fully local, offline-first Android academic dashboard for VIT student
 
 ## Status
 
-The Android foundation and local persistence checkpoint are implemented. Current code includes the Compose shell, attendance engine, parser boundary, VTOP-only HTTP client, encrypted credential/cookie vault, Room timetable cache, session recovery, setup contract, and sync coordinator. See:
+The Android foundation and core academic sync checkpoints are implemented. Current code includes the Compose shell, attendance engine, VTOP-only HTTP client, encrypted credential/cookie vault, Room caches for timetable, attendance, assignments, and exams, session recovery, WorkManager refresh, and deduplicated local reminders. See:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature plan](docs/FEATURES.md)

@@ -14,7 +14,7 @@
 - Manual refresh, sync status, offline behavior, parser tests.
 - Exit: usable after process death and network loss; partial failures are visible.
 
-Current vertical slices: encrypted session restoration, semester discovery, direct VTOP timetable and attendance synchronization, transactional Room caches, Home/Schedule/Courses rendering, attendance projections, and six-hour WorkManager refresh are implemented. Live parser validation still requires redacted fixtures captured from an authorized test account.
+Current vertical slices: encrypted session restoration, semester discovery, direct VTOP timetable, attendance, digital-assignment, and exam synchronization; transactional Room caches; Home/Schedule/Courses/Tasks rendering; attendance projections; six-hour WorkManager refresh; and deduplicated 24-hour local reminders are implemented. Live parser validation still requires redacted fixtures captured from an authorized test account.
 
 ## Phase 2 — reminders and polish
 
