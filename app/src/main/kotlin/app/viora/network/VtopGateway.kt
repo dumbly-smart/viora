@@ -74,6 +74,8 @@ interface VtopGateway {
     suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord>
     suspend fun classMessages(): List<ClassMessageRecord>
     suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord>
+    suspend fun importInteractiveSession(cookieHeader: String): SessionState
+    suspend fun downloadCourseMaterial(downloadPath: String): ByteArray
 
     /** Clears Viora's local session only. It must not invoke VTOP's logout endpoint. */
     suspend fun clearLocalSession()

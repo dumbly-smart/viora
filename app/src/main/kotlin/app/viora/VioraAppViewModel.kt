@@ -47,6 +47,7 @@ data class VioraUiState(
     val materials: List<CourseMaterialEntity> = emptyList(),
     val deadlineNotifications: Boolean = true,
     val examNotifications: Boolean = true,
+    val interactiveVerification: Boolean = false,
 )
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
@@ -126,8 +127,9 @@ class VioraAppViewModel(
                         }
                         loadSemestersAndRefresh()
                     }
-                    SessionState.VerificationRequired -> mutableState.update {
-                        it.copy(loading = false, error = "VTOP requires interactive verification")
+                    SessionState.VerificationRequired -> {
+                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
+                        mutableState.update { it.copy(loading = false, interactiveVerification = true, error = null) }
                     }
                     SessionState.Missing -> mutableState.update {
                         it.copy(loading = false, error = "VTOP rejected the sign-in details")
@@ -153,6 +155,24 @@ class VioraAppViewModel(
     fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_deadlines", enabled).apply(); mutableState.update { it.copy(deadlineNotifications = enabled) } }
     fun setExamNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_exams", enabled).apply(); mutableState.update { it.copy(examNotifications = enabled) } }
+    fun completeInteractiveVerification(cookieHeader: String) {
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            when (runCatching { graph.gateway.importInteractiveSession(cookieHeader) }.getOrNull()) {
+                SessionState.Active -> {
+                    graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, true).commit()
+                    mutableState.update { it.copy(configured = true, interactiveVerification = false, loading = false, password = "") }
+                    loadSemestersAndRefresh()
+                }
+                else -> mutableState.update { it.copy(loading = false, error = "Verification did not create a VTOP session yet") }
+            }
+        }
+    }
+    fun cancelInteractiveVerification() = mutableState.update { it.copy(interactiveVerification = false, loading = false) }
+    fun openMaterial(material: CourseMaterialEntity, share: Boolean = false) {
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch { graph.materialManager.open(material, share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }
+    }
 
     fun selectSemester(semester: SemesterOption) {
         saveSemester(semester)

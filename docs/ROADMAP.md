@@ -18,6 +18,8 @@ Current vertical slices: encrypted session restoration, semester discovery, dire
 
 The next local-first slices now include academic-calendar/holiday caching, class-message caching, course-material metadata, consolidated course summaries, notification category controls, and a destructive local-only logout that never invokes VTOP's server logout endpoint.
 
+The current checkpoint adds VTOP's own in-app verification fallback, explicit material download/open/share into app-private storage, course/faculty endpoint resolution, calendar-aware class suppression/day-order handling, and a seven-day unified academic timeline.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.

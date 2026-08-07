@@ -16,8 +16,10 @@ import app.viora.parser.VtopDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
+import okhttp3.Cookie
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import java.io.IOException
 
@@ -183,8 +185,38 @@ class HttpVtopGateway(
     override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord> = withContext(Dispatchers.IO) {
         val token = ensureAuthenticatedPage(COURSE_PAGE)
         val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("courseCode", courseCode).add("facultyId", faculty).add("x", System.currentTimeMillis().toString()).build()
+        fun lookup(url: String, fields: Map<String, String>): String {
+            val builder = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("x", System.currentTimeMillis().toString())
+            fields.forEach { (key, value) -> builder.add(key, value) }
+            return execute(Request.Builder().url(url).post(builder.build()).build())
+        }
+        val courseHtml = lookup(COURSE_LIST, emptyMap())
+        val course = Jsoup.parse(courseHtml).select("option").firstOrNull { it.text().contains(courseCode, true) }
+        val classId = course?.attr("value")?.takeIf(String::isNotBlank).orEmpty()
+        val facultyHtml = lookup(FACULTY_LIST, mapOf("courseCode" to courseCode, "classId" to classId))
+        val facultyId = Jsoup.parse(facultyHtml).select("option").firstOrNull { it.text().contains(faculty, true) }?.attr("value")?.takeIf(String::isNotBlank) ?: faculty
+        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("courseCode", courseCode).add("classId", classId).add("facultyId", facultyId).add("x", System.currentTimeMillis().toString()).build()
         materialParser.parse(execute(Request.Builder().url(COURSE_DETAIL).post(body).build()), courseCode).valueOrThrow()
+    }
+
+    override suspend fun importInteractiveSession(cookieHeader: String): SessionState = withContext(Dispatchers.IO) {
+        val cookies = cookieHeader.split(';').mapNotNull { part ->
+            val pieces = part.trim().split('=', limit = 2)
+            if (pieces.size != 2 || pieces[0].isBlank()) null else Cookie.Builder().name(pieces[0]).value(pieces[1]).domain("vtop.vit.ac.in").path("/vtop").secure().build()
+        }
+        if (cookies.isEmpty()) return@withContext SessionState.Missing
+        cookieJar.replace(cookies)
+        sessionState()
+    }
+
+    override suspend fun downloadCourseMaterial(downloadPath: String): ByteArray = withContext(Dispatchers.IO) {
+        val candidate = Regex("['\"]([^'\"]*(?:download|Material)[^'\"]*)['\"]", RegexOption.IGNORE_CASE).find(downloadPath)?.groupValues?.get(1) ?: downloadPath
+        val url = BASE.toHttpUrl().resolve(candidate) ?: throw IOException("VTOP provided an invalid material link")
+        if (url.host != "vtop.vit.ac.in") throw IOException("Blocked a non-VTOP material link")
+        client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
+            response.body.bytes().also { require(it.size <= MAX_MATERIAL_BYTES) { "Course material is too large" } }
+        }
     }
 
     override suspend fun clearLocalSession() {
@@ -238,6 +270,7 @@ class HttpVtopGateway(
 
     companion object {
         private const val BASE = "https://vtop.vit.ac.in/vtop"
+        private const val MAX_MATERIAL_BYTES = 50 * 1024 * 1024
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
@@ -258,6 +291,8 @@ class HttpVtopGateway(
         private const val MESSAGES_PAGE = "$BASE/academics/common/StudentClassMessage"
         private const val COURSE_PAGE = "$BASE/academics/common/StudentCoursePage"
         private const val COURSE_DETAIL = "$BASE/processViewStudentCourseDetail"
+        private const val COURSE_LIST = "$BASE/getCourseForCoursePage"
+        private const val FACULTY_LIST = "$BASE/getFacultyForCoursePage"
     }
 }
 

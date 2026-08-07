@@ -49,6 +49,7 @@ import app.viora.database.SlotWithCourse
 import app.viora.setup.SetupAction
 import app.viora.setup.SetupScreen
 import app.viora.setup.SetupState
+import app.viora.setup.VtopVerificationScreen
 import app.viora.sync.VioraSyncScheduler
 import app.viora.ui.VioraTheme
 import java.time.DayOfWeek
@@ -78,8 +79,10 @@ class MainActivity : ComponentActivity() {
                         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications)
+                if (state.interactiveVerification) {
+                    VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::cancelInteractiveVerification)
+                } else if (state.configured) {
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -124,6 +127,7 @@ private fun Dashboard(
     logout: () -> Unit,
     setDeadlineNotifications: (Boolean) -> Unit,
     setExamNotifications: (Boolean) -> Unit,
+    openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
 ) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
@@ -158,7 +162,7 @@ private fun Dashboard(
             when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
                 1 -> ScheduleScreen(state, selectSemester)
-                2 -> CoursesScreen(state)
+                2 -> CoursesScreen(state, openMaterial)
                 3 -> TasksScreen(state)
                 else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications)
             }
@@ -168,9 +172,11 @@ private fun Dashboard(
 
 @Composable
 private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
-    val today = LocalDate.now().dayOfWeek.value
+    val todayDate = LocalDate.now()
+    val today = todayDate.dayOfWeek.value
     val nowMinute = java.time.LocalTime.now().hour * 60 + java.time.LocalTime.now().minute
-    val todaySlots = state.slots.filter { it.dayOfWeek == today }
+    val todaySlots = state.slotsForDate(todayDate)
+    val timeline = state.academicTimeline(todayDate)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(16.dp),
@@ -200,13 +206,17 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
         state.exams.firstOrNull { it.startsEpochMillis > System.currentTimeMillis() }?.let {
             item { SummaryCard("Next exam", "${it.examType} · ${it.courseCode}", it.startsEpochMillis.asAcademicTime()) }
         }
+        if (timeline.isNotEmpty()) {
+            item { Text("Coming up", style = MaterialTheme.typography.titleLarge) }
+            items(timeline.take(12), key = TimelineItem::id) { entry -> SummaryCard(entry.kind, entry.title, entry.whenText) }
+        }
         state.syncMessage?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
         state.syncResources.maxByOrNull { it.lastAttemptEpochMillis }?.let { sync -> item { SummaryCard("Local sync", sync.status.lowercase().replaceFirstChar(Char::uppercase), sync.lastSuccessEpochMillis.asAcademicTime("Not synced yet")) } }
     }
 }
 
 @Composable
-private fun CoursesScreen(state: VioraUiState) {
+private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -221,7 +231,10 @@ private fun CoursesScreen(state: VioraUiState) {
         if (state.grades.isNotEmpty()) item { Text("Grades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
         items(state.grades, key = GradeUi::courseCode) { grade -> SummaryCard("${grade.courseCode} · ${grade.courseTitle}", "Grade ${grade.grade}", listOfNotNull(grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · ")) }
         if (state.materials.isNotEmpty()) item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        items(state.materials, key = { it.id }) { material -> SummaryCard(material.courseCode, material.title.ifBlank { material.fileName }, "Stored as metadata locally · tap-to-download wiring next") }
+        items(state.materials, key = { it.id }) { material -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(material.courseCode, style = MaterialTheme.typography.titleMedium); Text(material.title.ifBlank { material.fileName })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { openMaterial(material, false) }) { Text("Open") }; TextButton(onClick = { openMaterial(material, true) }) { Text("Share") } }
+        } } }
     }
 }
 
@@ -414,3 +427,36 @@ private fun ResultsScreen(state: VioraUiState) {
 
 @Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Card(modifier) { Column(Modifier.padding(16.dp)) { Text(label); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
 private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.2f".format(this).trimEnd('0')
+
+private data class TimelineItem(val id: String, val at: Long, val kind: String, val title: String, val whenText: String)
+
+private fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
+    val exception = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
+    val description = listOfNotNull(exception?.title, exception?.dayType).joinToString(" ")
+    if (description.contains("holiday", true) || description.contains("exam day", true)) return emptyList()
+    val order = DayOfWeek.entries.firstOrNull { description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
+    return slots.filter { it.dayOfWeek == (order ?: date.dayOfWeek).value }
+}
+
+private fun VioraUiState.academicTimeline(from: LocalDate): List<TimelineItem> {
+    val zone = academicZone
+    val end = from.plusDays(7)
+    val items = mutableListOf<TimelineItem>()
+    var day = from
+    while (!day.isAfter(end)) {
+        slotsForDate(day).forEach { slot ->
+            val at = day.atStartOfDay(zone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
+            items += TimelineItem("class:${day}:${slot.slotId}", at, "Class", "${slot.code} · ${slot.title}", at.asAcademicTime())
+        }
+        calendar.filter { it.dateEpochDay == day.toEpochDay() }.forEach { event ->
+            val at = day.atStartOfDay(zone).toInstant().toEpochMilli()
+            items += TimelineItem("calendar:${event.id}", at, event.dayType.ifBlank { "Calendar" }, event.title, at.asAcademicTime())
+        }
+        day = day.plusDays(1)
+    }
+    assignments.filter { it.dueEpochMillis != null }.forEach { assignment -> items += TimelineItem("assignment:${assignment.id}", assignment.dueEpochMillis!!, "Assignment", "${assignment.courseCode} · ${assignment.title}", assignment.dueEpochMillis.asAcademicTime()) }
+    exams.forEach { exam -> items += TimelineItem("exam:${exam.id}", exam.startsEpochMillis, exam.examType, "${exam.courseCode} · ${exam.courseTitle}", exam.startsEpochMillis.asAcademicTime()) }
+    messages.filter { it.postedEpochMillis != null }.take(5).forEach { message -> items += TimelineItem("message:${message.id}", message.postedEpochMillis!!, "Message", message.subject.ifBlank { message.body.take(80) }, message.postedEpochMillis.asAcademicTime()) }
+    val start = from.atStartOfDay(zone).toInstant().toEpochMilli()
+    return items.filter { it.at >= start }.sortedBy(TimelineItem::at)
+}

@@ -62,6 +62,8 @@ class SessionManagerTest {
         override suspend fun academicCalendar(semesterId: String) = emptyList<app.viora.network.AcademicCalendarRecord>()
         override suspend fun classMessages() = emptyList<app.viora.network.ClassMessageRecord>()
         override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String) = emptyList<app.viora.network.CourseMaterialRecord>()
+        override suspend fun importInteractiveSession(cookieHeader: String) = SessionState.Active
+        override suspend fun downloadCourseMaterial(downloadPath: String) = ByteArray(0)
         override suspend fun clearLocalSession() = Unit
     }
 

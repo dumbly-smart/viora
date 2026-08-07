@@ -42,6 +42,8 @@ class IsolatedCookieJar(
 
     fun clear() = lock.withLock { store.clear() }
 
+    fun replace(cookies: List<Cookie>) = lock.withLock { store.save(cookies) }
+
     private fun Cookie.identity() = "$name|$domain|$path"
 }
 

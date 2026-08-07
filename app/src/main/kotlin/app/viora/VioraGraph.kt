@@ -8,6 +8,7 @@ import app.viora.data.DigitalAssignmentRepository
 import app.viora.data.ExamRepository
 import app.viora.data.ResultsRepository
 import app.viora.data.AcademicExtrasRepository
+import app.viora.data.CourseMaterialManager
 import app.viora.database.VioraDatabase
 import app.viora.network.HttpVtopGateway
 import app.viora.network.IsolatedCookieJar
@@ -37,6 +38,7 @@ class VioraGraph(context: Context) {
     val exams = ExamRepository(database.academicDao(), gateway)
     val results = ResultsRepository(database.academicDao(), gateway)
     val extras = AcademicExtrasRepository(database.academicDao(), gateway)
+    val materialManager = CourseMaterialManager(appContext, gateway)
     val notifications = VioraNotifications(appContext, database.academicDao())
     val sessions = SessionManager(gateway, credentials)
     val account = LocalAccountManager(appContext, gateway, credentials, secureBlobs)
