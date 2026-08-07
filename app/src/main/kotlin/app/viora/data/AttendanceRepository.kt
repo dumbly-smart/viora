@@ -22,8 +22,11 @@ class AttendanceRepository(
             val records = snapshot.records.map {
                 AttendanceEntity(
                     semesterId = semesterId,
+                    id = it.id,
                     courseCode = it.courseCode,
                     courseTitle = it.courseTitle,
+                    courseType = it.courseType,
+                    faculty = it.faculty,
                     attended = it.attended,
                     held = it.held,
                     sourceEpochMillis = attempt,

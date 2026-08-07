@@ -22,6 +22,8 @@ data class SlotWithCourse(
 
 @Dao
 interface AcademicDao {
+    @Query("SELECT * FROM sync_resources ORDER BY resource")
+    fun observeSyncResources(): Flow<List<SyncResourceEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSemester(semester: SemesterEntity)
 
@@ -91,6 +93,18 @@ interface AcademicDao {
 
     @Query("SELECT * FROM sync_resources WHERE resource = :resource")
     fun observeSyncResource(resource: String): Flow<SyncResourceEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertMarks(records: List<MarkEntity>)
+    @Query("DELETE FROM marks WHERE semesterId = :semesterId") suspend fun deleteMarks(semesterId: String)
+    @Query("SELECT * FROM marks WHERE semesterId = :semesterId ORDER BY courseTitle, title") fun observeMarks(semesterId: String): Flow<List<MarkEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertGrades(records: List<GradeEntity>)
+    @Query("DELETE FROM grades WHERE semesterId = :semesterId") suspend fun deleteGrades(semesterId: String)
+    @Query("SELECT * FROM grades WHERE semesterId = :semesterId ORDER BY courseCode") fun observeGrades(semesterId: String): Flow<List<GradeEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertAcademicSummary(summary: AcademicSummaryEntity)
+    @Query("SELECT * FROM academic_summaries WHERE id = 'current'") fun observeAcademicSummary(): Flow<AcademicSummaryEntity?>
+
+    @Transaction suspend fun replaceMarks(semesterId: String, records: List<MarkEntity>, sync: SyncResourceEntity) { deleteMarks(semesterId); upsertMarks(records); upsertSyncResource(sync) }
+    @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertSyncResource(sync) }
 
     @Transaction
     suspend fun replaceTimetable(

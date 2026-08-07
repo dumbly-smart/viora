@@ -18,18 +18,25 @@ class AttendanceParser {
             val cells = row.select("td")
             if (cells.isEmpty()) return@mapNotNull null
             val values = headers.zip(cells.map(Element::text)).toMap()
-            val code = values.find("course code", "course", "code")?.trim().orEmpty()
-            if (code.isBlank()) return@mapNotNull null
-            val attended = values.find("classes attended", "attended classes", "attended")?.firstInt()
-            val held = values.find("total classes", "classes conducted", "conducted", "held")?.firstInt()
+            val code = values.find("course code", "code")?.trim().orEmpty()
+            val title = values.find("subject", "subject name", "course title", "course name", "title")?.trim().orEmpty()
+            if (code.isBlank() && title.isBlank()) return@mapNotNull null
+            val combined = values.find("classes attended")?.let { Regex("(\\d+)\\s*/\\s*(\\d+)").find(it) }
+            val attended = combined?.groupValues?.get(1)?.toIntOrNull() ?: values.find("classes attended", "attended classes", "attended")?.firstInt()
+            val held = combined?.groupValues?.get(2)?.toIntOrNull() ?: values.find("total classes", "classes conducted", "conducted", "held")?.firstInt()
             if (attended == null || held == null || attended < 0 || held < attended) return@mapNotNull null
+            val type = values.find("type", "course type").orEmpty().trim()
+            val faculty = values.find("faculty name", "faculty").orEmpty().trim()
             AttendanceRecord(
+                id = stableId("$code-$title-$type-$faculty"),
                 courseCode = code,
-                courseTitle = values.find("course title", "course name", "title").orEmpty().trim(),
+                courseTitle = title,
+                courseType = type,
+                faculty = faculty,
                 attended = attended,
                 held = held,
             )
-        }.distinctBy(AttendanceRecord::courseCode)
+        }.distinctBy(AttendanceRecord::id)
 
         return if (records.isEmpty()) ParseResult.InvalidDocument("No plausible attendance records were found")
         else ParseResult.Success(AttendanceSnapshot(records))
@@ -40,4 +47,5 @@ class AttendanceParser {
 
     private fun normalize(value: String) = value.trim().lowercase().replace(Regex("\\s+"), " ")
     private fun String.firstInt(): Int? = Regex("\\d+").find(this)?.value?.toIntOrNull()
+    private fun stableId(value: String) = value.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
 }

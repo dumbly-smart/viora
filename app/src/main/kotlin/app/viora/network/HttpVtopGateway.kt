@@ -4,6 +4,9 @@ import app.viora.parser.ParseResult
 import app.viora.parser.AttendanceParser
 import app.viora.parser.DigitalAssignmentParser
 import app.viora.parser.ExamParser
+import app.viora.parser.MarksParser
+import app.viora.parser.GradesParser
+import app.viora.parser.CgpaParser
 import app.viora.parser.SemesterParser
 import app.viora.parser.TimetableParser
 import app.viora.parser.VtopDocument
@@ -23,6 +26,9 @@ class HttpVtopGateway(
     private val attendanceParser: AttendanceParser = AttendanceParser(),
     private val assignmentParser: DigitalAssignmentParser = DigitalAssignmentParser(),
     private val examParser: ExamParser = ExamParser(),
+    private val marksParser: MarksParser = MarksParser(),
+    private val gradesParser: GradesParser = GradesParser(),
+    private val cgpaParser: CgpaParser = CgpaParser(),
 ) : VtopGateway {
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
@@ -141,6 +147,24 @@ class HttpVtopGateway(
         }
     }
 
+    override suspend fun marks(semesterId: String): List<MarkRecord> = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(MARKS_PAGE)
+        val html = academicPost(MARKS_PROCESS, token, semesterId)
+        marksParser.parse(html).valueOrThrow()
+    }
+
+    override suspend fun grades(semesterId: String): GradeSnapshot = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(GRADES_PAGE)
+        val html = academicPost(GRADES_PROCESS, token, semesterId)
+        gradesParser.parse(html).valueOrThrow()
+    }
+
+    override suspend fun cgpa(): CgpaSnapshot = withContext(Dispatchers.IO) {
+        val html = get(GRADES_PAGE)
+        updateTokens(html)
+        cgpaParser.parse(html).valueOrThrow()
+    }
+
     override suspend fun clearLocalSession() {
         cookieJar.clear()
         csrf = null
@@ -148,6 +172,18 @@ class HttpVtopGateway(
     }
 
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
+
+    private fun academicPost(url: String, token: String, semesterId: String): String {
+        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
+        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("x", System.currentTimeMillis().toString()).build()
+        return execute(Request.Builder().url(url).post(body).build())
+    }
+
+    private fun <T> ParseResult<T>.valueOrThrow(): T = when (this) {
+        is ParseResult.Success -> value
+        ParseResult.AuthenticationRequired -> throw AuthenticationException()
+        is ParseResult.InvalidDocument -> throw IOException(reason)
+    }
 
     private fun ensureAuthenticatedPage(url: String): String {
         val html = get(url)
@@ -191,6 +227,10 @@ class HttpVtopGateway(
         private const val DA_PROCESS = "$BASE/examinations/processDigitalAssignment"
         private const val EXAM_PAGE = "$BASE/examinations/StudentExamSchedule"
         private const val EXAM_PROCESS = "$BASE/examinations/doSearchExamScheduleForStudent"
+        private const val MARKS_PAGE = "$BASE/examinations/StudentMarkView"
+        private const val MARKS_PROCESS = "$BASE/examinations/doStudentMarkView"
+        private const val GRADES_PAGE = "$BASE/examinations/examGradeView/StudentGradeHistory"
+        private const val GRADES_PROCESS = "$BASE/examinations/examGradeView/doStudentGradeView"
     }
 }
 

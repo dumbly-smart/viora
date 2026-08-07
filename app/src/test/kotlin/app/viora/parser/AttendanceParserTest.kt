@@ -37,6 +37,17 @@ class AttendanceParserTest {
         assertTrue(parser.parse(html) is ParseResult.InvalidDocument)
     }
 
+    @Test fun `preserves separate theory and lab rows from live VTOP shape`() {
+        val html = """
+            <table class="customTable"><thead><tr><th>Subject</th><th>Type</th><th>Faculty Name</th><th>Classes Attended</th><th>Percentage</th></tr></thead>
+            <tbody><tr><td>Example</td><td>Embedded Theory</td><td>Faculty A</td><td>13/15</td><td>86.67</td></tr>
+            <tr><td>Example</td><td>Embedded Lab</td><td>Faculty A</td><td>9/10</td><td>90</td></tr></tbody></table>
+        """.trimIndent()
+        val records = (parser.parse(html) as ParseResult.Success).value.records
+        assertEquals(2, records.size)
+        assertEquals(listOf(15, 10), records.map { it.held })
+    }
+
     @Test fun `detects session expiry`() {
         assertTrue(
             parser.parse("<html><body>Session Timed Out<input type='password'></body></html>")

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.viora.auth.SessionResolution
 import app.viora.database.SlotWithCourse
+import app.viora.database.SyncResourceEntity
 import app.viora.domain.AttendanceCalculator
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
@@ -33,11 +34,21 @@ data class VioraUiState(
     val attendance: List<AttendanceUi> = emptyList(),
     val assignments: List<AssignmentUi> = emptyList(),
     val exams: List<ExamUi> = emptyList(),
+    val marks: List<MarkUi> = emptyList(),
+    val grades: List<GradeUi> = emptyList(),
+    val gpa: Double? = null,
+    val cgpa: Double? = null,
+    val syncResources: List<SyncResourceEntity> = emptyList(),
 )
+data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
+data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
 
 data class AttendanceUi(
+    val id: String,
     val courseCode: String,
     val courseTitle: String,
+    val courseType: String,
+    val faculty: String,
     val attended: Int,
     val held: Int,
     val percentage: Double,
@@ -75,8 +86,10 @@ class VioraAppViewModel(
     private var attendanceObservation: Job? = null
     private var assignmentObservation: Job? = null
     private var examObservation: Job? = null
+    private var resultsObservation: Job? = null
 
     init {
+        viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         if (state.value.configured) restoreSessionAndLoad()
     }
 
@@ -136,6 +149,7 @@ class VioraAppViewModel(
         observeAttendance(semester.id)
         observeAssignments(semester.id)
         observeExams(semester.id)
+        observeResults(semester.id)
         refresh()
     }
 
@@ -167,6 +181,7 @@ class VioraAppViewModel(
                 observeAttendance(selected.id)
                 observeAssignments(selected.id)
                 observeExams(selected.id)
+                observeResults(selected.id)
                 scheduler.schedule()
                 refreshSemester(selected)
             }
@@ -179,8 +194,9 @@ class VioraAppViewModel(
                 val attendanceResult = graph.attendance.refresh(semester.id)
                 val assignmentResult = graph.assignments.refresh(semester.id)
                 val examResult = graph.exams.refresh(semester.id)
+                val resultsResult = graph.results.refresh(semester.id)
                 graph.notifications.publishUpcoming(semester.id)
-                val failed = listOf(attendanceResult, assignmentResult, examResult).count(Result<*>::isFailure)
+                val failed = listOf(attendanceResult, assignmentResult, examResult, resultsResult).count(Result<*>::isFailure)
                 mutableState.update {
                     it.copy(
                         loading = false,
@@ -215,8 +231,11 @@ class VioraAppViewModel(
                     val projections = records.map { record ->
                         val projection = AttendanceCalculator.calculate(record.attended, record.held, 75)
                         AttendanceUi(
+                            record.id,
                             record.courseCode,
                             record.courseTitle,
+                            record.courseType,
+                            record.faculty,
                             record.attended,
                             record.held,
                             projection.percentage,
@@ -266,6 +285,15 @@ class VioraAppViewModel(
         }
     }
 
+    private fun observeResults(semesterId: String) {
+        resultsObservation?.cancel()
+        resultsObservation = viewModelScope.launch {
+            launch { graph.results.observeMarks(semesterId).collect { rows -> mutableState.update { state -> state.copy(marks = rows.map { MarkUi(it.id, it.courseTitle, it.title, it.scoredMark, it.maxMarks, it.weightageMark, it.status) }) } } }
+            launch { graph.results.observeGrades(semesterId).collect { rows -> mutableState.update { state -> state.copy(grades = rows.map { GradeUi(it.courseCode, it.courseTitle, it.credits, it.total, it.grade) }) } } }
+            launch { graph.results.observeSummary().collect { summary -> mutableState.update { it.copy(gpa = summary?.gpa, cgpa = summary?.cgpa) } } }
+        }
+    }
+
     private fun requireSignIn(message: String) {
         val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
         val savedName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null)
@@ -275,6 +303,7 @@ class VioraAppViewModel(
             observeAttendance(savedId)
             observeAssignments(savedId)
             observeExams(savedId)
+            observeResults(savedId)
             mutableState.update {
                 it.copy(
                     configured = true,

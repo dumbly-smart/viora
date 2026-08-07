@@ -66,12 +66,15 @@ data class SyncResourceEntity(
 @Entity(
     tableName = "attendance",
     indices = [Index("semesterId"), Index("courseCode")],
-    primaryKeys = ["semesterId", "courseCode"],
+    primaryKeys = ["semesterId", "id"],
 )
 data class AttendanceEntity(
     val semesterId: String,
+    val id: String,
     val courseCode: String,
     val courseTitle: String,
+    val courseType: String,
+    val faculty: String,
     val attended: Int,
     val held: Int,
     val sourceEpochMillis: Long,
@@ -115,3 +118,12 @@ data class NotificationLedgerEntity(
     @PrimaryKey val key: String,
     val notifiedEpochMillis: Long,
 )
+
+@Entity(tableName = "marks", indices = [Index("semesterId"), Index("courseCode")], primaryKeys = ["semesterId", "id"])
+data class MarkEntity(val semesterId: String, val id: String, val courseCode: String, val courseTitle: String, val courseType: String, val title: String, val maxMarks: Double?, val weightagePercent: Double?, val status: String, val scoredMark: Double?, val weightageMark: Double?, val sourceEpochMillis: Long)
+
+@Entity(tableName = "grades", indices = [Index("semesterId")], primaryKeys = ["semesterId", "courseCode"])
+data class GradeEntity(val semesterId: String, val courseCode: String, val courseTitle: String, val courseType: String, val credits: Double?, val total: Double?, val grading: String, val grade: String, val sourceEpochMillis: Long)
+
+@Entity(tableName = "academic_summaries")
+data class AcademicSummaryEntity(@PrimaryKey val id: String, val gpa: Double?, val cgpa: Double?, val registeredCredits: Double?, val earnedCredits: Double?, val gradeCounts: String, val sourceEpochMillis: Long)

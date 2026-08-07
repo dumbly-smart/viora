@@ -1,5 +1,7 @@
 # Feature plan
 
+Current implementation also includes live-contract attendance rows (theory/lab preserved), assessment marks, grade history, GPA/CGPA, credits, current/next-class context, and per-resource sync freshness. All are cached and processed on-device.
+
 ## Navigation
 
 Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings. Search spans courses, assessments, messages, and materials.
@@ -66,4 +68,3 @@ Android background execution is inexact, so reminders are best effort. For exact
 - No cloud sync of VTOP credentials or personal academic records.
 - No claim that a projection grants permission to miss class.
 - No ads or analytics SDK that receives academic data.
-

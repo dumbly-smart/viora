@@ -26,6 +26,7 @@ class VioraSyncWorker(
                     graph.attendance.refresh(semesterId),
                     graph.assignments.refresh(semesterId),
                     graph.exams.refresh(semesterId),
+                    graph.results.refresh(semesterId),
                 )
                 graph.notifications.publishUpcoming(semesterId)
                 if (results.all { it.isSuccess }) Result.success() else Result.retry()

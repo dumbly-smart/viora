@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -156,7 +157,7 @@ private fun Dashboard(
                 1 -> ScheduleScreen(state, selectSemester)
                 2 -> AttendanceScreen(state)
                 3 -> TasksScreen(state)
-                else -> Placeholder(destinations[selected].label)
+                else -> ResultsScreen(state)
             }
         }
     }
@@ -165,6 +166,7 @@ private fun Dashboard(
 @Composable
 private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
     val today = LocalDate.now().dayOfWeek.value
+    val nowMinute = java.time.LocalTime.now().hour * 60 + java.time.LocalTime.now().minute
     val todaySlots = state.slots.filter { it.dayOfWeek == today }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -178,6 +180,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        todaySlots.firstOrNull { it.endMinute >= nowMinute }?.let { slot -> item { SummaryCard(if (slot.startMinute <= nowMinute) "Happening now" else "Up next", "${slot.code} · ${slot.title}", "${slot.startMinute.asTime()}–${slot.endMinute.asTime()} · ${slot.venue}") } }
         if (todaySlots.isEmpty()) {
             item { SummaryCard("Schedule", "No cached classes", "Sync with VTOP to load your timetable") }
         } else {
@@ -186,7 +189,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
         val risks = state.attendance.filter { it.recovery > 0 || it.skippable == 0 }.take(3)
         if (risks.isNotEmpty()) {
             item { Text("Attendance watch", style = MaterialTheme.typography.titleLarge) }
-            items(risks, key = AttendanceUi::courseCode) { AttendanceCard(it) }
+            items(risks, key = AttendanceUi::id) { AttendanceCard(it) }
         }
         state.assignments.firstOrNull { it.dueEpochMillis == null || it.dueEpochMillis > System.currentTimeMillis() }?.let {
             item { SummaryCard("Next assignment", "${it.courseCode} · ${it.title}", it.dueEpochMillis.asAcademicTime()) }
@@ -195,6 +198,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
             item { SummaryCard("Next exam", "${it.examType} · ${it.courseCode}", it.startsEpochMillis.asAcademicTime()) }
         }
         state.syncMessage?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
+        state.syncResources.maxByOrNull { it.lastAttemptEpochMillis }?.let { sync -> item { SummaryCard("Local sync", sync.status.lowercase().replaceFirstChar(Char::uppercase), sync.lastSuccessEpochMillis.asAcademicTime("Not synced yet")) } }
     }
 }
 
@@ -209,7 +213,7 @@ private fun AttendanceScreen(state: VioraUiState) {
             Text("Courses", style = MaterialTheme.typography.headlineMedium)
             Text("Attendance projections use a 75% target and the latest VTOP snapshot.")
         }
-        items(state.attendance, key = AttendanceUi::courseCode) { AttendanceCard(it) }
+        items(state.attendance, key = AttendanceUi::id) { AttendanceCard(it) }
         if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
     }
 }
@@ -223,6 +227,7 @@ private fun AttendanceCard(item: AttendanceUi) {
                 style = MaterialTheme.typography.titleMedium,
             )
             Text("${item.attended}/${item.held} · ${"%.1f".format(item.percentage)}%")
+            listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             when {
                 item.recovery > 0 -> Text(
                     "Attend ${item.recovery} consecutive classes to reach 75%",
@@ -297,6 +302,14 @@ private fun TasksScreen(state: VioraUiState) {
             }
         }
         if (state.assignments.isEmpty()) item { Text("No digital assignments are cached.") }
+        item { Text("Assessment marks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        items(state.marks, key = MarkUi::id) { mark ->
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+                Text(mark.title, style = MaterialTheme.typography.titleMedium)
+                Text(mark.courseTitle)
+                Text(listOfNotNull(mark.scoredMark?.let { "${it.cleanNumber()}/${mark.maxMarks?.cleanNumber() ?: "—"}" }, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" }, mark.status.takeIf(String::isNotBlank)).joinToString(" · "))
+            } }
+        }
         item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
         items(state.exams, key = ExamUi::id) { ExamCard(it) }
         if (state.exams.isEmpty()) item { Text("No examination schedule is cached.") }
@@ -352,6 +365,25 @@ private fun SummaryCard(title: String, value: String, supporting: String) {
 private fun Placeholder(label: String) {
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         Text(label, style = MaterialTheme.typography.headlineMedium)
-        Text("This feature is queued after the timetable vertical slice.")
+        Text("Grades and academic summary")
     }
 }
+
+@Composable
+private fun ResultsScreen(state: VioraUiState) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("Academic results", style = MaterialTheme.typography.headlineMedium) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SummaryMetric("GPA", state.gpa?.cleanNumber() ?: "—", Modifier.weight(1f))
+            SummaryMetric("CGPA", state.cgpa?.cleanNumber() ?: "—", Modifier.weight(1f))
+        } }
+        items(state.grades, key = GradeUi::courseCode) { grade -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+            Text("${grade.courseCode} · ${grade.courseTitle}", style = MaterialTheme.typography.titleMedium)
+            Text(listOfNotNull("Grade ${grade.grade.ifBlank { "—" }}", grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · "))
+        } } }
+        if (state.grades.isEmpty()) item { Text("No grade history is cached yet.") }
+    }
+}
+
+@Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Card(modifier) { Column(Modifier.padding(16.dp)) { Text(label); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
+private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.2f".format(this).trimEnd('0')

@@ -21,11 +21,19 @@ data class SemesterOption(
 )
 
 data class AttendanceRecord(
+    val id: String,
     val courseCode: String,
     val courseTitle: String,
+    val courseType: String,
+    val faculty: String,
     val attended: Int,
     val held: Int,
 )
+
+data class MarkRecord(val id: String, val courseCode: String, val courseTitle: String, val courseType: String, val title: String, val maxMarks: Double?, val weightagePercent: Double?, val status: String, val scoredMark: Double?, val weightageMark: Double?)
+data class GradeRecord(val courseCode: String, val courseTitle: String, val courseType: String, val credits: Double?, val total: Double?, val grading: String, val grade: String)
+data class GradeSnapshot(val records: List<GradeRecord>, val gpa: Double?)
+data class CgpaSnapshot(val registeredCredits: Double?, val earnedCredits: Double?, val cgpa: Double?, val gradeCounts: Map<String, Int>)
 
 data class AttendanceSnapshot(val records: List<AttendanceRecord>)
 
@@ -56,6 +64,9 @@ interface VtopGateway {
     suspend fun attendance(semesterId: String): AttendanceSnapshot
     suspend fun digitalAssignments(): List<DigitalAssignmentRecord>
     suspend fun exams(semesterId: String): List<ExamRecord>
+    suspend fun marks(semesterId: String): List<MarkRecord>
+    suspend fun grades(semesterId: String): GradeSnapshot
+    suspend fun cgpa(): CgpaSnapshot
 
     /** Clears Viora's local session only. It must not invoke VTOP's logout endpoint. */
     suspend fun clearLocalSession()
