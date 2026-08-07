@@ -10,6 +10,7 @@ import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
 import app.viora.database.AcademicChangeEntity
+import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
@@ -22,6 +23,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import java.net.UnknownHostException
+import java.net.SocketTimeoutException
 
 data class VioraUiState(
     val configured: Boolean = false,
@@ -54,6 +59,9 @@ data class VioraUiState(
     val searchQuery: String = "",
     val quietHours: Boolean = true,
     val recentChanges: List<AcademicChangeEntity> = emptyList(),
+    val downloads: Map<String, MaterialDownloadState> = emptyMap(),
+    val downloadStorageBytes: Long = 0,
+    val syncHours: Int = 6,
 )
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
@@ -98,7 +106,7 @@ class VioraAppViewModel(
     private val scheduler: VioraSyncScheduler,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(
-        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true)),
+        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6)),
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
@@ -111,6 +119,7 @@ class VioraAppViewModel(
     init {
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
+        viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
         if (state.value.configured) restoreSessionAndLoad()
     }
 
@@ -146,8 +155,9 @@ class VioraAppViewModel(
                         it.copy(loading = false, error = "VTOP rejected the sign-in details")
                     }
                 }
-            } catch (_: Exception) {
-                mutableState.update { it.copy(loading = false, error = "Could not connect to VTOP") }
+            } catch (error: Exception) {
+                val message = when (error) { is UnknownHostException -> "VTOP could not be reached. Check your connection."; is SocketTimeoutException -> "VTOP took too long to respond. Try again."; else -> "Could not connect to VTOP (${error.message?.take(80) ?: "unknown error"})" }
+                mutableState.update { it.copy(loading = false, error = message) }
             } finally {
                 password.fill('\u0000')
             }
@@ -170,6 +180,9 @@ class VioraAppViewModel(
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
+    fun setSyncHours(hours: Int) { val safe = hours.coerceIn(1, 24); graph.settings.edit().putInt("sync_hours", safe).apply(); scheduler.schedule(safe.toLong()); mutableState.update { it.copy(syncHours = safe) } }
+    fun clearDownloads() { viewModelScope.launch { graph.materialManager.clearDownloads(); mutableState.update { it.copy(downloadStorageBytes = 0, downloads = emptyMap(), syncMessage = "Downloaded materials cleared") } } }
+    fun clearAcademicCache() { viewModelScope.launch { withContext(Dispatchers.IO) { graph.database.clearAllTables() }; mutableState.update { it.copy(slots = emptyList(), attendance = emptyList(), assignments = emptyList(), exams = emptyList(), marks = emptyList(), grades = emptyList(), calendar = emptyList(), messages = emptyList(), materials = emptyList(), recentChanges = emptyList(), syncMessage = "Academic cache cleared") } } }
     fun completeInteractiveVerification(cookieHeader: String) {
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
@@ -184,6 +197,7 @@ class VioraAppViewModel(
         }
     }
     fun cancelInteractiveVerification() = mutableState.update { it.copy(interactiveVerification = false, loading = false) }
+    fun interactiveVerificationError(message: String) = mutableState.update { it.copy(loading = false, error = message) }
     fun openMaterial(material: CourseMaterialEntity, share: Boolean = false) {
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch { graph.materialManager.open(material, share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }

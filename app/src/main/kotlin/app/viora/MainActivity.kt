@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -44,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,9 +87,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (state.interactiveVerification) {
-                    VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::cancelInteractiveVerification)
+                    VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::clearDownloads, model::clearAcademicCache, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -114,6 +116,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class Destination(val label: String, val icon: ImageVector)
+private data class DetailSelection(val kind: String, val id: String)
 
 private val destinations = listOf(
     Destination("Home", Icons.Outlined.Home),
@@ -138,13 +141,18 @@ private fun Dashboard(
     setPlannedMissedBlocks: (Int) -> Unit,
     setSearchQuery: (String) -> Unit,
     setQuietHours: (Boolean) -> Unit,
+    setSyncHours: (Int) -> Unit,
+    clearDownloads: () -> Unit,
+    clearAcademicCache: () -> Unit,
     initialDestination: String?,
 ) {
     var selected by remember(initialDestination) { mutableIntStateOf(when (initialDestination) { "schedule" -> 1; "courses" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
+    var detail by remember { mutableStateOf<DetailSelection?>(null) }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Viora") },
+                title = { Text(detail?.kind?.replaceFirstChar(Char::uppercase) ?: "Viora") },
+                navigationIcon = { if (detail != null) TextButton(onClick = { detail = null }) { Text("Back") } },
                 actions = {
                     if (state.reauthRequired) {
                         TextButton(onClick = reauthenticate) { Text("Sign in to sync") }
@@ -170,12 +178,12 @@ private fun Dashboard(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
-            when (selected) {
+            if (detail != null) DetailScreen(state, detail!!, openMaterial) else when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
-                1 -> ScheduleScreen(state, selectSemester)
-                2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks)
-                3 -> TasksScreen(state)
-                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours)
+                1 -> ScheduleScreen(state, selectSemester) { detail = DetailSelection("exam", it.id) }
+                2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
+                3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
+                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, clearDownloads, clearAcademicCache)
             }
         }
     }
@@ -227,7 +235,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
 }
 
 @Composable
-private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit, setAttendanceTarget: (Int) -> Unit, setPlannedMissedBlocks: (Int) -> Unit) {
+private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit, setAttendanceTarget: (Int) -> Unit, setPlannedMissedBlocks: (Int) -> Unit, showDetail: (String, String) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -239,12 +247,12 @@ private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database
         }
         item { Text("Target: ${state.attendanceTarget}%"); Slider(value = state.attendanceTarget.toFloat(), onValueChange = { setAttendanceTarget(it.toInt()) }, valueRange = 50f..95f, steps = 8) }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Plan missing ${state.plannedMissedBlocks} future ${if (state.plannedMissedBlocks == 1) "block" else "blocks"}"); Row { TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks - 1) }) { Text("−") }; TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks + 1) }) { Text("+") } } } }
-        items(state.attendance, key = AttendanceUi::id) { AttendanceCard(it) }
+        items(state.attendance, key = AttendanceUi::id) { item -> Column(Modifier.clickable { showDetail("course", item.id) }) { AttendanceCard(item) } }
         if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
         if (state.grades.isNotEmpty()) item { Text("Grades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
         items(state.grades, key = GradeUi::courseCode) { grade -> SummaryCard("${grade.courseCode} · ${grade.courseTitle}", "Grade ${grade.grade}", listOfNotNull(grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · ")) }
         if (state.materials.isNotEmpty()) item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        items(state.materials, key = { it.id }) { material -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(state.materials, key = { it.id }) { material -> Card(Modifier.fillMaxWidth().clickable { showDetail("material", material.id) }) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(material.courseCode, style = MaterialTheme.typography.titleMedium); Text(material.title.ifBlank { material.fileName })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { openMaterial(material, false) }) { Text("Open") }; TextButton(onClick = { openMaterial(material, true) }) { Text("Share") } }
         } } }
@@ -280,6 +288,7 @@ private fun AttendanceCard(item: AttendanceUi) {
 private fun ScheduleScreen(
     state: VioraUiState,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
+    showExam: (ExamUi) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -315,13 +324,13 @@ private fun ScheduleScreen(
         }
         if (state.exams.isNotEmpty()) {
             item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
-            items(state.exams, key = ExamUi::id) { ExamCard(it) }
+            items(state.exams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         }
     }
 }
 
 @Composable
-private fun TasksScreen(state: VioraUiState) {
+private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -330,7 +339,7 @@ private fun TasksScreen(state: VioraUiState) {
         item { Text("Tasks", style = MaterialTheme.typography.headlineMedium) }
         item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge) }
         items(state.assignments, key = AssignmentUi::id) { assignment ->
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth().clickable { showAssignment(assignment) }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
                     Text(assignment.dueEpochMillis.asAcademicTime("Due time unavailable"))
@@ -348,7 +357,7 @@ private fun TasksScreen(state: VioraUiState) {
             } }
         }
         item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
-        items(state.exams, key = ExamUi::id) { ExamCard(it) }
+        items(state.exams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         if (state.exams.isEmpty()) item { Text("No examination schedule is cached.") }
     }
 }
@@ -377,6 +386,39 @@ private fun ClassCard(slot: SlotWithCourse) {
             }
         }
     }
+}
+
+@Composable
+private fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        when (selection.kind) {
+            "course" -> state.attendance.firstOrNull { it.id == selection.id }?.let { attendance ->
+                item { Text(attendance.courseTitle.ifBlank { attendance.courseCode }, style = MaterialTheme.typography.headlineMedium) }
+                item { AttendanceCard(attendance) }
+                state.slots.filter { it.code == attendance.courseCode || it.title == attendance.courseTitle }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
+                state.marks.filter { it.courseTitle == attendance.courseTitle }.forEach { mark -> item("mark:${mark.id}") { SummaryCard(mark.title, mark.scoredMark?.cleanNumber() ?: mark.status, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" } ?: "") } }
+                state.grades.filter { it.courseCode == attendance.courseCode || it.courseTitle == attendance.courseTitle }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
+                state.materials.filter { it.courseCode == attendance.courseCode }.forEach { material -> item("material:${material.id}") { MaterialDetailCard(material, state, openMaterial) } }
+            }
+            "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
+                item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
+                item { SummaryCard(assignment.courseCode, assignment.status.ifBlank { "Status unavailable" }, assignment.dueEpochMillis.asAcademicTime("Due time unavailable")) }
+            }
+            "exam" -> state.exams.firstOrNull { it.id == selection.id }?.let { exam -> item { ExamCard(exam) } }
+            "material" -> state.materials.firstOrNull { it.id == selection.id }?.let { material -> item { MaterialDetailCard(material, state, openMaterial) } }
+        }
+    }
+}
+
+@Composable private fun MaterialDetailCard(material: app.viora.database.CourseMaterialEntity, state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
+    val download = state.downloads[material.id]
+    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(material.title.ifBlank { material.fileName }, style = MaterialTheme.typography.titleMedium)
+        Text(material.courseCode)
+        download?.let { Text(when (it.status) { "DOWNLOADING" -> "Downloading · attempt ${it.attempt}/3"; "READY" -> "Downloaded · ${it.localBytes.readableBytes()}"; "ERROR" -> it.error ?: "Download failed"; else -> it.status }) }
+        if (download?.status == "DOWNLOADING") LinearProgressIndicator(Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { openMaterial(material, false) }, enabled = download?.status != "DOWNLOADING") { Text(if (download?.status == "ERROR") "Retry" else "Open") }; TextButton(onClick = { openMaterial(material, true) }, enabled = download?.status != "DOWNLOADING") { Text("Share") } }
+    } }
 }
 
 private fun Int.asTime(): String = "%02d:%02d".format(this / 60, this % 60)
@@ -422,7 +464,7 @@ private fun ResultsScreen(state: VioraUiState) {
     }
 }
 
-@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit) {
+@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption) -> Unit, setSyncHours: (Int) -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("More", style = MaterialTheme.typography.headlineMedium) }
         item { OutlinedTextField(value = state.searchQuery, onValueChange = setSearchQuery, label = { Text("Search cached academics") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
@@ -451,6 +493,11 @@ private fun ResultsScreen(state: VioraUiState) {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Assignment reminders"); Switch(checked = state.deadlineNotifications, onCheckedChange = setDeadlineNotifications) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Exam reminders"); Switch(checked = state.examNotifications, onCheckedChange = setExamNotifications) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Quiet hours"); Text("10 PM–7 AM", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(checked = state.quietHours, onCheckedChange = setQuietHours) } }
+        item { Text("Sync and storage", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        item { Text("Active semester"); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { state.semesters.take(3).forEach { semester -> TextButton(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester) { Text(semester.name.take(16)) } } } }
+        item { Text("Background sync: every ${state.syncHours} hours"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(1, 3, 6, 12, 24).forEach { hours -> TextButton(onClick = { setSyncHours(hours) }, enabled = hours != state.syncHours) { Text("${hours}h") } } } }
+        item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Viora's private app folder") }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
         item { Text("Viora stores academic data, credentials and its isolated VTOP cookies only on this device. Logging out here does not call VTOP logout or affect browser sessions.") }
         item { Button(onClick = logout) { Text("Erase local Viora account") } }
@@ -459,6 +506,7 @@ private fun ResultsScreen(state: VioraUiState) {
 
 @Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Card(modifier) { Column(Modifier.padding(16.dp)) { Text(label); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
 private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.2f".format(this).trimEnd('0')
+private fun Long.readableBytes(): String = when { this >= 1024 * 1024 -> "%.1f MB".format(this / 1024.0 / 1024.0); this >= 1024 -> "%.1f KB".format(this / 1024.0); else -> "$this B" }
 
 private data class TimelineItem(val id: String, val at: Long, val kind: String, val title: String, val whenText: String)
 

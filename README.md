@@ -19,8 +19,10 @@ Log in once during setup and Viora keeps your academic data synced whenever you 
 - Class messages
 - Consolidated course details
 - Course-material download, open, and share actions
+- Managed downloads with retry state, private-storage usage, and cleanup
 - Local reminders for assignments and exams
 - Change alerts, quiet hours, notification deep links, and fully local search
+- Dedicated course, assignment, exam, and material details
 - Background sync with cached data when VTOP is unavailable
 - A seven-day timeline that accounts for holidays and instructional day orders
 

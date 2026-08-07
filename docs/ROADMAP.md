@@ -22,6 +22,8 @@ The current checkpoint adds VTOP's own in-app verification fallback, explicit ma
 
 Attendance planning now supports a configurable target, hypothetical missed blocks, and conservative whole-lab-block projections. Room also keeps deterministic change events for timetable, attendance, assignments, exams, marks, grades, messages, and materials; these drive deduplicated local alerts and an in-app “What changed” feed. Global search runs only over the on-device cache.
 
+Detail views, managed material retries/storage cleanup, semester and sync-cadence settings, stricter embedded verification errors, and additional redacted VTOP layout fixtures are now implemented. A physical Android device was not attached during this checkpoint, so the embedded verification UI still needs its closed-device pass.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.

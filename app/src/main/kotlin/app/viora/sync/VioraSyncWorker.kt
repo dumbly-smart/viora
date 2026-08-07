@@ -39,8 +39,8 @@ class VioraSyncWorker(
 }
 
 class VioraSyncScheduler(private val context: Context) {
-    fun schedule() {
-        val request = PeriodicWorkRequestBuilder<VioraSyncWorker>(6, TimeUnit.HOURS)
+    fun schedule(hours: Long = context.getSharedPreferences(VioraGraph.SETTINGS_NAME, Context.MODE_PRIVATE).getInt("sync_hours", 6).toLong()) {
+        val request = PeriodicWorkRequestBuilder<VioraSyncWorker>(hours.coerceIn(1, 24), TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .addTag(LocalAccountManager.VIORA_SYNC_TAG)
             .build()

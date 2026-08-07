@@ -5,6 +5,9 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceError
+import android.webkit.SslErrorHandler
+import android.net.http.SslError
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,7 +22,7 @@ import androidx.compose.ui.unit.dp
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun VtopVerificationScreen(loading: Boolean, error: String?, onVerified: (String) -> Unit, onCancel: () -> Unit) {
+fun VtopVerificationScreen(loading: Boolean, error: String?, onVerified: (String) -> Unit, onError: (String) -> Unit, onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TextButton(onClick = onCancel, enabled = !loading) { Text("Back") }
         Text("Complete the VTOP check once, then Viora will keep its own encrypted session.", Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -32,8 +35,12 @@ fun VtopVerificationScreen(loading: Boolean, error: String?, onVerified: (String
                 WebView(context).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = request.url.host != "vtop.vit.ac.in"
+                        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) { if (request.isForMainFrame) onError("VTOP page failed to load (${error.errorCode})") }
+                        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) { handler.cancel(); onError("VTOP certificate verification failed") }
                         override fun onPageFinished(view: WebView, url: String) {
                             val lower = url.lowercase()
                             if (url.startsWith(ROOT) && listOf("/login", "/prelogin", "/init/page").none(lower::contains)) {
