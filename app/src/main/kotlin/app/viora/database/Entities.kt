@@ -127,3 +127,10 @@ data class GradeEntity(val semesterId: String, val courseCode: String, val cours
 
 @Entity(tableName = "academic_summaries")
 data class AcademicSummaryEntity(@PrimaryKey val id: String, val gpa: Double?, val cgpa: Double?, val registeredCredits: Double?, val earnedCredits: Double?, val gradeCounts: String, val sourceEpochMillis: Long)
+
+@Entity(tableName = "academic_calendar", indices = [Index("semesterId"), Index("dateEpochDay")], primaryKeys = ["semesterId", "id"])
+data class AcademicCalendarEntity(val semesterId: String, val id: String, val dateEpochDay: Long, val title: String, val dayType: String, val sourceEpochMillis: Long)
+@Entity(tableName = "class_messages", indices = [Index("postedEpochMillis")])
+data class ClassMessageEntity(@PrimaryKey val id: String, val courseCode: String, val courseTitle: String, val faculty: String, val subject: String, val body: String, val postedEpochMillis: Long?, val sourceEpochMillis: Long)
+@Entity(tableName = "course_materials", indices = [Index("semesterId"), Index("courseCode")], primaryKeys = ["semesterId", "id"])
+data class CourseMaterialEntity(val semesterId: String, val id: String, val courseCode: String, val title: String, val fileName: String, val downloadPath: String, val postedEpochMillis: Long?, val sourceEpochMillis: Long)

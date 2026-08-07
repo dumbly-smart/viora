@@ -33,6 +33,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,7 +79,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -120,6 +121,9 @@ private fun Dashboard(
     refresh: () -> Unit,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
     reauthenticate: () -> Unit,
+    logout: () -> Unit,
+    setDeadlineNotifications: (Boolean) -> Unit,
+    setExamNotifications: (Boolean) -> Unit,
 ) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
@@ -154,9 +158,9 @@ private fun Dashboard(
             when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
                 1 -> ScheduleScreen(state, selectSemester)
-                2 -> AttendanceScreen(state)
+                2 -> CoursesScreen(state)
                 3 -> TasksScreen(state)
-                else -> ResultsScreen(state)
+                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications)
             }
         }
     }
@@ -202,18 +206,22 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
 }
 
 @Composable
-private fun AttendanceScreen(state: VioraUiState) {
+private fun CoursesScreen(state: VioraUiState) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("Courses", style = MaterialTheme.typography.headlineMedium)
-            Text("Attendance projections use a 75% target and the latest VTOP snapshot.")
+            Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium)
+            Text("Attendance, assessments, grades, faculty and materials from the local cache.")
         }
         items(state.attendance, key = AttendanceUi::id) { AttendanceCard(it) }
         if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
+        if (state.grades.isNotEmpty()) item { Text("Grades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        items(state.grades, key = GradeUi::courseCode) { grade -> SummaryCard("${grade.courseCode} · ${grade.courseTitle}", "Grade ${grade.grade}", listOfNotNull(grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · ")) }
+        if (state.materials.isNotEmpty()) item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        items(state.materials, key = { it.id }) { material -> SummaryCard(material.courseCode, material.title.ifBlank { material.fileName }, "Stored as metadata locally · tap-to-download wiring next") }
     }
 }
 
@@ -275,6 +283,10 @@ private fun ScheduleScreen(
             items(slots, key = SlotWithCourse::slotId) { ClassCard(it) }
         }
         if (grouped.isEmpty()) item { Text("No timetable has been cached for this semester.") }
+        if (state.calendar.isNotEmpty()) {
+            item { Text("Academic calendar", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+            items(state.calendar, key = { it.id }) { day -> SummaryCard(day.dayType.ifBlank { "Calendar" }, day.title, LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern("EEE, dd MMM"))) }
+        }
         if (state.exams.isNotEmpty()) {
             item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
             items(state.exams, key = ExamUi::id) { ExamCard(it) }
@@ -381,6 +393,22 @@ private fun ResultsScreen(state: VioraUiState) {
             Text(listOfNotNull("Grade ${grade.grade.ifBlank { "—" }}", grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · "))
         } } }
         if (state.grades.isEmpty()) item { Text("No grade history is cached yet.") }
+    }
+}
+
+@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("More", style = MaterialTheme.typography.headlineMedium) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { SummaryMetric("GPA", state.gpa?.cleanNumber() ?: "—"); SummaryMetric("CGPA", state.cgpa?.cleanNumber() ?: "—") } }
+        item { Text("Class messages", style = MaterialTheme.typography.titleLarge) }
+        items(state.messages, key = { it.id }) { message -> SummaryCard(message.subject.ifBlank { "Class message" }, message.body, listOf(message.courseCode, message.faculty).filter(String::isNotBlank).joinToString(" · ")) }
+        if (state.messages.isEmpty()) item { Text("No class messages are cached.") }
+        item { Text("Notifications", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Assignment reminders"); Switch(checked = state.deadlineNotifications, onCheckedChange = setDeadlineNotifications) } }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Exam reminders"); Switch(checked = state.examNotifications, onCheckedChange = setExamNotifications) } }
+        item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        item { Text("Viora stores academic data, credentials and its isolated VTOP cookies only on this device. Logging out here does not call VTOP logout or affect browser sessions.") }
+        item { Button(onClick = logout) { Text("Erase local Viora account") } }
     }
 }
 

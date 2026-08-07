@@ -27,6 +27,7 @@ class VioraSyncWorker(
                     graph.assignments.refresh(semesterId),
                     graph.exams.refresh(semesterId),
                     graph.results.refresh(semesterId),
+                    graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
                 )
                 graph.notifications.publishUpcoming(semesterId)
                 if (results.all { it.isSuccess }) Result.success() else Result.retry()

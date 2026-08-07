@@ -7,6 +7,9 @@ import app.viora.parser.ExamParser
 import app.viora.parser.MarksParser
 import app.viora.parser.GradesParser
 import app.viora.parser.CgpaParser
+import app.viora.parser.AcademicCalendarParser
+import app.viora.parser.ClassMessageParser
+import app.viora.parser.CourseMaterialParser
 import app.viora.parser.SemesterParser
 import app.viora.parser.TimetableParser
 import app.viora.parser.VtopDocument
@@ -29,6 +32,9 @@ class HttpVtopGateway(
     private val marksParser: MarksParser = MarksParser(),
     private val gradesParser: GradesParser = GradesParser(),
     private val cgpaParser: CgpaParser = CgpaParser(),
+    private val calendarParser: AcademicCalendarParser = AcademicCalendarParser(),
+    private val messageParser: ClassMessageParser = ClassMessageParser(),
+    private val materialParser: CourseMaterialParser = CourseMaterialParser(),
 ) : VtopGateway {
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
@@ -165,6 +171,22 @@ class HttpVtopGateway(
         cgpaParser.parse(html).valueOrThrow()
     }
 
+    override suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord> = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(CALENDAR_PAGE)
+        calendarParser.parse(academicPost(CALENDAR_PROCESS, token, semesterId)).valueOrThrow()
+    }
+
+    override suspend fun classMessages(): List<ClassMessageRecord> = withContext(Dispatchers.IO) {
+        val html = get(MESSAGES_PAGE); updateTokens(html); messageParser.parse(html).valueOrThrow()
+    }
+
+    override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord> = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(COURSE_PAGE)
+        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
+        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("courseCode", courseCode).add("facultyId", faculty).add("x", System.currentTimeMillis().toString()).build()
+        materialParser.parse(execute(Request.Builder().url(COURSE_DETAIL).post(body).build()), courseCode).valueOrThrow()
+    }
+
     override suspend fun clearLocalSession() {
         cookieJar.clear()
         csrf = null
@@ -231,6 +253,11 @@ class HttpVtopGateway(
         private const val MARKS_PROCESS = "$BASE/examinations/doStudentMarkView"
         private const val GRADES_PAGE = "$BASE/examinations/examGradeView/StudentGradeHistory"
         private const val GRADES_PROCESS = "$BASE/examinations/examGradeView/doStudentGradeView"
+        private const val CALENDAR_PAGE = "$BASE/academics/common/CalendarPreview"
+        private const val CALENDAR_PROCESS = "$BASE/processViewCalendar"
+        private const val MESSAGES_PAGE = "$BASE/academics/common/StudentClassMessage"
+        private const val COURSE_PAGE = "$BASE/academics/common/StudentCoursePage"
+        private const val COURSE_DETAIL = "$BASE/processViewStudentCourseDetail"
     }
 }
 

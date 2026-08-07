@@ -90,6 +90,7 @@ interface AcademicDao {
         """,
     )
     fun observeTimetable(semesterId: String): Flow<List<SlotWithCourse>>
+    @Query("SELECT * FROM courses WHERE semesterId = :semesterId ORDER BY code") suspend fun courses(semesterId: String): List<CourseEntity>
 
     @Query("SELECT * FROM sync_resources WHERE resource = :resource")
     fun observeSyncResource(resource: String): Flow<SyncResourceEntity?>
@@ -102,6 +103,18 @@ interface AcademicDao {
     @Query("SELECT * FROM grades WHERE semesterId = :semesterId ORDER BY courseCode") fun observeGrades(semesterId: String): Flow<List<GradeEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertAcademicSummary(summary: AcademicSummaryEntity)
     @Query("SELECT * FROM academic_summaries WHERE id = 'current'") fun observeAcademicSummary(): Flow<AcademicSummaryEntity?>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCalendar(rows: List<AcademicCalendarEntity>)
+    @Query("DELETE FROM academic_calendar WHERE semesterId = :semesterId") suspend fun deleteCalendar(semesterId: String)
+    @Query("SELECT * FROM academic_calendar WHERE semesterId = :semesterId ORDER BY dateEpochDay") fun observeCalendar(semesterId: String): Flow<List<AcademicCalendarEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertMessages(rows: List<ClassMessageEntity>)
+    @Query("DELETE FROM class_messages") suspend fun deleteMessages()
+    @Query("SELECT * FROM class_messages ORDER BY postedEpochMillis DESC") fun observeMessages(): Flow<List<ClassMessageEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertMaterials(rows: List<CourseMaterialEntity>)
+    @Query("DELETE FROM course_materials WHERE semesterId = :semesterId AND courseCode = :courseCode") suspend fun deleteMaterials(semesterId: String, courseCode: String)
+    @Query("SELECT * FROM course_materials WHERE semesterId = :semesterId ORDER BY courseCode, title") fun observeMaterials(semesterId: String): Flow<List<CourseMaterialEntity>>
+    @Transaction suspend fun replaceCalendar(semesterId: String, rows: List<AcademicCalendarEntity>) { deleteCalendar(semesterId); upsertCalendar(rows) }
+    @Transaction suspend fun replaceMessages(rows: List<ClassMessageEntity>) { deleteMessages(); upsertMessages(rows) }
+    @Transaction suspend fun replaceMaterials(semesterId: String, courseCode: String, rows: List<CourseMaterialEntity>) { deleteMaterials(semesterId, courseCode); upsertMaterials(rows) }
 
     @Transaction suspend fun replaceMarks(semesterId: String, records: List<MarkEntity>, sync: SyncResourceEntity) { deleteMarks(semesterId); upsertMarks(records); upsertSyncResource(sync) }
     @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertSyncResource(sync) }

@@ -20,8 +20,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MarkEntity::class,
         GradeEntity::class,
         AcademicSummaryEntity::class,
+        AcademicCalendarEntity::class,
+        ClassMessageEntity::class,
+        CourseMaterialEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class VioraDatabase : RoomDatabase() {
@@ -35,7 +38,7 @@ abstract class VioraDatabase : RoomDatabase() {
                 context.applicationContext,
                 VioraDatabase::class.java,
                 "viora.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
 
         fun closeAndForget() = synchronized(this) {
@@ -98,5 +101,11 @@ abstract class VioraDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE `academic_summaries` (`id` TEXT NOT NULL, `gpa` REAL, `cgpa` REAL, `registeredCredits` REAL, `earnedCredits` REAL, `gradeCounts` TEXT NOT NULL, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))")
             }
         }
+        private val MIGRATION_4_5 = object : Migration(4, 5) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE `academic_calendar` (`semesterId` TEXT NOT NULL, `id` TEXT NOT NULL, `dateEpochDay` INTEGER NOT NULL, `title` TEXT NOT NULL, `dayType` TEXT NOT NULL, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`semesterId`, `id`))")
+            db.execSQL("CREATE INDEX `index_academic_calendar_semesterId` ON `academic_calendar` (`semesterId`)"); db.execSQL("CREATE INDEX `index_academic_calendar_dateEpochDay` ON `academic_calendar` (`dateEpochDay`)")
+            db.execSQL("CREATE TABLE `class_messages` (`id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `courseTitle` TEXT NOT NULL, `faculty` TEXT NOT NULL, `subject` TEXT NOT NULL, `body` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))"); db.execSQL("CREATE INDEX `index_class_messages_postedEpochMillis` ON `class_messages` (`postedEpochMillis`)")
+            db.execSQL("CREATE TABLE `course_materials` (`semesterId` TEXT NOT NULL, `id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `title` TEXT NOT NULL, `fileName` TEXT NOT NULL, `downloadPath` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`semesterId`, `id`))"); db.execSQL("CREATE INDEX `index_course_materials_semesterId` ON `course_materials` (`semesterId`)"); db.execSQL("CREATE INDEX `index_course_materials_courseCode` ON `course_materials` (`courseCode`)")
+        } }
     }
 }

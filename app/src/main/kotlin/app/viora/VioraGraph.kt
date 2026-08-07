@@ -7,6 +7,7 @@ import app.viora.data.AttendanceRepository
 import app.viora.data.DigitalAssignmentRepository
 import app.viora.data.ExamRepository
 import app.viora.data.ResultsRepository
+import app.viora.data.AcademicExtrasRepository
 import app.viora.database.VioraDatabase
 import app.viora.network.HttpVtopGateway
 import app.viora.network.IsolatedCookieJar
@@ -17,6 +18,7 @@ import app.viora.security.EncryptedCookieStore
 import app.viora.security.EncryptedPreferencesBlobStore
 import app.viora.sync.TimetableSyncCoordinator
 import app.viora.notifications.VioraNotifications
+import app.viora.auth.LocalAccountManager
 
 class VioraGraph(context: Context) {
     private val appContext = context.applicationContext
@@ -34,8 +36,10 @@ class VioraGraph(context: Context) {
     val assignments = DigitalAssignmentRepository(database.academicDao(), gateway)
     val exams = ExamRepository(database.academicDao(), gateway)
     val results = ResultsRepository(database.academicDao(), gateway)
+    val extras = AcademicExtrasRepository(database.academicDao(), gateway)
     val notifications = VioraNotifications(appContext, database.academicDao())
     val sessions = SessionManager(gateway, credentials)
+    val account = LocalAccountManager(appContext, gateway, credentials, secureBlobs)
     val timetableSync = TimetableSyncCoordinator(sessions, timetable)
     val settings = appContext.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE)
 

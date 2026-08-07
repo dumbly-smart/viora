@@ -59,6 +59,9 @@ class SessionManagerTest {
         override suspend fun marks(semesterId: String) = emptyList<app.viora.network.MarkRecord>()
         override suspend fun grades(semesterId: String) = app.viora.network.GradeSnapshot(emptyList(), null)
         override suspend fun cgpa() = app.viora.network.CgpaSnapshot(null, null, null, emptyMap())
+        override suspend fun academicCalendar(semesterId: String) = emptyList<app.viora.network.AcademicCalendarRecord>()
+        override suspend fun classMessages() = emptyList<app.viora.network.ClassMessageRecord>()
+        override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String) = emptyList<app.viora.network.CourseMaterialRecord>()
         override suspend fun clearLocalSession() = Unit
     }
 

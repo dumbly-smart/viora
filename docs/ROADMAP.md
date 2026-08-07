@@ -16,6 +16,8 @@
 
 Current vertical slices: encrypted session restoration, semester discovery, direct VTOP timetable, attendance, digital-assignment, exam, assessment-mark, grade, and CGPA synchronization; transactional Room caches; Home/Schedule/Courses/Tasks rendering; attendance projections; current/next-class context; sync freshness; six-hour WorkManager refresh; and deduplicated 24-hour local reminders are implemented. Attendance, marks, grades, and CGPA contracts have been validated against an authorized account without retaining its data in fixtures or logs.
 
+The next local-first slices now include academic-calendar/holiday caching, class-message caching, course-material metadata, consolidated course summaries, notification category controls, and a destructive local-only logout that never invokes VTOP's server logout endpoint.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.

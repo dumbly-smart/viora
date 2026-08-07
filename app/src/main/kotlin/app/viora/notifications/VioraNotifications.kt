@@ -34,6 +34,7 @@ class VioraNotifications(
         val now = clock()
         val horizon = now + Duration.ofHours(24).toMillis()
         dao.assignmentsDueBetween(semesterId, now, horizon).forEach { assignment ->
+            if (!preferences.getBoolean("notify_deadlines", true)) return@forEach
             notifyOnce(
                 key = "da-24h:$semesterId:${assignment.id}:${assignment.dueEpochMillis}",
                 channel = DEADLINES,
@@ -42,6 +43,7 @@ class VioraNotifications(
             )
         }
         dao.examsBetween(semesterId, now, horizon).forEach { exam ->
+            if (!preferences.getBoolean("notify_exams", true)) return@forEach
             notifyOnce(
                 key = "exam-24h:$semesterId:${exam.id}:${exam.startsEpochMillis}",
                 channel = EXAMS,
@@ -72,6 +74,7 @@ class VioraNotifications(
     private fun canNotify(): Boolean =
         Build.VERSION.SDK_INT < 33 ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    private val preferences get() = context.getSharedPreferences("viora_local_settings", Context.MODE_PRIVATE)
 
     companion object {
         const val DEADLINES = "viora-deadlines"
