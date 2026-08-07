@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.viora.auth.SessionResolution
 import app.viora.database.SlotWithCourse
+import app.viora.domain.AttendanceCalculator
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
 import app.viora.sync.SyncOutcome
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 
 data class VioraUiState(
     val configured: Boolean = false,
+    val reauthRequired: Boolean = false,
     val username: String = "",
     val password: String = "",
     val rememberLogin: Boolean = true,
@@ -28,6 +30,17 @@ data class VioraUiState(
     val semesters: List<SemesterOption> = emptyList(),
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
+    val attendance: List<AttendanceUi> = emptyList(),
+)
+
+data class AttendanceUi(
+    val courseCode: String,
+    val courseTitle: String,
+    val attended: Int,
+    val held: Int,
+    val percentage: Double,
+    val skippable: Int,
+    val recovery: Int,
 )
 
 class VioraAppViewModel(
@@ -39,6 +52,7 @@ class VioraAppViewModel(
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
+    private var attendanceObservation: Job? = null
 
     init {
         if (state.value.configured) restoreSessionAndLoad()
@@ -63,7 +77,9 @@ class VioraAppViewModel(
                         if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
                         else graph.credentials.clear()
                         graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, true).commit()
-                        mutableState.update { it.copy(configured = true, password = "", loading = false) }
+                        mutableState.update {
+                            it.copy(configured = true, reauthRequired = false, password = "", loading = false)
+                        }
                         loadSemestersAndRefresh()
                     }
                     SessionState.VerificationRequired -> mutableState.update {
@@ -87,10 +103,15 @@ class VioraAppViewModel(
         viewModelScope.launch { refreshSemester(semester) }
     }
 
+    fun beginReauthentication() = mutableState.update {
+        it.copy(configured = false, loading = false, password = "", error = null)
+    }
+
     fun selectSemester(semester: SemesterOption) {
         saveSemester(semester)
         mutableState.update { it.copy(activeSemester = semester) }
         observeTimetable(semester.id)
+        observeAttendance(semester.id)
         refresh()
     }
 
@@ -119,6 +140,7 @@ class VioraAppViewModel(
                     it.copy(semesters = options, activeSemester = selected, loading = false, syncMessage = null)
                 }
                 observeTimetable(selected.id)
+                observeAttendance(selected.id)
                 scheduler.schedule()
                 refreshSemester(selected)
             }
@@ -127,8 +149,15 @@ class VioraAppViewModel(
 
     private suspend fun refreshSemester(semester: SemesterOption) {
         when (graph.timetableSync.refresh(semester.id, semester.name)) {
-            SyncOutcome.Updated -> mutableState.update {
-                it.copy(loading = false, syncMessage = "Timetable updated", error = null)
+            SyncOutcome.Updated -> {
+                val attendanceResult = graph.attendance.refresh(semester.id)
+                mutableState.update {
+                    it.copy(
+                        loading = false,
+                        syncMessage = if (attendanceResult.isSuccess) "Academics updated" else "Timetable updated",
+                        error = if (attendanceResult.isFailure) "Attendance refresh failed; showing cached data" else null,
+                    )
+                }
             }
             SyncOutcome.SignInRequired -> requireSignIn("Sign in again to refresh VTOP")
             SyncOutcome.VerificationRequired -> requireSignIn("VTOP requires interactive verification")
@@ -147,10 +176,52 @@ class VioraAppViewModel(
         }
     }
 
+    private fun observeAttendance(semesterId: String) {
+        attendanceObservation?.cancel()
+        attendanceObservation = viewModelScope.launch {
+            graph.attendance.observe(semesterId)
+                .catch { mutableState.update { state -> state.copy(error = "Could not read cached attendance") } }
+                .collect { records ->
+                    val projections = records.map { record ->
+                        val projection = AttendanceCalculator.calculate(record.attended, record.held, 75)
+                        AttendanceUi(
+                            record.courseCode,
+                            record.courseTitle,
+                            record.attended,
+                            record.held,
+                            projection.percentage,
+                            projection.skippableClasses,
+                            projection.classesToRecover,
+                        )
+                    }
+                    mutableState.update { it.copy(attendance = projections) }
+                }
+        }
+    }
+
     private fun requireSignIn(message: String) {
-        graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, false).commit()
-        mutableState.update {
-            it.copy(configured = false, loading = false, password = "", syncMessage = null, error = message)
+        val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+        val savedName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null)
+        if (savedId != null) {
+            val semester = SemesterOption(savedId, savedName ?: savedId)
+            observeTimetable(savedId)
+            observeAttendance(savedId)
+            mutableState.update {
+                it.copy(
+                    configured = true,
+                    reauthRequired = true,
+                    activeSemester = semester,
+                    loading = false,
+                    password = "",
+                    syncMessage = null,
+                    error = message,
+                )
+            }
+        } else {
+            graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, false).commit()
+            mutableState.update {
+                it.copy(configured = false, loading = false, password = "", syncMessage = null, error = message)
+            }
         }
     }
 

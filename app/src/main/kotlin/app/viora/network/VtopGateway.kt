@@ -19,11 +19,21 @@ data class SemesterOption(
     val name: String,
 )
 
+data class AttendanceRecord(
+    val courseCode: String,
+    val courseTitle: String,
+    val attended: Int,
+    val held: Int,
+)
+
+data class AttendanceSnapshot(val records: List<AttendanceRecord>)
+
 interface VtopGateway {
     suspend fun sessionState(): SessionState
     suspend fun login(username: String, password: CharArray): SessionState
     suspend fun semesters(): List<SemesterOption>
     suspend fun timetable(semesterId: String): TimetableSnapshot
+    suspend fun attendance(semesterId: String): AttendanceSnapshot
 
     /** Clears Viora's local session only. It must not invoke VTOP's logout endpoint. */
     suspend fun clearLocalSession()

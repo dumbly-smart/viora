@@ -34,6 +34,15 @@ interface AcademicDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSyncResource(resource: SyncResourceEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAttendance(records: List<AttendanceEntity>)
+
+    @Query("DELETE FROM attendance WHERE semesterId = :semesterId")
+    suspend fun deleteAttendanceForSemester(semesterId: String)
+
+    @Query("SELECT * FROM attendance WHERE semesterId = :semesterId ORDER BY courseCode")
+    fun observeAttendance(semesterId: String): Flow<List<AttendanceEntity>>
+
     @Query("DELETE FROM class_slots WHERE courseId IN (SELECT id FROM courses WHERE semesterId = :semesterId)")
     suspend fun deleteSlotsForSemester(semesterId: String)
 
@@ -68,6 +77,17 @@ interface AcademicDao {
         deleteCoursesForSemester(semester.id)
         upsertCourses(courses)
         upsertSlots(slots)
+        upsertSyncResource(sync)
+    }
+
+    @Transaction
+    suspend fun replaceAttendance(
+        semesterId: String,
+        records: List<AttendanceEntity>,
+        sync: SyncResourceEntity,
+    ) {
+        deleteAttendanceForSemester(semesterId)
+        upsertAttendance(records)
         upsertSyncResource(sync)
     }
 }

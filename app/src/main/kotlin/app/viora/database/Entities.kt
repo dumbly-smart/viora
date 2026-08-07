@@ -62,3 +62,17 @@ data class SyncResourceEntity(
     val lastSuccessEpochMillis: Long?,
     val safeError: String?,
 )
+
+@Entity(
+    tableName = "attendance",
+    indices = [Index("semesterId"), Index("courseCode")],
+    primaryKeys = ["semesterId", "courseCode"],
+)
+data class AttendanceEntity(
+    val semesterId: String,
+    val courseCode: String,
+    val courseTitle: String,
+    val attended: Int,
+    val held: Int,
+    val sourceEpochMillis: Long,
+)

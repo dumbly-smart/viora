@@ -53,6 +53,7 @@ class SessionManagerTest {
         }
         override suspend fun semesters() = emptyList<app.viora.network.SemesterOption>()
         override suspend fun timetable(semesterId: String) = TimetableSnapshot(emptyList(), emptyList())
+        override suspend fun attendance(semesterId: String) = app.viora.network.AttendanceSnapshot(emptyList())
         override suspend fun clearLocalSession() = Unit
     }
 

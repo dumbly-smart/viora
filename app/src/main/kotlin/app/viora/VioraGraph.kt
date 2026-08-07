@@ -3,6 +3,7 @@ package app.viora
 import android.content.Context
 import app.viora.auth.SessionManager
 import app.viora.data.TimetableRepository
+import app.viora.data.AttendanceRepository
 import app.viora.database.VioraDatabase
 import app.viora.network.HttpVtopGateway
 import app.viora.network.IsolatedCookieJar
@@ -25,6 +26,7 @@ class VioraGraph(context: Context) {
     val gateway = HttpVtopGateway(VioraHttpClient.create(cookieJar), cookieJar)
     val database = VioraDatabase.get(appContext)
     val timetable = TimetableRepository(database.academicDao(), gateway)
+    val attendance = AttendanceRepository(database.academicDao(), gateway)
     val sessions = SessionManager(gateway, credentials)
     val timetableSync = TimetableSyncCoordinator(sessions, timetable)
     val settings = appContext.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE)

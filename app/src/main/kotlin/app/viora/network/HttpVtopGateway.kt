@@ -1,6 +1,7 @@
 package app.viora.network
 
 import app.viora.parser.ParseResult
+import app.viora.parser.AttendanceParser
 import app.viora.parser.SemesterParser
 import app.viora.parser.TimetableParser
 import app.viora.parser.VtopDocument
@@ -17,6 +18,7 @@ class HttpVtopGateway(
     private val cookieJar: IsolatedCookieJar,
     private val timetableParser: TimetableParser = TimetableParser(),
     private val semesterParser: SemesterParser = SemesterParser(),
+    private val attendanceParser: AttendanceParser = AttendanceParser(),
 ) : VtopGateway {
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
@@ -81,6 +83,27 @@ class HttpVtopGateway(
         }
     }
 
+    override suspend fun attendance(semesterId: String): AttendanceSnapshot = withContext(Dispatchers.IO) {
+        val landing = get(ATTENDANCE_PAGE)
+        updateTokens(landing)
+        if (!isAuthenticated(landing)) throw AuthenticationException()
+        val token = csrf ?: throw IOException("VTOP did not provide a CSRF token")
+        val id = authorizedId ?: extractAuthorizedId(landing)
+            ?: throw IOException("VTOP did not provide an authorized student ID")
+        val body = FormBody.Builder()
+            .add("_csrf", token)
+            .add("authorizedID", id)
+            .add("semesterSubId", semesterId)
+            .add("x", System.currentTimeMillis().toString())
+            .build()
+        val html = execute(Request.Builder().url(ATTENDANCE_PROCESS).post(body).build())
+        when (val result = attendanceParser.parse(html)) {
+            is ParseResult.Success -> result.value
+            ParseResult.AuthenticationRequired -> throw AuthenticationException()
+            is ParseResult.InvalidDocument -> throw IOException(result.reason)
+        }
+    }
+
     override suspend fun clearLocalSession() {
         cookieJar.clear()
         csrf = null
@@ -118,6 +141,8 @@ class HttpVtopGateway(
         private const val LOGIN = "$BASE/login"
         private const val TIMETABLE_PAGE = "$BASE/academics/common/StudentTimeTable"
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"
+        private const val ATTENDANCE_PAGE = "$BASE/academics/common/StudentAttendance"
+        private const val ATTENDANCE_PROCESS = "$BASE/processViewStudentAttendance"
     }
 }
 

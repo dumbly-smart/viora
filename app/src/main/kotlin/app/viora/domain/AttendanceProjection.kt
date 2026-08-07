@@ -14,7 +14,7 @@ object AttendanceCalculator {
     fun calculate(attended: Int, held: Int, targetPercent: Int = 75): AttendanceProjection {
         require(attended >= 0) { "attended must not be negative" }
         require(held >= attended) { "held must be at least attended" }
-        require(targetPercent in 1..100) { "targetPercent must be between 1 and 100" }
+        require(targetPercent in 1..99) { "targetPercent must be between 1 and 99" }
 
         var skippable = 0
         while (meetsTarget(attended, held + skippable + 1, targetPercent)) skippable++

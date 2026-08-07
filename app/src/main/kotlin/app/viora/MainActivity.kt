@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
             VioraTheme {
                 val state by model.state.collectAsState()
                 if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -104,13 +104,20 @@ private fun Dashboard(
     state: VioraUiState,
     refresh: () -> Unit,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
+    reauthenticate: () -> Unit,
 ) {
     var selected by remember { mutableIntStateOf(0) }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Viora") },
-                actions = { TextButton(onClick = refresh, enabled = !state.loading) { Text("Sync") } },
+                actions = {
+                    if (state.reauthRequired) {
+                        TextButton(onClick = reauthenticate) { Text("Sign in to sync") }
+                    } else {
+                        TextButton(onClick = refresh, enabled = !state.loading) { Text("Sync") }
+                    }
+                },
             )
         },
         bottomBar = {
@@ -132,6 +139,7 @@ private fun Dashboard(
             when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
                 1 -> ScheduleScreen(state, selectSemester)
+                2 -> AttendanceScreen(state)
                 else -> Placeholder(destinations[selected].label)
             }
         }
@@ -159,7 +167,52 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
         } else {
             items(todaySlots, key = SlotWithCourse::slotId) { slot -> ClassCard(slot) }
         }
+        val risks = state.attendance.filter { it.recovery > 0 || it.skippable == 0 }.take(3)
+        if (risks.isNotEmpty()) {
+            item { Text("Attendance watch", style = MaterialTheme.typography.titleLarge) }
+            items(risks, key = AttendanceUi::courseCode) { AttendanceCard(it) }
+        }
         state.syncMessage?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
+    }
+}
+
+@Composable
+private fun AttendanceScreen(state: VioraUiState) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Text("Courses", style = MaterialTheme.typography.headlineMedium)
+            Text("Attendance projections use a 75% target and the latest VTOP snapshot.")
+        }
+        items(state.attendance, key = AttendanceUi::courseCode) { AttendanceCard(it) }
+        if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
+    }
+}
+
+@Composable
+private fun AttendanceCard(item: AttendanceUi) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                if (item.courseTitle.isBlank()) item.courseCode else "${item.courseCode} · ${item.courseTitle}",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text("${item.attended}/${item.held} · ${"%.1f".format(item.percentage)}%")
+            when {
+                item.recovery > 0 -> Text(
+                    "Attend ${item.recovery} consecutive classes to reach 75%",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                item.skippable == 0 -> Text("No projected buffer at 75%", color = MaterialTheme.colorScheme.error)
+                else -> Text(
+                    "Projected buffer: ${item.skippable} ${if (item.skippable == 1) "class" else "classes"}",
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
     }
 }
 
