@@ -3,6 +3,7 @@ package app.viora.data
 import app.viora.database.AcademicDao
 import app.viora.database.AttendanceEntity
 import app.viora.database.SyncResourceEntity
+import app.viora.database.AcademicChangeEntity
 import app.viora.network.VtopGateway
 import kotlinx.coroutines.flow.Flow
 
@@ -17,6 +18,7 @@ class AttendanceRepository(
         val attempt = clock()
         dao.upsertSyncResource(SyncResourceEntity(RESOURCE, "SYNCING", attempt, null, null))
         return runCatching {
+            val previous = dao.attendanceSnapshot(semesterId).associateBy { it.id }
             val snapshot = gateway.attendance(semesterId)
             require(snapshot.records.isNotEmpty()) { "VTOP returned empty attendance" }
             val records = snapshot.records.map {
@@ -32,6 +34,7 @@ class AttendanceRepository(
                     sourceEpochMillis = attempt,
                 )
             }
+            dao.insertChanges(records.mapNotNull { current -> previous[current.id]?.takeIf { it.attended != current.attended || it.held != current.held }?.let { AcademicChangeEntity("attendance:${current.id}:${current.attended}:${current.held}", "attendance", "Attendance updated", "${current.courseTitle}: ${current.attended}/${current.held}", attempt) } })
             dao.replaceAttendance(
                 semesterId,
                 records,

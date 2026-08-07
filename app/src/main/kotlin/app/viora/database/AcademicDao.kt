@@ -115,6 +115,17 @@ interface AcademicDao {
     @Transaction suspend fun replaceCalendar(semesterId: String, rows: List<AcademicCalendarEntity>) { deleteCalendar(semesterId); upsertCalendar(rows) }
     @Transaction suspend fun replaceMessages(rows: List<ClassMessageEntity>) { deleteMessages(); upsertMessages(rows) }
     @Transaction suspend fun replaceMaterials(semesterId: String, courseCode: String, rows: List<CourseMaterialEntity>) { deleteMaterials(semesterId, courseCode); upsertMaterials(rows) }
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertChanges(rows: List<AcademicChangeEntity>)
+    @Query("SELECT * FROM academic_changes WHERE occurredEpochMillis >= :since ORDER BY occurredEpochMillis DESC") suspend fun changesSince(since: Long): List<AcademicChangeEntity>
+    @Query("SELECT * FROM academic_changes ORDER BY occurredEpochMillis DESC LIMIT 50") fun observeChanges(): Flow<List<AcademicChangeEntity>>
+    @Query("SELECT * FROM exams WHERE semesterId = :semesterId") suspend fun examSnapshot(semesterId: String): List<ExamEntity>
+    @Query("SELECT * FROM attendance WHERE semesterId = :semesterId") suspend fun attendanceSnapshot(semesterId: String): List<AttendanceEntity>
+    @Query("SELECT * FROM class_messages") suspend fun messageSnapshot(): List<ClassMessageEntity>
+    @Query("SELECT * FROM course_materials WHERE semesterId = :semesterId AND courseCode = :courseCode") suspend fun materialSnapshot(semesterId: String, courseCode: String): List<CourseMaterialEntity>
+    @Query("SELECT * FROM class_slots WHERE courseId IN (SELECT id FROM courses WHERE semesterId = :semesterId)") suspend fun slotSnapshot(semesterId: String): List<ClassSlotEntity>
+    @Query("SELECT * FROM marks WHERE semesterId = :semesterId") suspend fun markSnapshot(semesterId: String): List<MarkEntity>
+    @Query("SELECT * FROM grades WHERE semesterId = :semesterId") suspend fun gradeSnapshot(semesterId: String): List<GradeEntity>
+    @Query("SELECT * FROM digital_assignments WHERE semesterId = :semesterId") suspend fun assignmentSnapshot(semesterId: String): List<DigitalAssignmentEntity>
 
     @Transaction suspend fun replaceMarks(semesterId: String, records: List<MarkEntity>, sync: SyncResourceEntity) { deleteMarks(semesterId); upsertMarks(records); upsertSyncResource(sync) }
     @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertSyncResource(sync) }

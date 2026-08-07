@@ -10,6 +10,7 @@ Log in once during setup and Viora keeps your academic data synced whenever you 
 - Full weekly timetable
 - Attendance for theory and lab separately
 - Skippable-class and recovery projections at the 75% target
+- Attendance what-if planning with adjustable targets and whole lab blocks
 - Digital assignments and due dates
 - Exam schedule, venue, and seat details
 - Assessment marks and weighted marks
@@ -19,6 +20,7 @@ Log in once during setup and Viora keeps your academic data synced whenever you 
 - Consolidated course details
 - Course-material download, open, and share actions
 - Local reminders for assignments and exams
+- Change alerts, quiet hours, notification deep links, and fully local search
 - Background sync with cached data when VTOP is unavailable
 - A seven-day timeline that accounts for holidays and instructional day orders
 

@@ -6,6 +6,7 @@ import app.viora.database.CourseEntity
 import app.viora.database.SemesterEntity
 import app.viora.database.SlotWithCourse
 import app.viora.database.SyncResourceEntity
+import app.viora.database.AcademicChangeEntity
 import app.viora.network.TimetableSnapshot
 import app.viora.network.VtopGateway
 import kotlinx.coroutines.flow.Flow
@@ -47,6 +48,7 @@ class TimetableRepository(
         snapshot: TimetableSnapshot,
         timestamp: Long,
     ) {
+        val previous = dao.slotSnapshot(semesterId).associateBy { it.id }
         val scopedIds = snapshot.courses.associate { it.id to "$semesterId:${it.id}" }
         val courses = snapshot.courses.map {
             CourseEntity(scopedIds.getValue(it.id), semesterId, it.code, it.title, it.faculty)
@@ -62,6 +64,7 @@ class TimetableRepository(
                 type = it.type.name,
             )
         }
+        dao.insertChanges(slots.mapNotNull { current -> previous[current.id]?.takeIf { it.dayOfWeek != current.dayOfWeek || it.startMinute != current.startMinute || it.endMinute != current.endMinute || it.venue != current.venue }?.let { AcademicChangeEntity("timetable:${current.id}:${current.dayOfWeek}:${current.startMinute}:${current.venue}", "timetable", "Timetable changed", "A class slot moved to ${current.venue}", timestamp) } })
         dao.replaceTimetable(
             semester = SemesterEntity(semesterId, semesterName, active = true),
             courses = courses,

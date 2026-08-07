@@ -3,6 +3,7 @@ package app.viora.data
 import app.viora.database.AcademicDao
 import app.viora.database.ExamEntity
 import app.viora.database.SyncResourceEntity
+import app.viora.database.AcademicChangeEntity
 import app.viora.network.VtopGateway
 import kotlinx.coroutines.flow.Flow
 
@@ -18,6 +19,7 @@ class ExamRepository(
         resource = RESOURCE,
         clock = clock,
     ) { attempt ->
+        val previous = dao.examSnapshot(semesterId).associateBy { it.id }
         val records = gateway.exams(semesterId).map {
             ExamEntity(
                 semesterId = semesterId,
@@ -31,6 +33,8 @@ class ExamRepository(
                 sourceEpochMillis = attempt,
             )
         }
+        val changes = records.mapNotNull { current -> previous[current.id]?.takeIf { it.startsEpochMillis != current.startsEpochMillis || it.venue != current.venue || it.seatNumber != current.seatNumber }?.let { AcademicChangeEntity("exam:${current.id}:${current.startsEpochMillis}:${current.venue}", "exams", "Exam schedule changed", "${current.examType} · ${current.courseCode} · ${current.venue}", attempt) } }
+        dao.insertChanges(changes)
         dao.replaceExams(
             semesterId,
             records,

@@ -9,6 +9,7 @@ import app.viora.database.SyncResourceEntity
 import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
+import app.viora.database.AcademicChangeEntity
 import app.viora.domain.AttendanceCalculator
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
@@ -48,6 +49,11 @@ data class VioraUiState(
     val deadlineNotifications: Boolean = true,
     val examNotifications: Boolean = true,
     val interactiveVerification: Boolean = false,
+    val attendanceTarget: Int = 75,
+    val plannedMissedBlocks: Int = 0,
+    val searchQuery: String = "",
+    val quietHours: Boolean = true,
+    val recentChanges: List<AcademicChangeEntity> = emptyList(),
 )
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
@@ -59,10 +65,14 @@ data class AttendanceUi(
     val courseType: String,
     val faculty: String,
     val attended: Int,
+    val sourceHeld: Int,
     val held: Int,
     val percentage: Double,
     val skippable: Int,
     val recovery: Int,
+    val blockSize: Int,
+    val skippableBlocks: Int,
+    val recoveryBlocks: Int,
 )
 
 data class AssignmentUi(
@@ -88,7 +98,7 @@ class VioraAppViewModel(
     private val scheduler: VioraSyncScheduler,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(
-        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true)),
+        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true)),
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
@@ -100,6 +110,7 @@ class VioraAppViewModel(
 
     init {
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
+        viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         if (state.value.configured) restoreSessionAndLoad()
     }
 
@@ -155,6 +166,10 @@ class VioraAppViewModel(
     fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_deadlines", enabled).apply(); mutableState.update { it.copy(deadlineNotifications = enabled) } }
     fun setExamNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_exams", enabled).apply(); mutableState.update { it.copy(examNotifications = enabled) } }
+    fun setAttendanceTarget(target: Int) { graph.settings.edit().putInt("attendance_target", target).apply(); mutableState.update { state -> state.copy(attendanceTarget = target, attendance = state.attendance.reproject(target, state.plannedMissedBlocks)) } }
+    fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
+    fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
+    fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
     fun completeInteractiveVerification(cookieHeader: String) {
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
@@ -264,7 +279,9 @@ class VioraAppViewModel(
                 .catch { mutableState.update { state -> state.copy(error = "Could not read cached attendance") } }
                 .collect { records ->
                     val projections = records.map { record ->
-                        val projection = AttendanceCalculator.calculate(record.attended, record.held, 75)
+                        val blockSize = if (record.courseType.contains("lab", true)) 2 else 1
+                        val projectedHeld = record.held + state.value.plannedMissedBlocks * blockSize
+                        val projection = AttendanceCalculator.calculate(record.attended, projectedHeld, state.value.attendanceTarget, blockSize)
                         AttendanceUi(
                             record.id,
                             record.courseCode,
@@ -273,9 +290,13 @@ class VioraAppViewModel(
                             record.faculty,
                             record.attended,
                             record.held,
+                            projectedHeld,
                             projection.percentage,
                             projection.skippableClasses,
                             projection.classesToRecover,
+                            blockSize,
+                            projection.skippableBlocks,
+                            projection.blocksToRecover,
                         )
                     }
                     mutableState.update { it.copy(attendance = projections) }
@@ -381,4 +402,10 @@ class VioraAppViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             VioraAppViewModel(graph, scheduler) as T
     }
+}
+
+private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<AttendanceUi> = map { item ->
+    val held = item.sourceHeld + missedBlocks * item.blockSize
+    val projection = AttendanceCalculator.calculate(item.attended, held, target, item.blockSize)
+    item.copy(held = held, percentage = projection.percentage, skippable = projection.skippableClasses, recovery = projection.classesToRecover, skippableBlocks = projection.skippableBlocks, recoveryBlocks = projection.blocksToRecover)
 }

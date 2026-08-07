@@ -20,6 +20,8 @@ The next local-first slices now include academic-calendar/holiday caching, class
 
 The current checkpoint adds VTOP's own in-app verification fallback, explicit material download/open/share into app-private storage, course/faculty endpoint resolution, calendar-aware class suppression/day-order handling, and a seven-day unified academic timeline.
 
+Attendance planning now supports a configurable target, hypothetical missed blocks, and conservative whole-lab-block projections. Room also keeps deterministic change events for timetable, attendance, assignments, exams, marks, grades, messages, and materials; these drive deduplicated local alerts and an in-app “What changed” feed. Global search runs only over the on-device cache.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.

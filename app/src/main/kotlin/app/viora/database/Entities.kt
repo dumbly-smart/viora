@@ -134,3 +134,6 @@ data class AcademicCalendarEntity(val semesterId: String, val id: String, val da
 data class ClassMessageEntity(@PrimaryKey val id: String, val courseCode: String, val courseTitle: String, val faculty: String, val subject: String, val body: String, val postedEpochMillis: Long?, val sourceEpochMillis: Long)
 @Entity(tableName = "course_materials", indices = [Index("semesterId"), Index("courseCode")], primaryKeys = ["semesterId", "id"])
 data class CourseMaterialEntity(val semesterId: String, val id: String, val courseCode: String, val title: String, val fileName: String, val downloadPath: String, val postedEpochMillis: Long?, val sourceEpochMillis: Long)
+
+@Entity(tableName = "academic_changes", indices = [Index("occurredEpochMillis")])
+data class AcademicChangeEntity(@PrimaryKey val id: String, val category: String, val title: String, val detail: String, val occurredEpochMillis: Long)

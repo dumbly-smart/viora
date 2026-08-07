@@ -23,8 +23,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AcademicCalendarEntity::class,
         ClassMessageEntity::class,
         CourseMaterialEntity::class,
+        AcademicChangeEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class VioraDatabase : RoomDatabase() {
@@ -38,7 +39,7 @@ abstract class VioraDatabase : RoomDatabase() {
                 context.applicationContext,
                 VioraDatabase::class.java,
                 "viora.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
         }
 
         fun closeAndForget() = synchronized(this) {
@@ -106,6 +107,10 @@ abstract class VioraDatabase : RoomDatabase() {
             db.execSQL("CREATE INDEX `index_academic_calendar_semesterId` ON `academic_calendar` (`semesterId`)"); db.execSQL("CREATE INDEX `index_academic_calendar_dateEpochDay` ON `academic_calendar` (`dateEpochDay`)")
             db.execSQL("CREATE TABLE `class_messages` (`id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `courseTitle` TEXT NOT NULL, `faculty` TEXT NOT NULL, `subject` TEXT NOT NULL, `body` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))"); db.execSQL("CREATE INDEX `index_class_messages_postedEpochMillis` ON `class_messages` (`postedEpochMillis`)")
             db.execSQL("CREATE TABLE `course_materials` (`semesterId` TEXT NOT NULL, `id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `title` TEXT NOT NULL, `fileName` TEXT NOT NULL, `downloadPath` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`semesterId`, `id`))"); db.execSQL("CREATE INDEX `index_course_materials_semesterId` ON `course_materials` (`semesterId`)"); db.execSQL("CREATE INDEX `index_course_materials_courseCode` ON `course_materials` (`courseCode`)")
+        } }
+        private val MIGRATION_5_6 = object : Migration(5, 6) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE `academic_changes` (`id` TEXT NOT NULL, `category` TEXT NOT NULL, `title` TEXT NOT NULL, `detail` TEXT NOT NULL, `occurredEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+            db.execSQL("CREATE INDEX `index_academic_changes_occurredEpochMillis` ON `academic_changes` (`occurredEpochMillis`)")
         } }
     }
 }

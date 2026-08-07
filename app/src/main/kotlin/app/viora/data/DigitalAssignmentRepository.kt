@@ -3,6 +3,7 @@ package app.viora.data
 import app.viora.database.AcademicDao
 import app.viora.database.DigitalAssignmentEntity
 import app.viora.database.SyncResourceEntity
+import app.viora.database.AcademicChangeEntity
 import app.viora.network.VtopGateway
 import kotlinx.coroutines.flow.Flow
 import java.time.ZoneId
@@ -19,6 +20,7 @@ class DigitalAssignmentRepository(
         resource = RESOURCE,
         clock = clock,
     ) { attempt ->
+        val previous = dao.assignmentSnapshot(semesterId).associateBy { it.id }
         val records = gateway.digitalAssignments().map {
             DigitalAssignmentEntity(
                 semesterId = semesterId,
@@ -31,6 +33,7 @@ class DigitalAssignmentRepository(
                 sourceEpochMillis = attempt,
             )
         }
+        dao.insertChanges(records.mapNotNull { row -> previous[row.id]?.takeIf { it.dueEpochMillis != row.dueEpochMillis || it.status != row.status }?.let { AcademicChangeEntity("assignment:${row.id}:${row.dueEpochMillis}:${row.status}", "assignments", "Assignment updated", "${row.courseCode} · ${row.title}", attempt) } })
         dao.replaceAssignments(
             semesterId,
             records,

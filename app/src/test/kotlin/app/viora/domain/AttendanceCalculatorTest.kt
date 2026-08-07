@@ -28,4 +28,10 @@ class AttendanceCalculatorTest {
             AttendanceCalculator.calculate(attended = 11, held = 10)
         }
     }
+
+    @Test fun `converts lab hours into whole blocks conservatively`() {
+        val result = AttendanceCalculator.calculate(attended = 18, held = 20, blockSize = 2)
+        assertEquals(2, result.skippableBlocks)
+        assertEquals(0, result.blocksToRecover)
+    }
 }
