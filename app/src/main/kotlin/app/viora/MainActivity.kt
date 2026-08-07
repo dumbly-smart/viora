@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -374,8 +373,8 @@ private fun ResultsScreen(state: VioraUiState) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Academic results", style = MaterialTheme.typography.headlineMedium) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SummaryMetric("GPA", state.gpa?.cleanNumber() ?: "—", Modifier.weight(1f))
-            SummaryMetric("CGPA", state.cgpa?.cleanNumber() ?: "—", Modifier.weight(1f))
+            SummaryMetric("GPA", state.gpa?.cleanNumber() ?: "—")
+            SummaryMetric("CGPA", state.cgpa?.cleanNumber() ?: "—")
         } }
         items(state.grades, key = GradeUi::courseCode) { grade -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
             Text("${grade.courseCode} · ${grade.courseTitle}", style = MaterialTheme.typography.titleMedium)
