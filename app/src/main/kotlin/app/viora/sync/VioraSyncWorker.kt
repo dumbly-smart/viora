@@ -28,7 +28,7 @@ class VioraSyncWorker(
                     graph.exams.refresh(semesterId),
                 )
                 graph.notifications.publishUpcoming(semesterId)
-                if (results.all(Result<*>::isSuccess)) Result.success() else Result.retry()
+                if (results.all { it.isSuccess }) Result.success() else Result.retry()
             }
             SyncOutcome.SignInRequired, SyncOutcome.VerificationRequired -> Result.failure()
             is SyncOutcome.Failed -> Result.retry()
