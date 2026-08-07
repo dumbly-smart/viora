@@ -21,7 +21,15 @@ class VioraSyncWorker(
         val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null) ?: return Result.success()
         val semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
         return when (graph.timetableSync.refresh(semesterId, semesterName)) {
-            SyncOutcome.Updated -> if (graph.attendance.refresh(semesterId).isSuccess) Result.success() else Result.retry()
+            SyncOutcome.Updated -> {
+                val results = listOf(
+                    graph.attendance.refresh(semesterId),
+                    graph.assignments.refresh(semesterId),
+                    graph.exams.refresh(semesterId),
+                )
+                graph.notifications.publishUpcoming(semesterId)
+                if (results.all(Result<*>::isSuccess)) Result.success() else Result.retry()
+            }
             SyncOutcome.SignInRequired, SyncOutcome.VerificationRequired -> Result.failure()
             is SyncOutcome.Failed -> Result.retry()
         }

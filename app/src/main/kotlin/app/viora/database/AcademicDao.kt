@@ -43,6 +43,33 @@ interface AcademicDao {
     @Query("SELECT * FROM attendance WHERE semesterId = :semesterId ORDER BY courseCode")
     fun observeAttendance(semesterId: String): Flow<List<AttendanceEntity>>
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAssignments(records: List<DigitalAssignmentEntity>)
+
+    @Query("DELETE FROM digital_assignments WHERE semesterId = :semesterId")
+    suspend fun deleteAssignmentsForSemester(semesterId: String)
+
+    @Query("SELECT * FROM digital_assignments WHERE semesterId = :semesterId ORDER BY dueEpochMillis IS NULL, dueEpochMillis")
+    fun observeAssignments(semesterId: String): Flow<List<DigitalAssignmentEntity>>
+
+    @Query("SELECT * FROM digital_assignments WHERE semesterId = :semesterId AND dueEpochMillis BETWEEN :from AND :to ORDER BY dueEpochMillis")
+    suspend fun assignmentsDueBetween(semesterId: String, from: Long, to: Long): List<DigitalAssignmentEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertExams(records: List<ExamEntity>)
+
+    @Query("DELETE FROM exams WHERE semesterId = :semesterId")
+    suspend fun deleteExamsForSemester(semesterId: String)
+
+    @Query("SELECT * FROM exams WHERE semesterId = :semesterId ORDER BY startsEpochMillis")
+    fun observeExams(semesterId: String): Flow<List<ExamEntity>>
+
+    @Query("SELECT * FROM exams WHERE semesterId = :semesterId AND startsEpochMillis BETWEEN :from AND :to ORDER BY startsEpochMillis")
+    suspend fun examsBetween(semesterId: String, from: Long, to: Long): List<ExamEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertNotificationLedger(record: NotificationLedgerEntity): Long
+
     @Query("DELETE FROM class_slots WHERE courseId IN (SELECT id FROM courses WHERE semesterId = :semesterId)")
     suspend fun deleteSlotsForSemester(semesterId: String)
 
@@ -88,6 +115,28 @@ interface AcademicDao {
     ) {
         deleteAttendanceForSemester(semesterId)
         upsertAttendance(records)
+        upsertSyncResource(sync)
+    }
+
+    @Transaction
+    suspend fun replaceAssignments(
+        semesterId: String,
+        records: List<DigitalAssignmentEntity>,
+        sync: SyncResourceEntity,
+    ) {
+        deleteAssignmentsForSemester(semesterId)
+        upsertAssignments(records)
+        upsertSyncResource(sync)
+    }
+
+    @Transaction
+    suspend fun replaceExams(
+        semesterId: String,
+        records: List<ExamEntity>,
+        sync: SyncResourceEntity,
+    ) {
+        deleteExamsForSemester(semesterId)
+        upsertExams(records)
         upsertSyncResource(sync)
     }
 }

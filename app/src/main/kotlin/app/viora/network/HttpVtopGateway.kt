@@ -2,6 +2,8 @@ package app.viora.network
 
 import app.viora.parser.ParseResult
 import app.viora.parser.AttendanceParser
+import app.viora.parser.DigitalAssignmentParser
+import app.viora.parser.ExamParser
 import app.viora.parser.SemesterParser
 import app.viora.parser.TimetableParser
 import app.viora.parser.VtopDocument
@@ -19,6 +21,8 @@ class HttpVtopGateway(
     private val timetableParser: TimetableParser = TimetableParser(),
     private val semesterParser: SemesterParser = SemesterParser(),
     private val attendanceParser: AttendanceParser = AttendanceParser(),
+    private val assignmentParser: DigitalAssignmentParser = DigitalAssignmentParser(),
+    private val examParser: ExamParser = ExamParser(),
 ) : VtopGateway {
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
@@ -104,6 +108,39 @@ class HttpVtopGateway(
         }
     }
 
+    override suspend fun digitalAssignments(): List<DigitalAssignmentRecord> = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(DA_PAGE)
+        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
+        val body = FormBody.Builder()
+            .add("_csrf", token)
+            .add("authorizedID", id)
+            .add("x", System.currentTimeMillis().toString())
+            .build()
+        val html = execute(Request.Builder().url(DA_PROCESS).post(body).build())
+        when (val result = assignmentParser.parse(html)) {
+            is ParseResult.Success -> result.value
+            ParseResult.AuthenticationRequired -> throw AuthenticationException()
+            is ParseResult.InvalidDocument -> throw IOException(result.reason)
+        }
+    }
+
+    override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
+        val token = ensureAuthenticatedPage(EXAM_PAGE)
+        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
+        val body = FormBody.Builder()
+            .add("_csrf", token)
+            .add("authorizedID", id)
+            .add("semesterSubId", semesterId)
+            .add("x", System.currentTimeMillis().toString())
+            .build()
+        val html = execute(Request.Builder().url(EXAM_PROCESS).post(body).build())
+        when (val result = examParser.parse(html)) {
+            is ParseResult.Success -> result.value
+            ParseResult.AuthenticationRequired -> throw AuthenticationException()
+            is ParseResult.InvalidDocument -> throw IOException(result.reason)
+        }
+    }
+
     override suspend fun clearLocalSession() {
         cookieJar.clear()
         csrf = null
@@ -111,6 +148,13 @@ class HttpVtopGateway(
     }
 
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
+
+    private fun ensureAuthenticatedPage(url: String): String {
+        val html = get(url)
+        updateTokens(html)
+        if (!isAuthenticated(html)) throw AuthenticationException()
+        return csrf ?: throw IOException("VTOP did not provide a CSRF token")
+    }
 
     private fun execute(request: Request): String = client.newCall(request).execute().use { response ->
         if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
@@ -143,6 +187,10 @@ class HttpVtopGateway(
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"
         private const val ATTENDANCE_PAGE = "$BASE/academics/common/StudentAttendance"
         private const val ATTENDANCE_PROCESS = "$BASE/processViewStudentAttendance"
+        private const val DA_PAGE = "$BASE/examinations/doDigitalAssignment"
+        private const val DA_PROCESS = "$BASE/examinations/processDigitalAssignment"
+        private const val EXAM_PAGE = "$BASE/examinations/StudentExamSchedule"
+        private const val EXAM_PROCESS = "$BASE/examinations/doSearchExamScheduleForStudent"
     }
 }
 

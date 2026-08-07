@@ -1,9 +1,12 @@
 package app.viora
 
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,6 +52,9 @@ import app.viora.sync.VioraSyncScheduler
 import app.viora.ui.VioraTheme
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -56,12 +63,20 @@ class MainActivity : ComponentActivity() {
     private val model by viewModels<VioraAppViewModel> {
         VioraAppViewModel.Factory(graph, VioraSyncScheduler(applicationContext))
     }
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             VioraTheme {
                 val state by model.state.collectAsState()
+                LaunchedEffect(state.configured) {
+                    if (state.configured && Build.VERSION.SDK_INT >= 33) {
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
                 if (state.configured) {
                     Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication)
                 } else {
@@ -140,6 +155,7 @@ private fun Dashboard(
                 0 -> HomeScreen(state, PaddingValues())
                 1 -> ScheduleScreen(state, selectSemester)
                 2 -> AttendanceScreen(state)
+                3 -> TasksScreen(state)
                 else -> Placeholder(destinations[selected].label)
             }
         }
@@ -171,6 +187,12 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
         if (risks.isNotEmpty()) {
             item { Text("Attendance watch", style = MaterialTheme.typography.titleLarge) }
             items(risks, key = AttendanceUi::courseCode) { AttendanceCard(it) }
+        }
+        state.assignments.firstOrNull { it.dueEpochMillis == null || it.dueEpochMillis > System.currentTimeMillis() }?.let {
+            item { SummaryCard("Next assignment", "${it.courseCode} · ${it.title}", it.dueEpochMillis.asAcademicTime()) }
+        }
+        state.exams.firstOrNull { it.startsEpochMillis > System.currentTimeMillis() }?.let {
+            item { SummaryCard("Next exam", "${it.examType} · ${it.courseCode}", it.startsEpochMillis.asAcademicTime()) }
         }
         state.syncMessage?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
     }
@@ -249,6 +271,48 @@ private fun ScheduleScreen(
             items(slots, key = SlotWithCourse::slotId) { ClassCard(it) }
         }
         if (grouped.isEmpty()) item { Text("No timetable has been cached for this semester.") }
+        if (state.exams.isNotEmpty()) {
+            item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+            items(state.exams, key = ExamUi::id) { ExamCard(it) }
+        }
+    }
+}
+
+@Composable
+private fun TasksScreen(state: VioraUiState) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item { Text("Tasks", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge) }
+        items(state.assignments, key = AssignmentUi::id) { assignment ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
+                    Text(assignment.dueEpochMillis.asAcademicTime("Due time unavailable"))
+                    if (assignment.status.isNotBlank()) Text(assignment.status)
+                }
+            }
+        }
+        if (state.assignments.isEmpty()) item { Text("No digital assignments are cached.") }
+        item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        items(state.exams, key = ExamUi::id) { ExamCard(it) }
+        if (state.exams.isEmpty()) item { Text("No examination schedule is cached.") }
+    }
+}
+
+@Composable
+private fun ExamCard(exam: ExamUi) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${exam.examType} · ${exam.courseCode}", style = MaterialTheme.typography.titleMedium)
+            if (exam.courseTitle.isNotBlank()) Text(exam.courseTitle)
+            Text(exam.startsEpochMillis.asAcademicTime())
+            val details = listOf(exam.venue, exam.seatNumber).filter(String::isNotBlank).joinToString(" · ")
+            if (details.isNotBlank()) Text(details, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -266,6 +330,12 @@ private fun ClassCard(slot: SlotWithCourse) {
 }
 
 private fun Int.asTime(): String = "%02d:%02d".format(this / 60, this % 60)
+
+private val academicDateTime = DateTimeFormatter.ofPattern("EEE, dd MMM · hh:mm a")
+private val academicZone = ZoneId.of("Asia/Kolkata")
+
+private fun Long?.asAcademicTime(fallback: String = "Time unavailable"): String =
+    this?.let { academicDateTime.format(Instant.ofEpochMilli(it).atZone(academicZone)) } ?: fallback
 
 @Composable
 private fun SummaryCard(title: String, value: String, supporting: String) {

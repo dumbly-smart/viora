@@ -76,3 +76,42 @@ data class AttendanceEntity(
     val held: Int,
     val sourceEpochMillis: Long,
 )
+
+@Entity(
+    tableName = "digital_assignments",
+    indices = [Index("semesterId"), Index("dueEpochMillis")],
+    primaryKeys = ["semesterId", "id"],
+)
+data class DigitalAssignmentEntity(
+    val semesterId: String,
+    val id: String,
+    val courseCode: String,
+    val title: String,
+    val dueEpochMillis: Long?,
+    val lastUpload: String,
+    val status: String,
+    val sourceEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "exams",
+    indices = [Index("semesterId"), Index("startsEpochMillis")],
+    primaryKeys = ["semesterId", "id"],
+)
+data class ExamEntity(
+    val semesterId: String,
+    val id: String,
+    val courseCode: String,
+    val courseTitle: String,
+    val examType: String,
+    val startsEpochMillis: Long,
+    val venue: String,
+    val seatNumber: String,
+    val sourceEpochMillis: Long,
+)
+
+@Entity(tableName = "notification_ledger")
+data class NotificationLedgerEntity(
+    @PrimaryKey val key: String,
+    val notifiedEpochMillis: Long,
+)

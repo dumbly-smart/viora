@@ -31,6 +31,8 @@ data class VioraUiState(
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
     val attendance: List<AttendanceUi> = emptyList(),
+    val assignments: List<AssignmentUi> = emptyList(),
+    val exams: List<ExamUi> = emptyList(),
 )
 
 data class AttendanceUi(
@@ -43,6 +45,24 @@ data class AttendanceUi(
     val recovery: Int,
 )
 
+data class AssignmentUi(
+    val id: String,
+    val courseCode: String,
+    val title: String,
+    val dueEpochMillis: Long?,
+    val status: String,
+)
+
+data class ExamUi(
+    val id: String,
+    val courseCode: String,
+    val courseTitle: String,
+    val examType: String,
+    val startsEpochMillis: Long,
+    val venue: String,
+    val seatNumber: String,
+)
+
 class VioraAppViewModel(
     private val graph: VioraGraph,
     private val scheduler: VioraSyncScheduler,
@@ -53,6 +73,8 @@ class VioraAppViewModel(
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
     private var attendanceObservation: Job? = null
+    private var assignmentObservation: Job? = null
+    private var examObservation: Job? = null
 
     init {
         if (state.value.configured) restoreSessionAndLoad()
@@ -112,6 +134,8 @@ class VioraAppViewModel(
         mutableState.update { it.copy(activeSemester = semester) }
         observeTimetable(semester.id)
         observeAttendance(semester.id)
+        observeAssignments(semester.id)
+        observeExams(semester.id)
         refresh()
     }
 
@@ -141,6 +165,8 @@ class VioraAppViewModel(
                 }
                 observeTimetable(selected.id)
                 observeAttendance(selected.id)
+                observeAssignments(selected.id)
+                observeExams(selected.id)
                 scheduler.schedule()
                 refreshSemester(selected)
             }
@@ -151,11 +177,15 @@ class VioraAppViewModel(
         when (graph.timetableSync.refresh(semester.id, semester.name)) {
             SyncOutcome.Updated -> {
                 val attendanceResult = graph.attendance.refresh(semester.id)
+                val assignmentResult = graph.assignments.refresh(semester.id)
+                val examResult = graph.exams.refresh(semester.id)
+                graph.notifications.publishUpcoming(semester.id)
+                val failed = listOf(attendanceResult, assignmentResult, examResult).count(Result<*>::isFailure)
                 mutableState.update {
                     it.copy(
                         loading = false,
-                        syncMessage = if (attendanceResult.isSuccess) "Academics updated" else "Timetable updated",
-                        error = if (attendanceResult.isFailure) "Attendance refresh failed; showing cached data" else null,
+                        syncMessage = if (failed == 0) "Academics updated" else "Updated with $failed partial failure(s)",
+                        error = if (failed > 0) "Some sections could not refresh; cached data was preserved" else null,
                     )
                 }
             }
@@ -199,6 +229,43 @@ class VioraAppViewModel(
         }
     }
 
+    private fun observeAssignments(semesterId: String) {
+        assignmentObservation?.cancel()
+        assignmentObservation = viewModelScope.launch {
+            graph.assignments.observe(semesterId)
+                .catch { mutableState.update { state -> state.copy(error = "Could not read cached assignments") } }
+                .collect { records ->
+                    mutableState.update { state ->
+                        state.copy(
+                            assignments = records.map {
+                                AssignmentUi(it.id, it.courseCode, it.title, it.dueEpochMillis, it.status)
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun observeExams(semesterId: String) {
+        examObservation?.cancel()
+        examObservation = viewModelScope.launch {
+            graph.exams.observe(semesterId)
+                .catch { mutableState.update { state -> state.copy(error = "Could not read cached exams") } }
+                .collect { records ->
+                    mutableState.update { state ->
+                        state.copy(
+                            exams = records.map {
+                                ExamUi(
+                                    it.id, it.courseCode, it.courseTitle, it.examType,
+                                    it.startsEpochMillis, it.venue, it.seatNumber,
+                                )
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
     private fun requireSignIn(message: String) {
         val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
         val savedName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null)
@@ -206,6 +273,8 @@ class VioraAppViewModel(
             val semester = SemesterOption(savedId, savedName ?: savedId)
             observeTimetable(savedId)
             observeAttendance(savedId)
+            observeAssignments(savedId)
+            observeExams(savedId)
             mutableState.update {
                 it.copy(
                     configured = true,
