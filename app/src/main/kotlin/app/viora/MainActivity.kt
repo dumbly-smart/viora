@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,6 +33,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +53,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import app.viora.database.SlotWithCourse
 import app.viora.setup.SetupAction
 import app.viora.setup.SetupScreen
@@ -148,6 +155,8 @@ private fun Dashboard(
 ) {
     var selected by remember(initialDestination) { mutableIntStateOf(when (initialDestination) { "schedule" -> 1; "courses" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
+    BoxWithConstraints {
+    val expanded = maxWidth >= 840.dp
     Scaffold(
         topBar = {
             TopAppBar(
@@ -163,7 +172,7 @@ private fun Dashboard(
             )
         },
         bottomBar = {
-            NavigationBar {
+            if (!expanded) NavigationBar {
                 destinations.forEachIndexed { index, destination ->
                     NavigationBarItem(
                         selected = selected == index,
@@ -175,9 +184,15 @@ private fun Dashboard(
             }
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Row(Modifier.fillMaxSize().padding(padding)) {
+            if (expanded) NavigationRail {
+                destinations.forEachIndexed { index, destination ->
+                    NavigationRailItem(selected = selected == index, onClick = { selected = index; detail = null }, icon = { Icon(destination.icon, contentDescription = destination.label) }, label = { Text(destination.label) })
+                }
+            }
+        Column(Modifier.weight(1f).fillMaxSize()) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp).semantics { liveRegion = LiveRegionMode.Assertive }) }
             if (detail != null) DetailScreen(state, detail!!, openMaterial) else when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
                 1 -> ScheduleScreen(state, selectSemester) { detail = DetailSelection("exam", it.id) }
@@ -187,6 +202,8 @@ private fun Dashboard(
             }
         }
     }
+    }
+}
 }
 
 @Composable
@@ -202,7 +219,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Today", style = MaterialTheme.typography.headlineMedium)
+            Text("Today", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             Text(
                 state.activeSemester?.name ?: "No semester selected",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -242,11 +259,11 @@ private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium)
+            Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             Text("Attendance, assessments, grades, faculty and materials from the local cache.")
         }
         item { Text("Target: ${state.attendanceTarget}%"); Slider(value = state.attendanceTarget.toFloat(), onValueChange = { setAttendanceTarget(it.toInt()) }, valueRange = 50f..95f, steps = 8) }
-        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Plan missing ${state.plannedMissedBlocks} future ${if (state.plannedMissedBlocks == 1) "block" else "blocks"}"); Row { TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks - 1) }) { Text("−") }; TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks + 1) }) { Text("+") } } } }
+        item { Column { Text("Plan missing ${state.plannedMissedBlocks} future ${if (state.plannedMissedBlocks == 1) "block" else "blocks"}"); Row { TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks - 1) }) { Text("Fewer") }; TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks + 1) }) { Text("More") } } } }
         items(state.attendance, key = AttendanceUi::id) { item -> Column(Modifier.clickable { showDetail("course", item.id) }) { AttendanceCard(item) } }
         if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
         if (state.grades.isNotEmpty()) item { Text("Grades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
@@ -294,7 +311,7 @@ private fun ScheduleScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { Text("Schedule", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Schedule", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
         if (state.semesters.size > 1) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -336,7 +353,7 @@ private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> U
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { Text("Tasks", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Tasks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
         item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge) }
         items(state.assignments, key = AssignmentUi::id) { assignment ->
             Card(Modifier.fillMaxWidth().clickable { showAssignment(assignment) }) {
@@ -466,7 +483,7 @@ private fun ResultsScreen(state: VioraUiState) {
 
 @Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption) -> Unit, setSyncHours: (Int) -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("More", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("More", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
         item { OutlinedTextField(value = state.searchQuery, onValueChange = setSearchQuery, label = { Text("Search cached academics") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         if (state.searchQuery.isNotBlank()) {
             val q = state.searchQuery.trim()
@@ -494,8 +511,10 @@ private fun ResultsScreen(state: VioraUiState) {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Exam reminders"); Switch(checked = state.examNotifications, onCheckedChange = setExamNotifications) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Quiet hours"); Text("10 PM–7 AM", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(checked = state.quietHours, onCheckedChange = setQuietHours) } }
         item { Text("Sync and storage", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        item { Text("Active semester"); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { state.semesters.take(3).forEach { semester -> TextButton(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester) { Text(semester.name.take(16)) } } } }
-        item { Text("Background sync: every ${state.syncHours} hours"); Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(1, 3, 6, 12, 24).forEach { hours -> TextButton(onClick = { setSyncHours(hours) }, enabled = hours != state.syncHours) { Text("${hours}h") } } } }
+        item { Column { Text("Active semester"); state.semesters.take(3).forEach { semester -> TextButton(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester, modifier = Modifier.fillMaxWidth()) { Text(semester.name) } } } }
+        if (state.rolloverDetected) item { Text("A new semester was detected. Older cached semesters remain archived below.", color = MaterialTheme.colorScheme.primary) }
+        if (state.cachedSemesters.any { !it.active }) item { Text("Archived: ${state.cachedSemesters.filterNot { it.active }.joinToString { it.name }}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Column { Text("Background sync: every ${state.syncHours} hours"); listOf(listOf(1, 3, 6), listOf(12, 24)).forEach { group -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { group.forEach { hours -> TextButton(onClick = { setSyncHours(hours) }, enabled = hours != state.syncHours) { Text("${hours}h") } } } } } }
         item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Viora's private app folder") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }

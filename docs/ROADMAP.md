@@ -24,6 +24,8 @@ Attendance planning now supports a configurable target, hypothetical missed bloc
 
 Detail views, managed material retries/storage cleanup, semester and sync-cadence settings, stricter embedded verification errors, and additional redacted VTOP layout fixtures are now implemented. A physical Android device was not attached during this checkpoint, so the embedded verification UI still needs its closed-device pass.
 
+The latest reliability pass adds an ADB smoke harness, offline-cache and v5-to-v6 migration instrumentation tests, automatic new-semester detection with archived historical caches, accessibility semantics/large-text-safe controls, and width-adaptive navigation rails for tablets and unfolded devices. CI compiles the instrumentation suite even when no Android target is attached.
+
 ## Phase 2 — reminders and polish
 
 - WorkManager background sync, change detection, notification ledger.

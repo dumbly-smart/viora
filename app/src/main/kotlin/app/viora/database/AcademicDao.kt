@@ -22,6 +22,9 @@ data class SlotWithCourse(
 
 @Dao
 interface AcademicDao {
+    @Query("SELECT * FROM semesters ORDER BY active DESC, name DESC") fun observeSemesters(): Flow<List<SemesterEntity>>
+    @Query("SELECT * FROM semesters") suspend fun semesterSnapshot(): List<SemesterEntity>
+    @Query("UPDATE semesters SET active = 0") suspend fun archiveAllSemesters()
     @Query("SELECT * FROM sync_resources ORDER BY resource")
     fun observeSyncResources(): Flow<List<SyncResourceEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -137,6 +140,7 @@ interface AcademicDao {
         slots: List<ClassSlotEntity>,
         sync: SyncResourceEntity,
     ) {
+        archiveAllSemesters()
         upsertSemester(semester)
         deleteSlotsForSemester(semester.id)
         deleteCoursesForSemester(semester.id)

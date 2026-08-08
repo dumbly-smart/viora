@@ -108,7 +108,7 @@ abstract class VioraDatabase : RoomDatabase() {
             db.execSQL("CREATE TABLE `class_messages` (`id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `courseTitle` TEXT NOT NULL, `faculty` TEXT NOT NULL, `subject` TEXT NOT NULL, `body` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))"); db.execSQL("CREATE INDEX `index_class_messages_postedEpochMillis` ON `class_messages` (`postedEpochMillis`)")
             db.execSQL("CREATE TABLE `course_materials` (`semesterId` TEXT NOT NULL, `id` TEXT NOT NULL, `courseCode` TEXT NOT NULL, `title` TEXT NOT NULL, `fileName` TEXT NOT NULL, `downloadPath` TEXT NOT NULL, `postedEpochMillis` INTEGER, `sourceEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`semesterId`, `id`))"); db.execSQL("CREATE INDEX `index_course_materials_semesterId` ON `course_materials` (`semesterId`)"); db.execSQL("CREATE INDEX `index_course_materials_courseCode` ON `course_materials` (`courseCode`)")
         } }
-        private val MIGRATION_5_6 = object : Migration(5, 6) { override fun migrate(db: SupportSQLiteDatabase) {
+        val MIGRATION_5_6 = object : Migration(5, 6) { override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("CREATE TABLE `academic_changes` (`id` TEXT NOT NULL, `category` TEXT NOT NULL, `title` TEXT NOT NULL, `detail` TEXT NOT NULL, `occurredEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))")
             db.execSQL("CREATE INDEX `index_academic_changes_occurredEpochMillis` ON `academic_changes` (`occurredEpochMillis`)")
         } }

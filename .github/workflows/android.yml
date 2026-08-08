@@ -20,5 +20,5 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.5.0"
-      - name: Unit tests and lint
-        run: gradle testDebugUnitTest lintDebug --stacktrace
+      - name: Unit tests, instrumentation compile, and lint
+        run: gradle testDebugUnitTest assembleDebugAndroidTest lintDebug --stacktrace

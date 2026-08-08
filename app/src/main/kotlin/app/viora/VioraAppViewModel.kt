@@ -10,8 +10,10 @@ import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
 import app.viora.database.AcademicChangeEntity
+import app.viora.database.SemesterEntity
 import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
+import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
 import app.viora.sync.SyncOutcome
@@ -62,6 +64,8 @@ data class VioraUiState(
     val downloads: Map<String, MaterialDownloadState> = emptyMap(),
     val downloadStorageBytes: Long = 0,
     val syncHours: Int = 6,
+    val cachedSemesters: List<SemesterEntity> = emptyList(),
+    val rolloverDetected: Boolean = false,
 )
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
@@ -120,6 +124,7 @@ class VioraAppViewModel(
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
+        viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
         if (state.value.configured) restoreSessionAndLoad()
     }
 
@@ -230,14 +235,17 @@ class VioraAppViewModel(
         runCatching { graph.gateway.semesters() }
             .onSuccess { options ->
                 val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
-                val selected = options.firstOrNull { it.id == savedId } ?: options.firstOrNull()
+                val cachedIds = graph.database.academicDao().semesterSnapshot().map { it.id }.toSet()
+                val decision = SemesterRollover.select(options.map { it.id }, cachedIds, savedId)
+                val rollover = decision.rolloverDetected
+                val selected = options.firstOrNull { it.id == decision.selectedId }
                 if (selected == null) {
                     mutableState.update { it.copy(loading = false, error = "No semester is available on VTOP") }
                     return@onSuccess
                 }
                 saveSemester(selected)
                 mutableState.update {
-                    it.copy(semesters = options, activeSemester = selected, loading = false, syncMessage = null)
+                    it.copy(semesters = options, activeSemester = selected, loading = false, rolloverDetected = rollover, syncMessage = if (rollover) "New semester detected; previous data was archived" else null)
                 }
                 observeTimetable(selected.id)
                 observeAttendance(selected.id)
