@@ -71,6 +71,7 @@ gradle assembleDebug
 
 ## Project notes
 
+- [Detailed tech stack](docs/TECH_STACK.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Features](docs/FEATURES.md)
 - [Sync and login](docs/SYNC_AND_AUTH.md)
