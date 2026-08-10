@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::clearDownloads, model::clearAcademicCache, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -151,6 +151,7 @@ private fun Dashboard(
     setSyncHours: (Int) -> Unit,
     clearDownloads: () -> Unit,
     clearAcademicCache: () -> Unit,
+    shareTimetableQr: () -> Unit,
     initialDestination: String?,
 ) {
     var selected by remember(initialDestination) { mutableIntStateOf(when (initialDestination) { "schedule" -> 1; "courses" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
@@ -195,7 +196,7 @@ private fun Dashboard(
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp).semantics { liveRegion = LiveRegionMode.Assertive }) }
             if (detail != null) DetailScreen(state, detail!!, openMaterial) else when (selected) {
                 0 -> HomeScreen(state, PaddingValues())
-                1 -> ScheduleScreen(state, selectSemester) { detail = DetailSelection("exam", it.id) }
+                1 -> ScheduleScreen(state, selectSemester, shareTimetableQr) { detail = DetailSelection("exam", it.id) }
                 2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
                 3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
                 else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, clearDownloads, clearAcademicCache)
@@ -305,13 +306,14 @@ private fun AttendanceCard(item: AttendanceUi) {
 private fun ScheduleScreen(
     state: VioraUiState,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
+    shareTimetableQr: () -> Unit,
     showExam: (ExamUi) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { Text("Schedule", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
+        item { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Schedule", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }); Button(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Text("Share timetable QR") } } }
         if (state.semesters.size > 1) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

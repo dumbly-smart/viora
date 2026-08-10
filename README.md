@@ -8,6 +8,7 @@ Log in once during setup and Viora keeps your academic data synced whenever you 
 
 - Today’s classes and the next class coming up
 - Full weekly timetable
+- Shareable timetable QR image generated entirely on-device
 - Attendance for theory and lab separately
 - Skippable-class and recovery projections at the 75% target
 - Attendance what-if planning with adjustable targets and whole lab blocks

@@ -207,6 +207,15 @@ class VioraAppViewModel(
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch { graph.materialManager.open(material, share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }
     }
+    fun shareTimetableQr() {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            graph.timetableQr.share(snapshot.activeSemester?.name ?: "Viora", snapshot.slots)
+                .onFailure { error -> mutableState.update { it.copy(error = error.message ?: "Could not create timetable QR") } }
+            mutableState.update { it.copy(loading = false) }
+        }
+    }
 
     fun selectSemester(semester: SemesterOption) {
         saveSemester(semester)

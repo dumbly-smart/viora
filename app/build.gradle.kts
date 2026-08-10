@@ -49,6 +49,7 @@ dependencies {
     implementation("androidx.work:work-runtime:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("org.jsoup:jsoup:1.22.1")
+    implementation("com.google.zxing:core:3.5.4")
     ksp("androidx.room:room-compiler:2.8.4")
 
     testImplementation("junit:junit:4.13.2")
