@@ -37,7 +37,13 @@ if printf '%s\n' "$VERIFY_OUTPUT" | grep -qi "Android Debug"; then
 fi
 
 if [ -n "${VIORA_CERT_SHA256:-}" ]; then
-    actual="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ': ' | tr '[:lower:]' '[:upper:]')"
+    actual="$(
+        printf '%s\n' "$VERIFY_OUTPUT" |
+            sed -n \
+                -e 's/^Signer #1 certificate SHA-256 digest: //p' \
+                -e 's/^V[0-9][0-9.]* Signer: certificate SHA-256 digest: //p' |
+            head -n 1 | tr -d ': ' | tr '[:lower:]' '[:upper:]'
+    )"
     expected="$(printf '%s' "$VIORA_CERT_SHA256" | tr -d ': ' | tr '[:lower:]' '[:upper:]')"
     if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
         echo "release certificate fingerprint does not match VIORA_CERT_SHA256" >&2
