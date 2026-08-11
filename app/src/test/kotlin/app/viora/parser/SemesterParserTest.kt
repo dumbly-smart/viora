@@ -25,4 +25,17 @@ class SemesterParserTest {
         val result = parser.parse("<html><body><input type='password'></body></html>")
         assertTrue(result is ParseResult.AuthenticationRequired)
     }
+
+    @Test fun `accepts renamed semester select variants`() {
+        val html = """
+            <select id="semesterSubIdForStudent">
+              <option value="0">Select Semester</option>
+              <option value="CH2026S1">Winter Semester 2025-26</option>
+            </select>
+        """.trimIndent()
+
+        val result = parser.parse(html) as ParseResult.Success
+
+        assertEquals(listOf("CH2026S1"), result.value.map { it.id })
+    }
 }

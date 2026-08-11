@@ -174,9 +174,11 @@ class VioraAppViewModel(
     }
 
     fun refresh() {
-        val semester = state.value.activeSemester ?: return
+        val semester = state.value.activeSemester
         mutableState.update { it.copy(loading = true, syncMessage = "Syncing with VTOP", error = null) }
-        viewModelScope.launch { refreshSemester(semester) }
+        viewModelScope.launch {
+            if (semester == null) loadSemestersAndRefresh() else refreshSemester(semester)
+        }
     }
 
     fun beginReauthentication() = mutableState.update {

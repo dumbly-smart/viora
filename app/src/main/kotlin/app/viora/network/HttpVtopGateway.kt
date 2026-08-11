@@ -69,8 +69,7 @@ class HttpVtopGateway(
     }
 
     override suspend fun semesters(): List<SemesterOption> = withContext(Dispatchers.IO) {
-        val html = get(TIMETABLE_PAGE)
-        updateTokens(html)
+        val html = menuPage(TIMETABLE_PAGE)
         when (val result = semesterParser.parse(html)) {
             is ParseResult.Success -> result.value
             ParseResult.AuthenticationRequired -> throw AuthenticationException()
@@ -79,9 +78,7 @@ class HttpVtopGateway(
     }
 
     override suspend fun timetable(semesterId: String): TimetableSnapshot = withContext(Dispatchers.IO) {
-        val landing = get(TIMETABLE_PAGE)
-        updateTokens(landing)
-        if (!isAuthenticated(landing)) throw AuthenticationException()
+        val landing = menuPage(TIMETABLE_PAGE)
         val token = csrf ?: throw IOException("VTOP did not provide a CSRF token")
         val id = authorizedId ?: extractAuthorizedId(landing)
             ?: throw IOException("VTOP did not provide an authorized student ID")
@@ -100,9 +97,7 @@ class HttpVtopGateway(
     }
 
     override suspend fun attendance(semesterId: String): AttendanceSnapshot = withContext(Dispatchers.IO) {
-        val landing = get(ATTENDANCE_PAGE)
-        updateTokens(landing)
-        if (!isAuthenticated(landing)) throw AuthenticationException()
+        val landing = menuPage(ATTENDANCE_PAGE)
         val token = csrf ?: throw IOException("VTOP did not provide a CSRF token")
         val id = authorizedId ?: extractAuthorizedId(landing)
             ?: throw IOException("VTOP did not provide an authorized student ID")
@@ -166,9 +161,7 @@ class HttpVtopGateway(
     }
 
     override suspend fun cgpa(): CgpaSnapshot = withContext(Dispatchers.IO) {
-        val html = get(GRADES_PAGE)
-        updateTokens(html)
-        cgpaParser.parse(html).valueOrThrow()
+        cgpaParser.parse(menuPage(GRADES_PAGE)).valueOrThrow()
     }
 
     override suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord> = withContext(Dispatchers.IO) {
@@ -177,7 +170,7 @@ class HttpVtopGateway(
     }
 
     override suspend fun classMessages(): List<ClassMessageRecord> = withContext(Dispatchers.IO) {
-        val html = get(MESSAGES_PAGE); updateTokens(html); messageParser.parse(html).valueOrThrow()
+        messageParser.parse(menuPage(MESSAGES_PAGE)).valueOrThrow()
     }
 
     override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord> = withContext(Dispatchers.IO) {
@@ -286,10 +279,24 @@ class HttpVtopGateway(
     }
 
     private fun ensureAuthenticatedPage(url: String): String {
-        val html = get(url)
-        updateTokens(html)
-        if (!isAuthenticated(html)) throw AuthenticationException()
+        menuPage(url)
         return csrf ?: throw IOException("VTOP did not provide a CSRF token")
+    }
+
+    /** VTOP academic menu links are AJAX POSTs, not ordinary browser GETs. */
+    private fun menuPage(url: String): String {
+        val token = csrf ?: throw AuthenticationException()
+        val id = authorizedId ?: throw AuthenticationException()
+        val body = FormBody.Builder()
+            .add("_csrf", token)
+            .add("authorizedID", id)
+            .add("verifyMenu", "true")
+            .add("nocache", System.currentTimeMillis().toString())
+            .build()
+        val html = execute(Request.Builder().url(url).post(body).build())
+        updateTokens(html)
+        if (VtopDocument.isAuthenticationPage(Jsoup.parse(html))) throw AuthenticationException()
+        return html
     }
 
     private fun execute(request: Request): String = client.newCall(request).execute().use { response ->
@@ -317,7 +324,7 @@ class HttpVtopGateway(
     private fun isAuthenticated(html: String): Boolean {
         val document = Jsoup.parse(html)
         if (VtopDocument.isAuthenticationPage(document)) return false
-        return document.selectFirst("a[href*=logout], #MenuBlock, #DataBlock, input[name=authorizedID]") != null ||
+        return document.selectFirst("a[href*=logout], #MenuBlock, input[name=authorizedID]") != null ||
             html.contains("Student Profile", ignoreCase = true)
     }
 

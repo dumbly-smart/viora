@@ -7,10 +7,13 @@ class SemesterParser {
     fun parse(html: String): ParseResult<List<SemesterOption>> {
         val document = Jsoup.parse(html)
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
-        val options = document.select(
-            "select[name=semesterSubId] option, select#semesterSubId option, " +
-                "select[name=semesterId] option",
-        ).mapNotNull { option ->
+        val options = document.select("select")
+            .filter { select ->
+                select.attr("name").contains("semester", ignoreCase = true) ||
+                    select.id().contains("semester", ignoreCase = true)
+            }
+            .flatMap { it.select("option") }
+            .mapNotNull { option ->
             val id = option.attr("value").trim()
             val name = option.text().trim()
             if (id.isBlank() || name.isBlank() || id == "0" || name.contains("select", true)) null
