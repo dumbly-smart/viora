@@ -22,6 +22,8 @@ downloads/
 *.session
 *.keystore
 *.jks
+*.p12
+*.pfx
 captcha*.jpg
 captcha*.png
 vtop-response*.html
@@ -29,4 +31,3 @@ student-data/
 
 # Signing files must be provisioned outside Git
 keystore.properties
-

@@ -6,7 +6,7 @@ cd "$ROOT"
 
 git ls-files | while IFS= read -r path; do
     case "$path" in
-        *.apk|*.aab|*.jks|*.keystore|*.cookies|*.session|*.log|\
+        *.apk|*.aab|*.jks|*.keystore|*.p12|*.pfx|*.cookies|*.session|*.log|\
         *captcha*.jpg|*captcha*.png|*vtop-response*.html|\
         *student-data*|*/logcat.txt|*/window.xml|*/screenshot.png)
             echo "private or generated artifact is tracked: $path" >&2
