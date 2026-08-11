@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class SessionManagerTest {
     @Test fun `active cookie session does not submit credentials again`() = runTest {
@@ -41,12 +42,22 @@ class SessionManagerTest {
         assertEquals(0, gateway.loginCalls)
     }
 
+    @Test fun `network reset reports unavailable instead of escaping`() = runTest {
+        val gateway = FakeGateway(SessionState.Missing, sessionError = IOException("connection reset"))
+
+        val result = SessionManager(gateway, FakeCredentials()).ensureActive()
+
+        assertEquals(SessionResolution.Unavailable, result)
+        assertEquals(0, gateway.loginCalls)
+    }
+
     private class FakeGateway(
         private val initial: SessionState,
         private val loginResult: SessionState = SessionState.Missing,
+        private val sessionError: IOException? = null,
     ) : VtopGateway {
         var loginCalls = 0
-        override suspend fun sessionState() = initial
+        override suspend fun sessionState() = sessionError?.let { throw it } ?: initial
         override suspend fun login(username: String, password: CharArray): SessionState {
             loginCalls++
             return loginResult

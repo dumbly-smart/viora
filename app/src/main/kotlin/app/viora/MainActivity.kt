@@ -112,11 +112,12 @@ import app.viora.ui.VioraTheme
 import app.viora.ui.VioraAmber
 import app.viora.ui.VioraBlue
 import app.viora.ui.VioraCoral
-import app.viora.ui.VioraMint
+import app.viora.ui.VioraSuccess
 import app.viora.domain.ClassPhase
 import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.focusedSlots
+import app.viora.domain.sameCourseCode
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -179,7 +180,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class Destination(val label: String, val icon: ImageVector)
-private data class DetailSelection(val kind: String, val id: String)
+internal data class DetailSelection(val kind: String, val id: String)
 
 private val destinations = listOf(
     Destination("Home", Icons.Outlined.Home),
@@ -249,7 +250,7 @@ private fun Dashboard(
             }
         Column(Modifier.weight(1f).fillMaxSize()) {
             AnimatedVisibility(visible = state.loading, enter = fadeIn(), exit = fadeOut()) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(), color = VioraMint, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
             }
             AnimatedVisibility(visible = state.error != null, enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 state.error?.let { message ->
@@ -415,7 +416,7 @@ private fun AttendanceCard(item: AttendanceUi) {
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (healthy) VioraMint.copy(alpha = 0.22f) else VioraCoral.copy(alpha = 0.28f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (healthy) VioraSuccess.copy(alpha = 0.22f) else VioraCoral.copy(alpha = 0.28f)),
     ) {
         Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
@@ -424,7 +425,7 @@ private fun AttendanceCard(item: AttendanceUi) {
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${item.attended}/${item.held} classes", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${"%.1f".format(item.percentage)}%", color = if (healthy) VioraMint else VioraCoral, fontWeight = FontWeight.Bold)
+                Text("${"%.1f".format(item.percentage)}%", color = if (healthy) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
             }
             listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             when {
@@ -436,7 +437,7 @@ private fun AttendanceCard(item: AttendanceUi) {
                 item.skippable == 0 -> Text("At the target · don’t skip the next class", color = VioraAmber, style = MaterialTheme.typography.labelLarge)
                 else -> Text(
                     if (item.blockSize > 1) "Safe to skip ${item.skippableBlocks} lab ${if (item.skippableBlocks == 1) "block" else "blocks"}" else "Safe to skip ${item.skippable} ${if (item.skippable == 1) "class" else "classes"}",
-                    color = VioraMint,
+                    color = VioraSuccess,
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -593,7 +594,7 @@ private fun ClassCard(
     markClass: (String, ClassCheckIn?) -> Unit = { _, _ -> },
 ) {
     val accent = when (checkIn) {
-        ClassCheckIn.ATTENDED -> VioraMint
+        ClassCheckIn.ATTENDED -> VioraSuccess
         ClassCheckIn.MISSED -> VioraCoral
         null -> if (phase == ClassPhase.LIVE) VioraBlue else MaterialTheme.colorScheme.outlineVariant
     }
@@ -623,7 +624,7 @@ private fun ClassCard(
                             onClick = { markClass(checkInKey, if (checkIn == ClassCheckIn.ATTENDED) null else ClassCheckIn.ATTENDED) },
                             leadingIcon = { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) },
                             label = { Text("Attended") },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VioraMint.copy(alpha = 0.2f), selectedLabelColor = VioraMint, selectedLeadingIconColor = VioraMint),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VioraSuccess.copy(alpha = 0.2f), selectedLabelColor = VioraSuccess, selectedLeadingIconColor = VioraSuccess),
                         )
                         FilterChip(
                             selected = checkIn == ClassCheckIn.MISSED,
@@ -642,7 +643,7 @@ private fun ClassCard(
 @Composable
 private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
     val (label, color) = when (checkIn) {
-        ClassCheckIn.ATTENDED -> "ATTENDED" to VioraMint
+        ClassCheckIn.ATTENDED -> "ATTENDED" to VioraSuccess
         ClassCheckIn.MISSED -> "MISSED" to VioraCoral
         null -> when (phase) {
             ClassPhase.LIVE -> "LIVE" to VioraBlue
@@ -657,7 +658,7 @@ private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
 private fun AttendanceGuidance(attendance: AttendanceUi) {
     val (text, color) = when {
         attendance.recovery > 0 -> "Attend next ${if (attendance.blockSize > 1) attendance.recoveryBlocks else attendance.recovery} to recover" to VioraCoral
-        attendance.skippable > 0 -> "Can skip ${if (attendance.blockSize > 1) attendance.skippableBlocks else attendance.skippable} ${if (attendance.blockSize > 1) "lab blocks" else "classes"}" to VioraMint
+        attendance.skippable > 0 -> "Can skip ${if (attendance.blockSize > 1) attendance.skippableBlocks else attendance.skippable} ${if (attendance.blockSize > 1) "lab blocks" else "classes"}" to VioraSuccess
         else -> "At target · attend this one" to VioraAmber
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -668,16 +669,23 @@ private fun AttendanceGuidance(attendance: AttendanceUi) {
 }
 
 @Composable
-private fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
+internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (selection.kind) {
             "course" -> state.attendance.firstOrNull { it.id == selection.id }?.let { attendance ->
                 item { Text(attendance.courseTitle.ifBlank { attendance.courseCode }, style = MaterialTheme.typography.headlineMedium) }
                 item { AttendanceCard(attendance) }
-                state.slots.filter { it.code == attendance.courseCode || it.title == attendance.courseTitle }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
+                state.slots.filter { sameCourseCode(it.code, attendance.courseCode) || it.title == attendance.courseTitle }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
                 state.marks.filter { it.courseTitle == attendance.courseTitle }.forEach { mark -> item("mark:${mark.id}") { SummaryCard(mark.title, mark.scoredMark?.cleanNumber() ?: mark.status, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" } ?: "") } }
-                state.grades.filter { it.courseCode == attendance.courseCode || it.courseTitle == attendance.courseTitle }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
-                state.materials.filter { it.courseCode == attendance.courseCode }.forEach { material -> item("material:${material.id}") { MaterialDetailCard(material, state, openMaterial) } }
+                state.grades.filter { sameCourseCode(it.courseCode, attendance.courseCode) || it.courseTitle == attendance.courseTitle }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
+                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, attendance.courseCode) }
+                val materials = state.materials.filter { sameCourseCode(it.courseCode, attendance.courseCode) }
+                item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
+                if (assignments.isEmpty()) item { Text("No digital assignments are cached for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                assignments.forEach { assignment -> item("assignment:${assignment.id}") { AssignmentCard(assignment) } }
+                item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
+                if (materials.isEmpty()) item { Text("No materials are cached for this course yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                materials.forEach { material -> item("material:${material.id}") { MaterialDetailCard(material, state, openMaterial) } }
             }
             "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
                 item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
@@ -687,6 +695,14 @@ private fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMa
             "material" -> state.materials.firstOrNull { it.id == selection.id }?.let { material -> item { MaterialDetailCard(material, state, openMaterial) } }
         }
     }
+}
+
+@Composable private fun AssignmentCard(assignment: AssignmentUi) {
+    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(assignment.title, style = MaterialTheme.typography.titleMedium)
+        Text("Due ${assignment.dueEpochMillis.asAcademicTime("time unavailable")}")
+        if (assignment.status.isNotBlank()) Text(assignment.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } }
 }
 
 @Composable private fun MaterialDetailCard(material: app.viora.database.CourseMaterialEntity, state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
@@ -727,7 +743,7 @@ private fun EmptyStateCard(title: String, body: String) {
 private fun SyncStatusCard(message: String, loading: Boolean) {
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = VioraBlue.copy(alpha = 0.09f), border = androidx.compose.foundation.BorderStroke(1.dp, VioraBlue.copy(alpha = 0.22f))) {
         Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = VioraBlue) else Spacer(Modifier.size(9.dp).background(VioraMint, CircleShape))
+            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = VioraBlue) else Spacer(Modifier.size(9.dp).background(VioraSuccess, CircleShape))
             Column {
                 Text(if (loading) "Syncing with VTOP" else "Sync complete", style = MaterialTheme.typography.labelLarge)
                 Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)

@@ -254,7 +254,25 @@ class VioraAppViewModel(
                 SessionResolution.Ready -> loadSemestersAndRefresh()
                 SessionResolution.SignInRequired -> requireSignIn("Sign in again to resume synchronization")
                 SessionResolution.VerificationRequired -> requireSignIn("VTOP requires interactive verification")
+                SessionResolution.Unavailable -> useCachedDataAfterConnectionFailure()
             }
+        }
+    }
+
+    private fun useCachedDataAfterConnectionFailure() {
+        val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+        val savedName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null)
+        if (savedId != null) {
+            val semester = SemesterOption(savedId, savedName ?: savedId)
+            observeTimetable(savedId)
+            observeAttendance(savedId)
+            observeAssignments(savedId)
+            observeExams(savedId)
+            observeResults(savedId)
+            observeExtras(savedId)
+            mutableState.update { it.copy(activeSemester = semester, loading = false, syncMessage = "Showing cached data", error = "VTOP could not be reached. Tap Sync to retry.") }
+        } else {
+            mutableState.update { it.copy(loading = false, syncMessage = null, error = "VTOP could not be reached. Check your connection and try again.") }
         }
     }
 

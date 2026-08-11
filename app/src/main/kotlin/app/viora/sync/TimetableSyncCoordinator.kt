@@ -24,5 +24,6 @@ class TimetableSyncCoordinator(
                 )
             SessionResolution.SignInRequired -> SyncOutcome.SignInRequired
             SessionResolution.VerificationRequired -> SyncOutcome.VerificationRequired
+            SessionResolution.Unavailable -> SyncOutcome.Failed("VTOP could not be reached; cached data is still available")
         }
 }

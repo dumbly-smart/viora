@@ -24,5 +24,13 @@ class VtopVariantFixturesTest {
         val result = CourseMaterialParser().parse(fixture("materials_variant.html"), "RED1001") as ParseResult.Success
         assertTrue(result.value.single().downloadPath.contains("downloadCourseMaterial"))
     }
+    @Test fun `materials accept lowercase button download actions`() {
+        val html = """
+            <table><tbody><tr><td>Week 1 notes</td><td><button onclick="downloadcoursematerial('42')">Get</button></td></tr></tbody></table>
+        """.trimIndent()
+        val result = CourseMaterialParser().parse(html, "CSE1001") as ParseResult.Success
+        assertEquals("Week 1 notes", result.value.single().title)
+        assertTrue(result.value.single().downloadPath.contains("downloadcoursematerial"))
+    }
     private fun fixture(name: String) = checkNotNull(javaClass.getResource("/fixtures/$name")).readText()
 }

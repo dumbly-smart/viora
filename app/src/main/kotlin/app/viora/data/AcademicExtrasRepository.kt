@@ -17,10 +17,15 @@ class AcademicExtrasRepository(private val dao: AcademicDao, private val gateway
             val messages = gateway.classMessages().map { ClassMessageEntity(it.id, it.courseCode, it.courseTitle, it.faculty, it.subject, it.body, it.postedAt?.atZone(ZONE)?.toInstant()?.toEpochMilli(), now) }
             dao.insertChanges(messages.filterNot { it.id in previousMessages }.map { AcademicChangeEntity("message:${it.id}", "messages", "New class message", it.subject.ifBlank { it.body.take(100) }, now) })
             dao.replaceMessages(messages)
-            courses.distinct().forEach { (code, faculty) ->
-                runCatching { gateway.courseMaterials(semesterId, code, faculty) }.getOrNull()?.let { materials ->
+            courses.distinct().groupBy({ it.first }, { it.second }).forEach { (code, faculties) ->
+                val attempts = faculties.distinct().map { faculty ->
+                    runCatching { gateway.courseMaterials(semesterId, code, faculty) }
+                }
+                val successful = attempts.mapNotNull { it.getOrNull() }
+                if (successful.any { it.isNotEmpty() } || attempts.all { it.isSuccess }) {
+                    val materials = successful.flatten().distinctBy { it.id }
                     val old = dao.materialSnapshot(semesterId, code).map { it.id }.toSet()
-                    val rows = materials.map { CourseMaterialEntity(semesterId, it.id, it.courseCode, it.title, it.fileName, it.downloadPath, it.postedAt?.atZone(ZONE)?.toInstant()?.toEpochMilli(), now) }
+                    val rows = materials.map { CourseMaterialEntity(semesterId, it.id, code, it.title, it.fileName, it.downloadPath, it.postedAt?.atZone(ZONE)?.toInstant()?.toEpochMilli(), now) }
                     dao.insertChanges(rows.filterNot { it.id in old }.map { AcademicChangeEntity("material:${it.id}", "materials", "New course material", "${it.courseCode} · ${it.title}", now) })
                     dao.replaceMaterials(semesterId, code, rows)
                 }

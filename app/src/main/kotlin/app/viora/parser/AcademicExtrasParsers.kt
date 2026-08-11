@@ -35,9 +35,15 @@ class CourseMaterialParser {
     fun parse(html: String, courseCode: String): ParseResult<List<CourseMaterialRecord>> {
         val doc = Jsoup.parse(html); if (VtopDocument.isAuthenticationPage(doc)) return ParseResult.AuthenticationRequired
         val rows = doc.select("table tbody tr").mapIndexedNotNull { index, row ->
-            val cells = row.select("td"); val link = row.selectFirst("a[href*=download], a[onclick*=Download], a[href*=Material]")
+            val cells = row.select("td")
+            val link = row.select("a, button, input").firstOrNull { element ->
+                listOf(element.attr("href"), element.attr("onclick"), element.attr("data-url"))
+                    .any { action -> action.contains("download", true) || action.contains("material", true) }
+            }
             val title = cells.firstOrNull { it.text().isNotBlank() }?.text().orEmpty(); if (link == null && title.isBlank()) null else {
-                val path = link?.attr("href").orEmpty().ifBlank { link?.attr("onclick").orEmpty() }
+                val path = link?.attr("href").orEmpty()
+                    .ifBlank { link?.attr("onclick").orEmpty() }
+                    .ifBlank { link?.attr("data-url").orEmpty() }
                 CourseMaterialRecord(stable("$courseCode-$index-$title-$path"), courseCode, title.ifBlank { link?.text().orEmpty() }, link?.attr("download").orEmpty().ifBlank { link?.text().orEmpty() }, path, null)
             }
         }
