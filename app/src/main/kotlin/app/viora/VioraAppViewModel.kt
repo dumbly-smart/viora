@@ -69,7 +69,9 @@ data class VioraUiState(
     val cachedSemesters: List<SemesterEntity> = emptyList(),
     val rolloverDetected: Boolean = false,
     val syncDiagnostics: SyncDiagnosticsSnapshot? = null,
+    val classCheckIns: Map<String, ClassCheckIn> = emptyMap(),
 )
+enum class ClassCheckIn { ATTENDED, MISSED }
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
 
@@ -113,7 +115,7 @@ class VioraAppViewModel(
     private val scheduler: VioraSyncScheduler,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(
-        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6)),
+        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6), classCheckIns = loadClassCheckIns()),
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
@@ -193,6 +195,15 @@ class VioraAppViewModel(
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
     fun setSyncHours(hours: Int) { val safe = hours.coerceIn(1, 24); graph.settings.edit().putInt("sync_hours", safe).apply(); scheduler.schedule(safe.toLong()); mutableState.update { it.copy(syncHours = safe) }; refreshDiagnostics() }
     fun refreshDiagnostics() { viewModelScope.launch { mutableState.update { it.copy(syncDiagnostics = graph.syncDiagnostics.snapshot()) } } }
+    fun markClass(key: String, mark: ClassCheckIn?) {
+        require(key.startsWith(CLASS_CHECK_IN_PREFIX)) { "Invalid class check-in key" }
+        val updated = state.value.classCheckIns.toMutableMap()
+        if (mark == null) updated.remove(key) else updated[key] = mark
+        graph.settings.edit().apply {
+            if (mark == null) remove(key) else putString(key, mark.name)
+        }.apply()
+        mutableState.update { it.copy(classCheckIns = updated) }
+    }
     fun clearDownloads() { viewModelScope.launch { graph.materialManager.clearDownloads(); mutableState.update { it.copy(downloadStorageBytes = 0, downloads = emptyMap(), syncMessage = "Downloaded materials cleared") } } }
     fun clearAcademicCache() { viewModelScope.launch { withContext(Dispatchers.IO) { graph.database.clearAllTables() }; mutableState.update { it.copy(slots = emptyList(), attendance = emptyList(), assignments = emptyList(), exams = emptyList(), marks = emptyList(), grades = emptyList(), calendar = emptyList(), messages = emptyList(), materials = emptyList(), recentChanges = emptyList(), syncMessage = "Academic cache cleared") } } }
     fun completeInteractiveVerification(cookieHeader: String) {
@@ -475,6 +486,12 @@ class VioraAppViewModel(
             .commit()
     }
 
+    private fun loadClassCheckIns(): Map<String, ClassCheckIn> = graph.settings.all.mapNotNull { (key, value) ->
+        if (!key.startsWith(CLASS_CHECK_IN_PREFIX)) return@mapNotNull null
+        val mark = runCatching { ClassCheckIn.valueOf(value as String) }.getOrNull() ?: return@mapNotNull null
+        key to mark
+    }.toMap()
+
     class Factory(
         private val graph: VioraGraph,
         private val scheduler: VioraSyncScheduler,
@@ -483,6 +500,8 @@ class VioraAppViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             VioraAppViewModel(graph, scheduler) as T
     }
+
+    companion object { const val CLASS_CHECK_IN_PREFIX = "class_check_in:" }
 }
 
 private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<AttendanceUi> = map { item ->
