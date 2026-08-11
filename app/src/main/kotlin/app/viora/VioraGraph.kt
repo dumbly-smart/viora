@@ -13,6 +13,7 @@ import app.viora.database.VioraDatabase
 import app.viora.network.HttpVtopGateway
 import app.viora.network.IsolatedCookieJar
 import app.viora.network.VioraHttpClient
+import app.viora.network.VtopCaptchaSolver
 import app.viora.security.AndroidKeystoreCipher
 import app.viora.security.CredentialVault
 import app.viora.security.EncryptedCookieStore
@@ -31,7 +32,11 @@ class VioraGraph(context: Context) {
     val credentials = CredentialVault(secureBlobs)
     private val cookieStore = EncryptedCookieStore(secureBlobs)
     private val cookieJar = IsolatedCookieJar(cookieStore)
-    val gateway = HttpVtopGateway(VioraHttpClient.create(cookieJar), cookieJar)
+    val gateway = HttpVtopGateway(
+        VioraHttpClient.create(cookieJar),
+        cookieJar,
+        VtopCaptchaSolver.fromAssets(appContext.assets),
+    )
     val database = VioraDatabase.get(appContext)
     val timetable = TimetableRepository(database.academicDao(), gateway)
     val attendance = AttendanceRepository(database.academicDao(), gateway)

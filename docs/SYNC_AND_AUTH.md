@@ -2,7 +2,7 @@
 
 ## Login once, realistically
 
-“Login once” means the user enters credentials during setup and is not prompted on every launch. VTOP sessions can expire independently, and CAPTCHA may make silent login impossible. The app therefore uses this state machine:
+“Login once” means the user enters credentials during setup and is not prompted on every launch. VTOP sessions can expire independently. Viora solves VTOP's six-character image CAPTCHA locally during re-authentication; interactive challenges such as reCAPTCHA may still make silent login impossible. The app therefore uses this state machine:
 
 ```text
 Unconfigured -> Authenticating -> Active
@@ -16,7 +16,7 @@ Unconfigured -> Authenticating -> Active
 Active -> LoggedOut (user action; wipe all Viora-local account data)
 ```
 
-Prefer persisting the authenticated cookie jar. If the session expires, attempt re-authentication only when policy permits and a CAPTCHA is not required. If a challenge appears, keep cached data readable and show one clear “Session expired—verify to sync” action.
+Prefer persisting the authenticated cookie jar. If the session expires, re-authenticate with the stored credentials and local text-CAPTCHA solver. A rejected answer gets a fresh cookie session, CSRF token, and CAPTCHA, with a maximum of four attempts. If an interactive challenge appears, keep cached data readable and show one clear “Session expired—verify to sync” action.
 
 If password retention is required for re-authentication, encrypt it with an app-specific AES-GCM key in Android Keystore, exclude it from backup, redact it from logs, and delete it on logout. A safer setup option is “remember session only,” which may prompt for the password after a long expiry.
 

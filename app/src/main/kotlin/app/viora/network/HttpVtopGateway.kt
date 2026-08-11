@@ -26,6 +26,7 @@ import java.io.IOException
 class HttpVtopGateway(
     private val client: OkHttpClient,
     private val cookieJar: IsolatedCookieJar,
+    private val captchaSolver: VtopCaptchaSolver,
     private val timetableParser: TimetableParser = TimetableParser(),
     private val semesterParser: SemesterParser = SemesterParser(),
     private val attendanceParser: AttendanceParser = AttendanceParser(),
@@ -49,25 +50,22 @@ class HttpVtopGateway(
 
     override suspend fun login(username: String, password: CharArray): SessionState = withContext(Dispatchers.IO) {
         authorizedId = username.trim()
-        val setup = get(SETUP_PAGE)
-        updateTokens(setup)
-        if (VtopDocument.requiresVerification(Jsoup.parse(setup))) {
-            return@withContext SessionState.VerificationRequired
+        repeat(MAX_CAPTCHA_ATTEMPTS) {
+            val challenge = prepareLoginChallenge() ?: return@withContext SessionState.VerificationRequired
+            val answer = captchaSolver.solve(challenge.imageDataUri)
+            val body = FormBody.Builder()
+                .add("_csrf", challenge.csrf)
+                .add("username", username.trim())
+                .add("password", String(password))
+                .add("captchaStr", answer)
+                .build()
+            val html = execute(Request.Builder().url(LOGIN).post(body).build())
+            updateTokens(html)
+            if (isAuthenticated(html)) return@withContext SessionState.Active
+            if (isInvalidCredentials(html)) return@withContext SessionState.Missing
+            if (isMandatoryAction(html)) return@withContext SessionState.VerificationRequired
         }
-        val token = csrf ?: return@withContext SessionState.Missing
-        val body = FormBody.Builder()
-            .add("_csrf", token)
-            .add("username", username.trim())
-            .add("password", String(password))
-            .add("captchaStr", "")
-            .build()
-        val html = execute(Request.Builder().url(LOGIN).post(body).build())
-        updateTokens(html)
-        when {
-            VtopDocument.requiresVerification(Jsoup.parse(html)) -> SessionState.VerificationRequired
-            isAuthenticated(html) -> SessionState.Active
-            else -> SessionState.Missing
-        }
+        SessionState.VerificationRequired
     }
 
     override suspend fun semesters(): List<SemesterOption> = withContext(Dispatchers.IO) {
@@ -227,6 +225,54 @@ class HttpVtopGateway(
 
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
 
+    private fun prepareLoginChallenge(): LoginChallenge? {
+        cookieJar.clear()
+        csrf = null
+        get(SITE_ROOT)
+        get(VTOP_ROOT)
+        val openPage = get(OPEN_PAGE)
+        updateTokens(openPage)
+        csrf?.let { setupToken ->
+            val setupBody = FormBody.Builder()
+                .add("_csrf", setupToken)
+                .add("flag", "VTOP")
+                .build()
+            execute(Request.Builder().url(SETUP_PAGE).post(setupBody).build())
+        }
+
+        repeat(MAX_CAPTCHA_PAGE_ATTEMPTS) {
+            val loginPage = get(LOGIN)
+            updateTokens(loginPage)
+            val document = Jsoup.parse(loginPage)
+            if (!isRecaptchaPage(loginPage, document)) {
+                val image = extractCaptchaDataUri(document)
+                val token = csrf
+                if (image != null && token != null) return LoginChallenge(token, image)
+            }
+            if (it + 1 < MAX_CAPTCHA_PAGE_ATTEMPTS) Thread.sleep(600L * (it + 1))
+        }
+        return null
+    }
+
+    private fun extractCaptchaDataUri(document: org.jsoup.nodes.Document): String? {
+        if (document.selectFirst("input[name=captchaStr], input#captchaStr") == null) return null
+        return document.select("img[src]")
+            .asSequence()
+            .map { it.attr("src").trim() }
+            .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
+    }
+
+    private fun isRecaptchaPage(html: String, document: org.jsoup.nodes.Document): Boolean =
+        document.selectFirst("#recaptcha, #g-recaptcha, .g-recaptcha") != null ||
+            Regex("captchaType\\s*=\\s*2", RegexOption.IGNORE_CASE).containsMatchIn(html)
+
+    private fun isInvalidCredentials(html: String): Boolean =
+        Regex("invalid\\s+(?:username|password|credentials)", RegexOption.IGNORE_CASE).containsMatchIn(html)
+
+    private fun isMandatoryAction(html: String): Boolean =
+        Regex("mandatory/data/off|feedback|studentFeedback|redressal|hostel.*instruction", RegexOption.IGNORE_CASE)
+            .containsMatchIn(html)
+
     private fun academicPost(url: String, token: String, semesterId: String): String {
         val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
         val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("x", System.currentTimeMillis().toString()).build()
@@ -254,12 +300,19 @@ class HttpVtopGateway(
     private fun updateTokens(html: String) {
         val document = Jsoup.parse(html)
         document.selectFirst("input[name=_csrf]")?.attr("value")?.takeIf(String::isNotBlank)?.let { csrf = it }
-        Regex("var\\s+csrfValue\\s*=\\s*[\"']([^\"']+)").find(html)?.groupValues?.get(1)?.let { csrf = it }
+        document.selectFirst("meta[name=_csrf], meta#_csrf")?.attr("content")?.takeIf(String::isNotBlank)?.let { csrf = it }
+        Regex("(?:_csrf|csrfToken|csrfValue)\\s*[:=]\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(1)?.trim()?.takeIf(String::isNotBlank)?.let { csrf = it }
         extractAuthorizedId(html)?.let { authorizedId = it }
     }
 
-    private fun extractAuthorizedId(html: String): String? = Jsoup.parse(html)
-        .selectFirst("input[name=authorizedID]")?.attr("value")?.takeIf(String::isNotBlank)
+    private fun extractAuthorizedId(html: String): String? {
+        val document = Jsoup.parse(html)
+        return document.selectFirst("input[name=authorizedID], input[name=authorizedIDX]")
+            ?.attr("value")?.takeIf(String::isNotBlank)
+            ?: Regex("authorizedIDX?\\s*[=:]\\s*[\"']?([A-Za-z0-9_.@-]+)")
+                .find(html)?.groupValues?.get(1)?.takeIf(String::isNotBlank)
+    }
 
     private fun isAuthenticated(html: String): Boolean {
         val document = Jsoup.parse(html)
@@ -269,8 +322,13 @@ class HttpVtopGateway(
     }
 
     companion object {
+        private const val SITE_ROOT = "https://vtop.vit.ac.in/"
+        private const val VTOP_ROOT = "https://vtop.vit.ac.in/vtop/"
         private const val BASE = "https://vtop.vit.ac.in/vtop"
         private const val MAX_MATERIAL_BYTES = 50 * 1024 * 1024
+        private const val MAX_CAPTCHA_ATTEMPTS = 4
+        private const val MAX_CAPTCHA_PAGE_ATTEMPTS = 6
+        private const val OPEN_PAGE = "$BASE/openPage"
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
@@ -294,6 +352,8 @@ class HttpVtopGateway(
         private const val COURSE_LIST = "$BASE/getCourseForCoursePage"
         private const val FACULTY_LIST = "$BASE/getFacultyForCoursePage"
     }
+
+    private data class LoginChallenge(val csrf: String, val imageDataUri: String)
 }
 
 class AuthenticationException : IOException("VTOP authentication is required")

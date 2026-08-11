@@ -135,7 +135,7 @@ Credentials and cookies are serialized into app-private preferences only after e
 
 The encrypted cookie store retains the fields OkHttp needs—name, value, expiry, domain, path, secure, HTTP-only, persistent, and host-only state. `IsolatedCookieJar` removes expired cookies, matches them to outgoing VTOP URLs, and can be cleared without touching any other client.
 
-On launch, `SessionManager` first tries the encrypted cookie session. If VTOP has expired it and stored credentials exist, it attempts a silent login. If VTOP requires interactive verification, Viora opens VTOP's own page inside an app-contained WebView. The WebView blocks navigation away from `vtop.vit.ac.in`, disables file/content access, retains normal certificate validation, and imports the successful session into Viora's encrypted OkHttp jar. It does not solve or outsource CAPTCHA.
+On launch, `SessionManager` first tries the encrypted cookie session. If VTOP has expired it and stored credentials exist, it attempts a silent login. VTOP's six-character image CAPTCHA is decoded and classified on-device using a small bundled linear model; images and answers are neither persisted nor sent to another service. Failed answers use a fresh session and challenge, with bounded retries. If VTOP presents reCAPTCHA or another interactive verification flow, Viora opens VTOP's own page inside an app-contained WebView. The WebView blocks navigation away from `vtop.vit.ac.in`, disables file/content access, retains normal certificate validation, and imports the successful session into Viora's encrypted OkHttp jar.
 
 Local logout cancels Viora work, clears encrypted credentials and cookies, deletes the Room database and downloaded files, and leaves server-side/browser logout alone.
 

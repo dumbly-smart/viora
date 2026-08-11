@@ -35,7 +35,7 @@ Viora talks directly to VTOP and does not use a backend. Credentials, cookies, m
 
 The app has its own encrypted VTOP session, separate from Chrome and other devices. Logging out of Viora only clears Viora’s local data, so it should not mess with another VTOP session you already have open.
 
-If VTOP expires the session, Viora restores it using the encrypted login saved during setup. If VTOP specifically asks for verification, the app will need you to complete that step normally—there is no CAPTCHA-solving service involved.
+If VTOP expires the session, Viora restores it using the encrypted login saved during setup. VTOP's six-character image CAPTCHA is solved locally with a bundled model; the image and answer never leave the phone. Interactive challenges such as reCAPTCHA still require normal user verification, and no CAPTCHA-solving service is involved.
 
 ## Tech stuff
 

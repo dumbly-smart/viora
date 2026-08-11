@@ -10,7 +10,7 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 
 ### Setup and account
 
-- Campus selection, privacy explanation, VTOP username/password, manual CAPTCHA challenge.
+- Campus selection, privacy explanation, VTOP username/password, and local text-CAPTCHA solving with interactive verification fallback.
 - Validate the session, select the active semester, choose attendance threshold and notification preferences.
 - Logout deletes cookies, encrypted credentials, cached personal data, files, and scheduled work.
 
@@ -63,7 +63,7 @@ Android background execution is inexact, so reminders are best effort. For exact
 
 ## Explicit non-goals
 
-- No automatic CAPTCHA bypass.
+- No bypass or outsourcing of interactive verification challenges such as reCAPTCHA.
 - No submission of assignments or registration actions in the first releases.
 - No cloud sync of VTOP credentials or personal academic records.
 - No claim that a projection grants permission to miss class.

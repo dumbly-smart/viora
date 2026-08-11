@@ -5,7 +5,7 @@
 - Confirm VTOP terms/acceptable-use constraints and campus variants.
 - Build login/session prototype and collect strictly redacted parser fixtures.
 - Define models, parser contracts, threat model, and attendance test vectors.
-- Exit: login works without CAPTCHA bypass; no secret appears in repository or logs.
+- Exit: login handles VTOP's text CAPTCHA locally without outsourcing or bypassing interactive verification; no secret appears in repository or logs.
 
 ## Phase 1 — read-only MVP
 
