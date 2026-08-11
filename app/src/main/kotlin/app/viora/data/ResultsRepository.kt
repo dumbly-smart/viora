@@ -21,7 +21,7 @@ class ResultsRepository(private val dao: AcademicDao, private val gateway: VtopG
             dao.insertChanges(markRows.mapNotNull { row -> previousMarks[row.id]?.takeIf { it.scoredMark != row.scoredMark || it.status != row.status }?.let { AcademicChangeEntity("mark:${row.id}:${row.scoredMark}:${row.status}", "marks", "Assessment mark updated", "${row.courseTitle} · ${row.title}", now) } } + gradeRows.mapNotNull { row -> previousGrades[row.courseCode]?.takeIf { it.grade != row.grade || it.total != row.total }?.let { AcademicChangeEntity("grade:${row.courseCode}:${row.grade}:${row.total}", "grades", "Grade updated", "${row.courseCode} · ${row.grade}", now) } })
             dao.replaceMarks(semesterId, markRows, SyncResourceEntity(RESOURCE, "SYNCING", now, null, null))
             dao.replaceGrades(semesterId, gradeRows, AcademicSummaryEntity("current", grades.gpa, cgpa.cgpa, cgpa.registeredCredits, cgpa.earnedCredits, cgpa.gradeCounts.entries.joinToString(",") { "${it.key}:${it.value}" }, now), SyncResourceEntity(RESOURCE, "FRESH", now, now, null))
-        }.onFailure { dao.upsertSyncResource(SyncResourceEntity(RESOURCE, "ERROR", now, null, "Results could not be refreshed")) }
+        }.onFailure { error -> dao.upsertSyncResource(SyncResourceEntity(RESOURCE, "ERROR", now, null, error.message?.take(120) ?: "Results could not be refreshed")) }
     }
     companion object { const val RESOURCE = "results" }
 }

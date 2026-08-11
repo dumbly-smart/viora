@@ -338,7 +338,7 @@ class VioraAppViewModel(
                     it.copy(
                         loading = false,
                         syncMessage = if (failed == 0) "Academics updated" else "Updated with $failed partial failure(s)",
-                        error = if (failed > 0) "Some sections could not refresh; cached data was preserved" else null,
+                        error = null,
                     )
                 }
             }

@@ -54,4 +54,19 @@ class AttendanceParserTest {
                 is ParseResult.AuthenticationRequired,
         )
     }
+
+    @Test fun `parses current VTOP getStudentDetails layout without thead`() {
+        val html = """
+            <table id="getStudentDetails">
+              <tr><th>Course Code</th><th>Course Title</th><th>Course Type</th><th>Slot</th><th>Attended Classes</th><th>Total Classes</th><th>Attendance Percentage</th></tr>
+              <tr><td>BACSE202</td><td>Database Systems</td><td>Theory Only</td><td>A1</td><td>18</td><td>20</td><td>90</td></tr>
+            </table>
+        """.trimIndent()
+
+        val result = parser.parse(html) as ParseResult.Success
+
+        assertEquals("BACSE202", result.value.records.single().courseCode)
+        assertEquals(18, result.value.records.single().attended)
+        assertEquals(20, result.value.records.single().held)
+    }
 }

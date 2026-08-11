@@ -11,9 +11,9 @@ internal suspend inline fun refreshResource(
 ): Result<Unit> {
     val attempt = clock()
     dao.upsertSyncResource(SyncResourceEntity(resource, "SYNCING", attempt, null, null))
-    return runCatching { persist(attempt) }.onFailure {
+    return runCatching { persist(attempt) }.onFailure { error ->
         dao.upsertSyncResource(
-            SyncResourceEntity(resource, "ERROR", attempt, null, "$resource could not be refreshed"),
+            SyncResourceEntity(resource, "ERROR", attempt, null, error.message?.take(120) ?: "$resource could not be refreshed"),
         )
     }
 }

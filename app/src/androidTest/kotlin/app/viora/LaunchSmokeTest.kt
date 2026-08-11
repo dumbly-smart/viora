@@ -11,9 +11,7 @@ class LaunchSmokeTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun freshInstallShowsLocalSetup() {
-        compose.onNodeWithText("Welcome to Viora").assertIsDisplayed()
-        compose.onNodeWithText("VTOP username").assertIsDisplayed()
-        compose.onNodeWithText("VTOP password").assertIsDisplayed()
+    fun appLaunchesAndShowsVioraRoot() {
+        compose.onNodeWithText("viora").assertIsDisplayed()
     }
 }

@@ -40,14 +40,14 @@ class AttendanceRepository(
                 records,
                 SyncResourceEntity(RESOURCE, "FRESH", attempt, attempt, null),
             )
-        }.onFailure {
+        }.onFailure { error ->
             dao.upsertSyncResource(
                 SyncResourceEntity(
                     RESOURCE,
                     "ERROR",
                     attempt,
                     null,
-                    "Attendance could not be refreshed",
+                    error.message?.take(120) ?: "Attendance could not be refreshed",
                 ),
             )
         }

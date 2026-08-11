@@ -89,7 +89,7 @@ if grep -E "FATAL EXCEPTION|ANR in $PACKAGE|Process: $PACKAGE.*has died" "$OUTPU
     echo "crash or ANR signature found; see $OUTPUT_DIR/logcat.txt" >&2
     exit 1
 fi
-if ! grep -E "Welcome to Viora|Viora|Today|content-desc=\"Home\"|content-desc=\"Schedule\"" "$OUTPUT_DIR/window.xml" >/dev/null; then
+if ! grep -E "text=\"viora\"|Connect VTOP|Good (morning|afternoon|evening)|content-desc=\"Home\"|content-desc=\"Schedule\"" "$OUTPUT_DIR/window.xml" >/dev/null; then
     echo "expected Viora UI was not found; see $OUTPUT_DIR/window.xml" >&2
     exit 1
 fi

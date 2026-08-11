@@ -9,12 +9,15 @@ class AttendanceParser {
     fun parse(html: String): ParseResult<AttendanceSnapshot> {
         val document = Jsoup.parse(html)
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
-        val table = document.selectFirst("#AttendanceDetailDataTable, table.customTable, table.table")
+        val table = document.selectFirst("#getStudentDetails, #AttendanceDetailDataTable, table.customTable, table.table")
             ?: return ParseResult.InvalidDocument("Attendance table was not found")
-        val headers = table.select("thead th").map { normalize(it.text()) }
+        val rows = table.select("tr")
+        val headerRow = rows.firstOrNull { it.select("th").isNotEmpty() } ?: rows.firstOrNull()
+            ?: return ParseResult.InvalidDocument("Attendance rows were not found")
+        val headers = headerRow.select("th, td").map { normalize(it.text()) }
         if (headers.isEmpty()) return ParseResult.InvalidDocument("Attendance headers were not found")
 
-        val records = table.select("tbody tr").mapNotNull { row ->
+        val records = rows.filterNot { it == headerRow }.mapNotNull { row ->
             val cells = row.select("td")
             if (cells.isEmpty()) return@mapNotNull null
             val values = headers.zip(cells.map(Element::text)).toMap()
@@ -38,7 +41,9 @@ class AttendanceParser {
             )
         }.distinctBy(AttendanceRecord::id)
 
-        return if (records.isEmpty()) ParseResult.InvalidDocument("No plausible attendance records were found")
+        return if (records.isEmpty()) ParseResult.InvalidDocument(
+            "No plausible attendance records were found; columns=${headers.joinToString("|").take(100)}; rows=${rows.drop(1).take(3).joinToString(",") { it.select("td").size.toString() }}",
+        )
         else ParseResult.Success(AttendanceSnapshot(records))
     }
 
