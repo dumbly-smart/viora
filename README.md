@@ -82,7 +82,7 @@ The **Signed APK release** GitHub Actions workflow runs tests and lint, builds a
 - `VIORA_KEY_PASSWORD`
 - `VIORA_CERT_SHA256` (the pinned release-certificate SHA-256 fingerprint)
 
-Tags matching `v*` publish a GitHub release; manual runs produce a private workflow artifact. Signing material is provisioned only in the runner's temporary directory and is never committed.
+SemVer tags such as `v0.1.0` publish a GitHub release; manual runs require an explicit SemVer version name and positive, monotonically increasing Android version code, then produce a private workflow artifact. The workflow verifies that those versions reached the APK manifest. Signing material is provisioned only in the runner's temporary directory and is never committed.
 
 ## Project notes
 

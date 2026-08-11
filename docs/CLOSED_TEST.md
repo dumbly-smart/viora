@@ -6,8 +6,8 @@ Use only redacted or dedicated test accounts. Never attach live VTOP HTML, cooki
 
 1. Provision the five repository secrets described in `README.md` and run the **Signed APK release** workflow.
 2. Download the signed APK and checksum artifact.
-3. Run `scripts/prepare-closed-test.sh Viora-<version>.apk`. This checks alignment, signature, the optional pinned certificate fingerprint, and SHA-256.
-4. Upload that exact APK to the Play closed-testing track. Record the Play release ID and artifact checksum in the private test record.
+3. Run `scripts/prepare-closed-test.sh Viora-<version>.apk`. This checks alignment, signature, the optional pinned certificate fingerprint, version metadata, and SHA-256.
+4. Distribute that exact APK and checksum privately to the closed-test group. Record the workflow run, version, and artifact checksum in the private test record. Do not create a public GitHub release until the matrix below passes.
 
 ## Minimum matrix
 
@@ -17,7 +17,7 @@ Use only redacted or dedicated test accounts. Never attach live VTOP HTML, cooki
 - One tablet, foldable, or emulator at 840 dp or wider: navigation rail and resize behavior.
 - At least one OEM known for aggressive battery management when available.
 
-For each target, install the Play-delivered build, then run:
+For each target, install the privately distributed candidate, then run:
 
 ```bash
 scripts/device-smoke.sh --apk Viora-<version>.apk --fresh --output build/smoke/<device>

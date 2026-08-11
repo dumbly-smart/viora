@@ -23,4 +23,9 @@ jobs:
       - name: Unit tests, instrumentation compile, and lint
         run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest lintDebug --stacktrace
       - name: Validate automation scripts
-        run: sh -n scripts/*.sh
+        run: |
+          sh -n scripts/*.sh
+          scripts/privacy-audit.sh
+          scripts/validate-release-version.sh 0.1.0 1 >/dev/null
+          ! scripts/validate-release-version.sh 1.0 1 >/dev/null 2>&1
+          ! scripts/validate-release-version.sh 0.1.0 0 >/dev/null 2>&1

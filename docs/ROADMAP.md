@@ -38,10 +38,10 @@ Implemented locally: a cache-backed next-class widget, adaptive/monochrome launc
 ## Phase 3 — release readiness
 
 - Closed testing across campuses/account types and semester rollover.
-- Privacy policy, data deletion flow, Play data-safety declaration.
+- Privacy policy and data deletion flow.
 - Signed builds, dependency review, parser monitoring and incident playbook.
 
-Release signing/checksum automation and a privacy-aware closed-test/device smoke runbook are now present. Physical-device matrix execution, Play closed-track review, release-key secret provisioning, parser monitoring, and the incident playbook remain release checkpoints.
+Release signing/checksum automation and a privacy-aware closed-test/device smoke runbook are now present. Physical-device matrix execution, release-key secret provisioning, parser monitoring, and the incident playbook remain release checkpoints.
 
 ## First engineering slice
 

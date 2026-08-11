@@ -189,13 +189,13 @@ For the current dataset size this is simpler and fast enough. If the cache grows
 
 Local JVM tests use JUnit 4 and `kotlinx-coroutines-test`. They cover attendance boundaries, lab blocks, session restoration, VTOP-only request enforcement, cookie isolation, semester rollover, date parsing, and redacted HTML parser contracts.
 
-Android instrumentation dependencies include AndroidX Test, Compose UI Test, and Room testing. The repository also contains `scripts/android-smoke.sh`, which installs an APK, launches Viora, and captures the accessibility/UI hierarchy through ADB.
+Android instrumentation dependencies include AndroidX Test, Compose UI Test, and Room testing. The repository also contains `scripts/device-smoke.sh`, which installs an APK, launches Viora, and captures the accessibility/UI hierarchy through ADB.
 
 GitHub Actions uses JDK 17 and Gradle 9.5.0. Every push and pull request runs JVM tests, compiles the debug instrumentation APK, and runs Android lint. No student credentials or live VTOP session are placed in CI.
 
 ## 15. APK delivery
 
-Viora is intended to ship as an APK from GitHub, not through the Play Store. The remaining release work is to configure a protected signing key outside the repository and a tag-driven GitHub Actions workflow that builds a release APK, publishes it to GitHub Releases, and attaches a SHA-256 checksum.
+Viora is intended to ship as an APK from GitHub, not through the Play Store. A tag-driven GitHub Actions workflow builds a release APK, verifies its signature, certificate, version metadata, and alignment, publishes it to GitHub Releases, and attaches a SHA-256 checksum. The remaining external release step is to configure the protected signing identity outside the repository and complete the private device matrix before creating the first public tag.
 
 Signing secrets must be stored in GitHub Actions secrets or a secure local environment, never committed. Debug APKs are suitable for development; normal users should receive the signed release APK so upgrades retain the same application identity.
 

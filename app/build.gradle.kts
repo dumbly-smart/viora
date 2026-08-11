@@ -14,6 +14,15 @@ val releaseSigningReady = listOf(
     releaseKeyAlias,
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
+val releaseVersionCode = providers.environmentVariable("VIORA_VERSION_CODE").orNull?.let { value ->
+    value.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }
+        ?: throw GradleException("VIORA_VERSION_CODE must be an integer from 1 to 2100000000")
+} ?: 1
+val releaseVersionName = providers.environmentVariable("VIORA_VERSION_NAME").orNull?.let { value ->
+    val semVer = Regex("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$")
+    value.takeIf { it.matches(semVer) }
+        ?: throw GradleException("VIORA_VERSION_NAME must be a SemVer version without build metadata")
+} ?: "0.1.0"
 
 android {
     namespace = "app.viora"
@@ -23,8 +32,8 @@ android {
         applicationId = "app.viora"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.environmentVariable("VIORA_VERSION_CODE").orNull?.toIntOrNull() ?: 1
-        versionName = providers.environmentVariable("VIORA_VERSION_NAME").orNull ?: "0.1.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

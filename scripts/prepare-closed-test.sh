@@ -15,4 +15,4 @@ cp "$APK" "$OUTPUT_DIR/"
 cp "$APK.sha256" "$OUTPUT_DIR/"
 
 echo "Closed-test bundle prepared in $OUTPUT_DIR"
-echo "Next: upload the APK to the Play closed track, record the release version, and run device-smoke.sh on the matrix in docs/CLOSED_TEST.md."
+echo "Next: distribute this bundle privately, record the workflow run and checksum, and run device-smoke.sh on the matrix in docs/CLOSED_TEST.md."
