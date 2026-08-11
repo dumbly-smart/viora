@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="viora_splash">#12111A</color>
+    <color name="viora_splash_icon_background">#2C2A55</color>
+    <color name="widget_surface">#22212A</color>
+    <color name="widget_primary">#E6E1EC</color>
+    <color name="widget_secondary">#CAC4D0</color>
+</resources>

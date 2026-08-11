@@ -19,12 +19,14 @@ import app.viora.security.CredentialVault
 import app.viora.security.EncryptedCookieStore
 import app.viora.security.EncryptedPreferencesBlobStore
 import app.viora.sync.TimetableSyncCoordinator
+import app.viora.sync.SyncDiagnostics
 import app.viora.notifications.VioraNotifications
 import app.viora.auth.LocalAccountManager
 import app.viora.share.TimetableQrShare
 
 class VioraGraph(context: Context) {
     private val appContext = context.applicationContext
+    val context: Context get() = appContext
     val secureBlobs = EncryptedPreferencesBlobStore(
         appContext,
         AndroidKeystoreCipher("viora.local.v1"),
@@ -50,6 +52,7 @@ class VioraGraph(context: Context) {
     val sessions = SessionManager(gateway, credentials)
     val account = LocalAccountManager(appContext, gateway, credentials, secureBlobs)
     val timetableSync = TimetableSyncCoordinator(sessions, timetable)
+    val syncDiagnostics = SyncDiagnostics(appContext)
     val settings = appContext.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE)
 
     companion object {

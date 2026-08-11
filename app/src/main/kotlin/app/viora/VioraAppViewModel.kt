@@ -18,6 +18,8 @@ import app.viora.network.SemesterOption
 import app.viora.network.SessionState
 import app.viora.sync.SyncOutcome
 import app.viora.sync.VioraSyncScheduler
+import app.viora.sync.SyncDiagnosticsSnapshot
+import app.viora.widget.NextClassWidgetProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,6 +68,7 @@ data class VioraUiState(
     val syncHours: Int = 6,
     val cachedSemesters: List<SemesterEntity> = emptyList(),
     val rolloverDetected: Boolean = false,
+    val syncDiagnostics: SyncDiagnosticsSnapshot? = null,
 )
 data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
@@ -125,6 +128,7 @@ class VioraAppViewModel(
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
         viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
+        refreshDiagnostics()
         if (state.value.configured) restoreSessionAndLoad()
     }
 
@@ -185,7 +189,8 @@ class VioraAppViewModel(
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
-    fun setSyncHours(hours: Int) { val safe = hours.coerceIn(1, 24); graph.settings.edit().putInt("sync_hours", safe).apply(); scheduler.schedule(safe.toLong()); mutableState.update { it.copy(syncHours = safe) } }
+    fun setSyncHours(hours: Int) { val safe = hours.coerceIn(1, 24); graph.settings.edit().putInt("sync_hours", safe).apply(); scheduler.schedule(safe.toLong()); mutableState.update { it.copy(syncHours = safe) }; refreshDiagnostics() }
+    fun refreshDiagnostics() { viewModelScope.launch { mutableState.update { it.copy(syncDiagnostics = graph.syncDiagnostics.snapshot()) } } }
     fun clearDownloads() { viewModelScope.launch { graph.materialManager.clearDownloads(); mutableState.update { it.copy(downloadStorageBytes = 0, downloads = emptyMap(), syncMessage = "Downloaded materials cleared") } } }
     fun clearAcademicCache() { viewModelScope.launch { withContext(Dispatchers.IO) { graph.database.clearAllTables() }; mutableState.update { it.copy(slots = emptyList(), attendance = emptyList(), assignments = emptyList(), exams = emptyList(), marks = emptyList(), grades = emptyList(), calendar = emptyList(), messages = emptyList(), materials = emptyList(), recentChanges = emptyList(), syncMessage = "Academic cache cleared") } } }
     fun completeInteractiveVerification(cookieHeader: String) {
@@ -269,6 +274,9 @@ class VioraAppViewModel(
     }
 
     private suspend fun refreshSemester(semester: SemesterOption) {
+        val profile = graph.syncDiagnostics.start("foreground")
+        var diagnosticOutcome = "failure"
+        try {
         when (graph.timetableSync.refresh(semester.id, semester.name)) {
             SyncOutcome.Updated -> {
                 val attendanceResult = graph.attendance.refresh(semester.id)
@@ -278,6 +286,7 @@ class VioraAppViewModel(
                 val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
                 graph.notifications.publishUpcoming(semester.id)
                 val failed = listOf(attendanceResult, assignmentResult, examResult, resultsResult, extrasResult).count(Result<*>::isFailure)
+                diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
                 mutableState.update {
                     it.copy(
                         loading = false,
@@ -286,11 +295,16 @@ class VioraAppViewModel(
                     )
                 }
             }
-            SyncOutcome.SignInRequired -> requireSignIn("Sign in again to refresh VTOP")
-            SyncOutcome.VerificationRequired -> requireSignIn("VTOP requires interactive verification")
+            SyncOutcome.SignInRequired -> { diagnosticOutcome = "sign-in required"; requireSignIn("Sign in again to refresh VTOP") }
+            SyncOutcome.VerificationRequired -> { diagnosticOutcome = "verification required"; requireSignIn("VTOP requires interactive verification") }
             is SyncOutcome.Failed -> mutableState.update {
                 it.copy(loading = false, syncMessage = null, error = "Could not refresh; showing cached timetable")
             }
+        }
+        } finally {
+            graph.syncDiagnostics.finish(profile, diagnosticOutcome)
+            NextClassWidgetProvider.updateAll(graph.context)
+            refreshDiagnostics()
         }
     }
 

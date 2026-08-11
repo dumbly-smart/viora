@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Viora.Starting" parent="Theme.Viora">
+        <item name="android:windowSplashScreenBackground">@color/viora_splash</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_viora_mark</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/viora_splash_icon_background</item>
+    </style>
+</resources>

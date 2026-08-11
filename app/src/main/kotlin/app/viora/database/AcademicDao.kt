@@ -93,6 +93,18 @@ interface AcademicDao {
         """,
     )
     fun observeTimetable(semesterId: String): Flow<List<SlotWithCourse>>
+    @Query(
+        """
+        SELECT class_slots.id AS slotId, courses.id AS courseId, courses.code, courses.title,
+               courses.faculty, class_slots.dayOfWeek, class_slots.startMinute,
+               class_slots.endMinute, class_slots.venue, class_slots.type
+        FROM class_slots
+        JOIN courses ON courses.id = class_slots.courseId
+        WHERE courses.semesterId = :semesterId
+        ORDER BY class_slots.dayOfWeek, class_slots.startMinute
+        """,
+    )
+    suspend fun timetableSnapshot(semesterId: String): List<SlotWithCourse>
     @Query("SELECT * FROM courses WHERE semesterId = :semesterId ORDER BY code") suspend fun courses(semesterId: String): List<CourseEntity>
 
     @Query("SELECT * FROM sync_resources WHERE resource = :resource")
@@ -109,6 +121,7 @@ interface AcademicDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCalendar(rows: List<AcademicCalendarEntity>)
     @Query("DELETE FROM academic_calendar WHERE semesterId = :semesterId") suspend fun deleteCalendar(semesterId: String)
     @Query("SELECT * FROM academic_calendar WHERE semesterId = :semesterId ORDER BY dateEpochDay") fun observeCalendar(semesterId: String): Flow<List<AcademicCalendarEntity>>
+    @Query("SELECT * FROM academic_calendar WHERE semesterId = :semesterId ORDER BY dateEpochDay") suspend fun calendarSnapshot(semesterId: String): List<AcademicCalendarEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertMessages(rows: List<ClassMessageEntity>)
     @Query("DELETE FROM class_messages") suspend fun deleteMessages()
     @Query("SELECT * FROM class_messages ORDER BY postedEpochMillis DESC") fun observeMessages(): Flow<List<ClassMessageEntity>>

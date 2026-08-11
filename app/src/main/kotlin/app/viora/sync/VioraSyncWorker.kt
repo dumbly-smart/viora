@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.viora.VioraGraph
 import app.viora.auth.LocalAccountManager
+import app.viora.widget.NextClassWidgetProvider
 import java.util.concurrent.TimeUnit
 
 class VioraSyncWorker(
@@ -18,7 +19,16 @@ class VioraSyncWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val graph = VioraGraph(applicationContext)
-        val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null) ?: return Result.success()
+        val profile = graph.syncDiagnostics.start("background")
+        val (result, outcome) = runCatching { runSync(graph) }
+            .getOrElse { Result.retry() to "exception retry" }
+        graph.syncDiagnostics.finish(profile, outcome)
+        return result
+    }
+
+    private suspend fun runSync(graph: VioraGraph): Pair<Result, String> {
+        val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+            ?: return Result.success() to "not configured"
         val semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
         return when (graph.timetableSync.refresh(semesterId, semesterName)) {
             SyncOutcome.Updated -> {
@@ -30,10 +40,13 @@ class VioraSyncWorker(
                     graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
                 )
                 graph.notifications.publishUpcoming(semesterId)
-                if (results.all { it.isSuccess }) Result.success() else Result.retry()
+                NextClassWidgetProvider.updateAll(applicationContext)
+                if (results.all { it.isSuccess }) Result.success() to "success"
+                else Result.retry() to "partial retry"
             }
-            SyncOutcome.SignInRequired, SyncOutcome.VerificationRequired -> Result.failure()
-            is SyncOutcome.Failed -> Result.retry()
+            SyncOutcome.SignInRequired -> Result.failure() to "sign-in required"
+            SyncOutcome.VerificationRequired -> Result.failure() to "verification required"
+            is SyncOutcome.Failed -> Result.retry() to "network retry"
         }
     }
 }

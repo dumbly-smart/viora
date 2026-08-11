@@ -5,6 +5,7 @@ import android.content.Intent
 import android.Manifest
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,7 +84,9 @@ class MainActivity : ComponentActivity() {
     ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_Viora)
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         notificationDestination.value = intent.getStringExtra("viora_destination")
         setContent {
             VioraTheme {
@@ -96,7 +99,7 @@ class MainActivity : ComponentActivity() {
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -149,6 +152,7 @@ private fun Dashboard(
     setSearchQuery: (String) -> Unit,
     setQuietHours: (Boolean) -> Unit,
     setSyncHours: (Int) -> Unit,
+    refreshDiagnostics: () -> Unit,
     clearDownloads: () -> Unit,
     clearAcademicCache: () -> Unit,
     shareTimetableQr: () -> Unit,
@@ -199,7 +203,7 @@ private fun Dashboard(
                 1 -> ScheduleScreen(state, selectSemester, shareTimetableQr) { detail = DetailSelection("exam", it.id) }
                 2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
                 3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
-                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, clearDownloads, clearAcademicCache)
+                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
             }
         }
     }
@@ -483,7 +487,7 @@ private fun ResultsScreen(state: VioraUiState) {
     }
 }
 
-@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption) -> Unit, setSyncHours: (Int) -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit) {
+@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption) -> Unit, setSyncHours: (Int) -> Unit, refreshDiagnostics: () -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("More", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
         item { OutlinedTextField(value = state.searchQuery, onValueChange = setSearchQuery, label = { Text("Search cached academics") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
@@ -517,6 +521,13 @@ private fun ResultsScreen(state: VioraUiState) {
         if (state.rolloverDetected) item { Text("A new semester was detected. Older cached semesters remain archived below.", color = MaterialTheme.colorScheme.primary) }
         if (state.cachedSemesters.any { !it.active }) item { Text("Archived: ${state.cachedSemesters.filterNot { it.active }.joinToString { it.name }}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Column { Text("Background sync: every ${state.syncHours} hours"); listOf(listOf(1, 3, 6), listOf(12, 24)).forEach { group -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { group.forEach { hours -> TextButton(onClick = { setSyncHours(hours) }, enabled = hours != state.syncHours) { Text("${hours}h") } } } } } }
+        item { Text("Background diagnostics", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 6.dp)) }
+        state.syncDiagnostics?.let { diagnostics ->
+            item { SummaryCard("Worker", diagnostics.workState, if (diagnostics.runAttemptCount > 0) "Retry attempt ${diagnostics.runAttemptCount}" else "Periodic work is constrained to a connected network") }
+            item { SummaryCard("Battery", diagnostics.batteryPercent?.let { "$it%${if (diagnostics.charging) " · Charging" else ""}" } ?: "Unavailable", listOfNotNull(if (diagnostics.powerSaveMode) "Power saver on" else null, if (diagnostics.batteryOptimizationActive) "Battery optimization active" else "Unrestricted by battery optimization", if (diagnostics.backgroundRestricted) "Background activity restricted" else null).joinToString(" · ")) }
+            item { SummaryCard("Last profiled sync", diagnostics.lastOutcome?.replaceFirstChar(Char::uppercase) ?: "No run recorded", listOfNotNull(diagnostics.lastSource, diagnostics.lastDurationMillis?.let { "${it} ms" }, diagnostics.lastRunEpochMillis?.asAcademicTime()).joinToString(" · ")) }
+        }
+        item { TextButton(onClick = refreshDiagnostics) { Text("Refresh diagnostics") } }
         item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Viora's private app folder") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
