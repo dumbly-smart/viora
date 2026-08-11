@@ -39,7 +39,7 @@ fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("viora", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
                 Text("Your classes, attendance and deadlines—beautifully in sync.", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Unofficial personal project · Not affiliated with or endorsed by VIT or VTOP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Made by students, for students · Unofficial and not endorsed by VIT or VTOP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {

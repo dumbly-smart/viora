@@ -1,6 +1,6 @@
 # Viora local-data guarantee
 
-Viora is an unofficial personal project with no affiliation with or endorsement by VIT or VTOP. It has no application backend. The installed app connects directly to the VTOP HTTPS website and nowhere else for academic synchronization.
+Viora is a student-made, unofficial project. It is not connected to or endorsed by VIT or VTOP. It has no application backend, and the installed app connects directly to the VTOP HTTPS website and nowhere else for academic synchronization.
 
 ## Data that stays on the device
 

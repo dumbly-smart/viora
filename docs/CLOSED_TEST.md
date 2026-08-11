@@ -7,7 +7,7 @@ Use only redacted or dedicated test accounts. Never attach live VTOP HTML, cooki
 1. Provision the five repository secrets described in `README.md` and run the **Signed APK release** workflow.
 2. Download the signed APK and checksum artifact.
 3. Run `scripts/prepare-closed-test.sh Viora-<version>.apk`. This checks alignment, signature, the optional pinned certificate fingerprint, version metadata, and SHA-256.
-4. Install that exact APK on the intended personal devices. Record the workflow run, version, and artifact checksum privately. Do not create the downloadable GitHub release until those devices pass the checks below.
+4. Install that exact APK on your and your friends' devices. Record the workflow run, version, and artifact checksum privately. Do not create the downloadable GitHub release until those devices pass the checks below.
 
 ## Minimum matrix
 

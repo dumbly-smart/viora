@@ -85,6 +85,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk
           app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk.sha256
-          --title "Viora ${VIORA_VERSION_NAME} — unofficial personal build"
-          --notes "Unofficial personal project. Not affiliated with, endorsed by, or published by VIT or VTOP. The APK connects directly to VTOP and keeps its app data on the device."
+          --title "Viora ${VIORA_VERSION_NAME} — unofficial student build"
+          --notes "Made by students, for students. Viora is unofficial and is not connected to or endorsed by VIT or VTOP. The APK connects directly to VTOP and keeps its app data on the device."
           --generate-notes

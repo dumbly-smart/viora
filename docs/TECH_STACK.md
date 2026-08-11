@@ -195,9 +195,9 @@ GitHub Actions uses JDK 17 and Gradle 9.5.0. Every push and pull request runs JV
 
 ## 15. APK delivery
 
-Viora is an unofficial personal APK shared directly from GitHub, not a Play Store product or a VIT/VTOP publication. A tag-driven GitHub Actions workflow builds the APK, verifies its signature, certificate, version metadata, and alignment, publishes it to GitHub Releases, and attaches a SHA-256 checksum. The remaining external step is to configure the personal signing identity outside the repository and test the APK on the intended devices before creating the first tag.
+Viora is a student-made, unofficial APK shared directly with friends from GitHub, not a Play Store product or a VIT/VTOP publication. A tag-driven GitHub Actions workflow builds the APK, verifies its signature, certificate, version metadata, and alignment, publishes it to GitHub Releases, and attaches a SHA-256 checksum. The remaining external step is to configure the signing identity outside the repository and test the APK on the intended devices before creating the first tag.
 
-Signing secrets must be stored in GitHub Actions secrets or a secure local environment, never committed. Debug APKs are suitable for development; shared personal builds use the same signing key so an update installs over the existing copy without erasing its local data.
+Signing secrets must be stored in GitHub Actions secrets or a secure local environment, never committed. Debug APKs are suitable for development; shared builds use the same signing key so an update installs over the existing copy without erasing its local data.
 
 ## 16. Current tradeoffs
 
