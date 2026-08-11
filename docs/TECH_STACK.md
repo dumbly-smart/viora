@@ -135,7 +135,7 @@ Credentials and cookies are serialized into app-private preferences only after e
 
 The encrypted cookie store retains the fields OkHttp needs—name, value, expiry, domain, path, secure, HTTP-only, persistent, and host-only state. `IsolatedCookieJar` removes expired cookies, matches them to outgoing VTOP URLs, and can be cleared without touching any other client.
 
-On launch, `SessionManager` first tries the encrypted cookie session. If VTOP has expired it and stored credentials exist, it attempts a silent login. VTOP's six-character image CAPTCHA is decoded and classified on-device using a small bundled linear model; images and answers are neither persisted nor sent to another service. Failed answers use a fresh session and challenge, with bounded retries. If VTOP presents reCAPTCHA or another interactive verification flow, Viora opens VTOP's own page inside an app-contained WebView. JavaScript and DOM storage are enabled only for this official interactive flow. The WebView blocks all non-HTTPS/non-VTOP navigation and subresources, third-party cookies, mixed content, file/content access, and popup windows; cancels certificate errors; moves the successful session into Viora's encrypted OkHttp jar; and clears WebView cookies when the screen closes.
+On launch, `SessionManager` first tries the encrypted cookie session. If VTOP has expired it and stored credentials exist, it attempts a silent login. VTOP's six-character image CAPTCHA is decoded and classified on-device using a small bundled linear model; images and answers are neither persisted nor sent to another service. Failed answers use a fresh session and challenge, with bounded retries. If VTOP presents reCAPTCHA or another interactive verification flow, Viora opens the VTOP-hosted page inside an app-contained WebView. JavaScript and DOM storage are enabled only for this VTOP-hosted interactive flow. The WebView blocks all non-HTTPS/non-VTOP navigation and subresources, third-party cookies, mixed content, file/content access, and popup windows; cancels certificate errors; moves the successful session into Viora's encrypted OkHttp jar; and clears WebView cookies when the screen closes.
 
 Local logout cancels Viora work, clears encrypted credentials and cookies, deletes the Room database and downloaded files, and leaves server-side/browser logout alone.
 
@@ -195,9 +195,9 @@ GitHub Actions uses JDK 17 and Gradle 9.5.0. Every push and pull request runs JV
 
 ## 15. APK delivery
 
-Viora is intended to ship as an APK from GitHub, not through the Play Store. A tag-driven GitHub Actions workflow builds a release APK, verifies its signature, certificate, version metadata, and alignment, publishes it to GitHub Releases, and attaches a SHA-256 checksum. The remaining external release step is to configure the protected signing identity outside the repository and complete the private device matrix before creating the first public tag.
+Viora is an unofficial personal APK shared directly from GitHub, not a Play Store product or a VIT/VTOP publication. A tag-driven GitHub Actions workflow builds the APK, verifies its signature, certificate, version metadata, and alignment, publishes it to GitHub Releases, and attaches a SHA-256 checksum. The remaining external step is to configure the personal signing identity outside the repository and test the APK on the intended devices before creating the first tag.
 
-Signing secrets must be stored in GitHub Actions secrets or a secure local environment, never committed. Debug APKs are suitable for development; normal users should receive the signed release APK so upgrades retain the same application identity.
+Signing secrets must be stored in GitHub Actions secrets or a secure local environment, never committed. Debug APKs are suitable for development; shared personal builds use the same signing key so an update installs over the existing copy without erasing its local data.
 
 ## 16. Current tradeoffs
 

@@ -1,5 +1,7 @@
 # Viora
 
+> **Unofficial personal project.** Viora is not affiliated with, endorsed by, or published by VIT or VTOP. It is a small app made for personal use and shared directly with a friend.
+
 Viora is an Android app for keeping VTOP stuff in one place without opening ten different pages every time.
 
 Log in once during setup and Viora keeps your academic data synced whenever you open the app. Everything stays on your phone, so your cached timetable and other details are still there when campus Wi-Fi decides not to cooperate.
@@ -74,7 +76,7 @@ Device smoke runs can be captured with `scripts/device-smoke.sh --apk app/build/
 
 ## Signed releases
 
-The **Signed APK release** GitHub Actions workflow runs tests and lint, builds a non-debuggable APK, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Configure these repository secrets before running it:
+The **Signed APK release** GitHub Actions workflow runs tests and lint, builds a non-debuggable personal APK, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Android requires the APK to be signed so later personal builds can update the installed copy; the signature does not imply endorsement or affiliation. Configure these repository secrets before running it:
 
 - `VIORA_KEYSTORE_BASE64`
 - `VIORA_KEYSTORE_PASSWORD`

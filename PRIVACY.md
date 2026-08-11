@@ -1,6 +1,6 @@
 # Viora local-data guarantee
 
-Viora is designed without an application backend. The installed app connects directly to the configured official VTOP HTTPS origin and nowhere else for academic synchronization.
+Viora is an unofficial personal project with no affiliation with or endorsement by VIT or VTOP. It has no application backend. The installed app connects directly to the VTOP HTTPS website and nowhere else for academic synchronization.
 
 ## Data that stays on the device
 
@@ -16,7 +16,7 @@ App data is held in Android's private application sandbox, excluded from cloud b
 
 ## Session isolation
 
-Viora owns a private OkHttp cookie jar. It neither reads nor writes Chrome, Android WebView, the official VIT app, or another device's cookies. “Log out of Viora” means local deletion and does not send a request to VTOP's logout endpoint. VTOP may still impose server-side session policies outside Viora's control.
+Viora owns a private OkHttp cookie jar. It neither reads nor writes Chrome, Android WebView, VIT's own app, or another device's cookies. “Log out of Viora” means local deletion and does not send a request to VTOP's logout endpoint. VTOP may still impose server-side session policies outside Viora's control.
 
 ## Excluded services
 

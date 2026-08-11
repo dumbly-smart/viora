@@ -815,6 +815,7 @@ private fun ResultsScreen(state: VioraUiState) {
         item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Viora's private app folder") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+        item { Text("Viora is an unofficial personal project and is not affiliated with or endorsed by VIT or VTOP.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Text("Viora stores academic data, credentials and its isolated VTOP cookies only on this device. Logging out here does not call VTOP logout or affect browser sessions.") }
         item { Button(onClick = logout) { Text("Erase local Viora account") } }
     }
