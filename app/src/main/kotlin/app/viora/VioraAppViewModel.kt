@@ -270,7 +270,41 @@ class VioraAppViewModel(
                 scheduler.schedule()
                 refreshSemester(selected)
             }
-            .onFailure { requireSignIn("Your cached data is available; sign in to refresh it") }
+            .onFailure { useCachedSemesterAfterDiscoveryFailure() }
+    }
+
+    private fun useCachedSemesterAfterDiscoveryFailure() {
+        val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+        val savedName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null)
+        if (savedId == null) {
+            mutableState.update {
+                it.copy(
+                    loading = false,
+                    password = "",
+                    error = "Signed in, but VTOP did not return a semester list. Try again in a moment.",
+                )
+            }
+            return
+        }
+
+        val semester = SemesterOption(savedId, savedName ?: savedId)
+        observeTimetable(savedId)
+        observeAttendance(savedId)
+        observeAssignments(savedId)
+        observeExams(savedId)
+        observeResults(savedId)
+        observeExtras(savedId)
+        mutableState.update {
+            it.copy(
+                configured = true,
+                reauthRequired = false,
+                activeSemester = semester,
+                loading = false,
+                password = "",
+                syncMessage = "Using your cached semester",
+                error = "Could not refresh the semester list. Tap Sync to retry.",
+            )
+        }
     }
 
     private suspend fun refreshSemester(semester: SemesterOption) {
