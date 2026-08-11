@@ -89,7 +89,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
     implementation("androidx.work:work-runtime:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("org.jsoup:jsoup:1.22.1")
     implementation("com.google.zxing:core:3.5.4")
     ksp("androidx.room:room-compiler:2.8.4")
