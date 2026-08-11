@@ -70,7 +70,10 @@ class VioraNotifications(
         val launch = PendingIntent.getActivity(
             context,
             key.hashCode(),
-            Intent(context, MainActivity::class.java).putExtra("viora_destination", destination).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(context, MainActivity::class.java)
+                .setPackage(context.packageName)
+                .putExtra("viora_destination", destination)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = android.app.Notification.Builder(context, channel)

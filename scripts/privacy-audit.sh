@@ -31,4 +31,9 @@ if grep -q 'upload-artifact' .github/workflows/android.yml; then
     exit 1
 fi
 
+if grep -Eh '^[[:space:]]*-[[:space:]]+uses: [^ ]+@' .github/workflows/*.yml | grep -Ev '@[0-9a-f]{40}([[:space:]]|$)' >/dev/null; then
+    echo "workflow action is not pinned to an immutable commit" >&2
+    exit 1
+fi
+
 echo "privacy audit passed"
