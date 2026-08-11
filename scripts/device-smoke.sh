@@ -57,19 +57,25 @@ fi
 
 "$ADB" logcat -c
 "$ADB" shell am force-stop "$PACKAGE"
-"$ADB" shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null
+"$ADB" shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$PACKAGE/.MainActivity" > "$OUTPUT_DIR/launch.txt"
 
 attempt=0
 pid=""
 while [ "$attempt" -lt 20 ]; do
     pid="$($ADB shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || true)"
-    [ -n "$pid" ] && break
+    if [ -n "$pid" ] && "$ADB" shell dumpsys activity activities | grep -q "topResumedActivity=.*$PACKAGE"; then
+        break
+    fi
     attempt=$((attempt + 1))
     sleep 0.5
 done
 if [ -z "$pid" ]; then
     "$ADB" logcat -d > "$OUTPUT_DIR/logcat.txt"
     echo "Viora did not remain running after launch" >&2
+    exit 1
+fi
+if ! "$ADB" shell dumpsys activity activities | grep -q "topResumedActivity=.*$PACKAGE"; then
+    echo "Viora launched but was no longer foreground; unlock the device and retry" >&2
     exit 1
 fi
 
@@ -83,7 +89,7 @@ if grep -E "FATAL EXCEPTION|ANR in $PACKAGE|Process: $PACKAGE.*has died" "$OUTPU
     echo "crash or ANR signature found; see $OUTPUT_DIR/logcat.txt" >&2
     exit 1
 fi
-if ! grep -E "Welcome to Viora|Viora|Today" "$OUTPUT_DIR/window.xml" >/dev/null; then
+if ! grep -E "Welcome to Viora|Viora|Today|content-desc=\"Home\"|content-desc=\"Schedule\"" "$OUTPUT_DIR/window.xml" >/dev/null; then
     echo "expected Viora UI was not found; see $OUTPUT_DIR/window.xml" >&2
     exit 1
 fi
