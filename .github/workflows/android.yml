@@ -21,4 +21,6 @@ jobs:
         with:
           gradle-version: "9.5.0"
       - name: Unit tests, instrumentation compile, and lint
-        run: gradle testDebugUnitTest assembleDebugAndroidTest lintDebug --stacktrace
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest lintDebug --stacktrace
+      - name: Validate automation scripts
+        run: sh -n scripts/*.sh

@@ -70,6 +70,20 @@ gradle testDebugUnitTest lintDebug
 gradle assembleDebug
 ```
 
+Device smoke runs can be captured with `scripts/device-smoke.sh --apk app/build/outputs/apk/debug/app-debug.apk`. See [the closed-test runbook](docs/CLOSED_TEST.md) for the release matrix and privacy rules.
+
+## Signed releases
+
+The **Signed APK release** GitHub Actions workflow runs tests and lint, builds a non-debuggable APK, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Configure these repository secrets before running it:
+
+- `VIORA_KEYSTORE_BASE64`
+- `VIORA_KEYSTORE_PASSWORD`
+- `VIORA_KEY_ALIAS`
+- `VIORA_KEY_PASSWORD`
+- `VIORA_CERT_SHA256` (the pinned release-certificate SHA-256 fingerprint)
+
+Tags matching `v*` publish a GitHub release; manual runs produce a private workflow artifact. Signing material is provisioned only in the runner's temporary directory and is never committed.
+
 ## Project notes
 
 - [Detailed tech stack](docs/TECH_STACK.md)

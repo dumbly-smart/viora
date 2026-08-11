@@ -33,11 +33,15 @@ The latest reliability pass adds an ADB smoke harness, offline-cache and v5-to-v
 - Accessibility, adaptive UI, widgets, performance and battery profiling.
 - Exit: no duplicate notifications; background retry load remains bounded.
 
+Implemented locally: a cache-backed next-class widget, adaptive/monochrome launcher icon, native splash treatment, dynamic color, background power/WorkManager diagnostics, and Perfetto-compatible async sync traces with coarse on-device timings.
+
 ## Phase 3 — release readiness
 
 - Closed testing across campuses/account types and semester rollover.
 - Privacy policy, data deletion flow, Play data-safety declaration.
 - Signed builds, dependency review, parser monitoring and incident playbook.
+
+Release signing/checksum automation and a privacy-aware closed-test/device smoke runbook are now present. Physical-device matrix execution, Play closed-track review, release-key secret provisioning, parser monitoring, and the incident playbook remain release checkpoints.
 
 ## First engineering slice
 
