@@ -37,4 +37,28 @@ class TimetableParserTest {
         val result = parser.parse("<html><body>Temporarily unavailable</body></html>")
         assertTrue(result is ParseResult.InvalidDocument)
     }
+
+    @Test fun `parses VTOP course list and weekly grid`() {
+        val html = """
+            <div id="studentDetailsList"><table>
+              <tr><th>Course</th><th>L T P J C</th><th>Slot - Venue</th><th>Faculty</th></tr>
+              <tr><td>BCSE302L - Database Systems (Theory Only)</td><td>3 0 0 0 3</td><td>A1 - AB1-101</td><td>Redacted Faculty</td></tr>
+              <tr><td>BCSE302P - Database Systems Lab (Lab Only)</td><td>0 0 2 0 1</td><td>L1 - AB1-201</td><td>Redacted Faculty</td></tr>
+            </table></div>
+            <table class="w3-table-all">
+              <tr><td>THEORY</td><td>Start</td><td>08:00</td><td>08:55</td></tr>
+              <tr><td>End</td><td>08:50</td><td>09:45</td></tr>
+              <tr><td>LAB</td><td>Start</td><td>14:00</td><td>14:50</td></tr>
+              <tr><td>End</td><td>14:50</td><td>15:40</td></tr>
+              <tr><td>MON</td><td>THEORY</td><td>A1-BCSE302L-TH-AB1-101-ALL</td><td>A2</td></tr>
+              <tr><td>LAB</td><td>L1-BCSE302P-LO-AB1-201-ALL</td><td>L1-BCSE302P-LO-AB1-201-ALL</td></tr>
+            </table>
+        """.trimIndent()
+
+        val result = parser.parse(html) as ParseResult.Success
+
+        assertEquals(listOf("BCSE302L", "BCSE302P"), result.value.courses.map { it.code })
+        assertEquals(2, result.value.slots.size)
+        assertEquals("15:40", result.value.slots.single { it.type == ClassType.LAB }.end.toString())
+    }
 }
