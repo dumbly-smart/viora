@@ -13,19 +13,43 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +58,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -43,6 +68,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Slider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Surface
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,9 +83,18 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -65,8 +106,17 @@ import app.viora.setup.SetupState
 import app.viora.setup.VtopVerificationScreen
 import app.viora.sync.VioraSyncScheduler
 import app.viora.ui.VioraTheme
+import app.viora.ui.VioraAmber
+import app.viora.ui.VioraBlue
+import app.viora.ui.VioraCoral
+import app.viora.ui.VioraMint
+import app.viora.domain.ClassPhase
+import app.viora.domain.classCheckInKey
+import app.viora.domain.classPhase
+import app.viora.domain.focusedSlots
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -99,7 +149,7 @@ class MainActivity : ComponentActivity() {
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -131,7 +181,7 @@ private data class DetailSelection(val kind: String, val id: String)
 private val destinations = listOf(
     Destination("Home", Icons.Outlined.Home),
     Destination("Schedule", Icons.Outlined.CalendarMonth),
-    Destination("Courses", Icons.Outlined.MenuBook),
+    Destination("Courses", Icons.AutoMirrored.Outlined.MenuBook),
     Destination("Tasks", Icons.Outlined.Checklist),
     Destination("More", Icons.Outlined.MoreHoriz),
 )
@@ -156,6 +206,7 @@ private fun Dashboard(
     clearDownloads: () -> Unit,
     clearAcademicCache: () -> Unit,
     shareTimetableQr: () -> Unit,
+    markClass: (String, ClassCheckIn?) -> Unit,
     initialDestination: String?,
 ) {
     var selected by remember(initialDestination) { mutableIntStateOf(when (initialDestination) { "schedule" -> 1; "courses" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
@@ -163,27 +214,25 @@ private fun Dashboard(
     BoxWithConstraints {
     val expanded = maxWidth >= 840.dp
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(detail?.kind?.replaceFirstChar(Char::uppercase) ?: "Viora") },
-                navigationIcon = { if (detail != null) TextButton(onClick = { detail = null }) { Text("Back") } },
-                actions = {
-                    if (state.reauthRequired) {
-                        TextButton(onClick = reauthenticate) { Text("Sign in to sync") }
-                    } else {
-                        TextButton(onClick = refresh, enabled = !state.loading) { Text("Sync") }
-                    }
-                },
-            )
+            VioraTopBar(state, detail, { detail = null }, refresh, reauthenticate)
         },
         bottomBar = {
-            if (!expanded) NavigationBar {
+            if (!expanded) NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                 destinations.forEachIndexed { index, destination ->
                     NavigationBarItem(
                         selected = selected == index,
-                        onClick = { selected = index },
+                        onClick = { selected = index; detail = null },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
                         label = { Text(destination.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }
@@ -196,14 +245,24 @@ private fun Dashboard(
                 }
             }
         Column(Modifier.weight(1f).fillMaxSize()) {
-            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp).semantics { liveRegion = LiveRegionMode.Assertive }) }
-            if (detail != null) DetailScreen(state, detail!!, openMaterial) else when (selected) {
-                0 -> HomeScreen(state, PaddingValues())
-                1 -> ScheduleScreen(state, selectSemester, shareTimetableQr) { detail = DetailSelection("exam", it.id) }
-                2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
-                3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
-                else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
+            AnimatedVisibility(visible = state.loading, enter = fadeIn(), exit = fadeOut()) {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = VioraMint, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+            }
+            AnimatedVisibility(visible = state.error != null, enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+                state.error?.let { message ->
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                        Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp).semantics { liveRegion = LiveRegionMode.Assertive })
+                    }
+                }
+            }
+            AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
+                if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial) else when (destination) {
+                    0 -> HomeScreen(state, PaddingValues(), markClass)
+                    1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
+                    2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
+                    3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
+                    else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
+                }
             }
         }
     }
@@ -212,33 +271,85 @@ private fun Dashboard(
 }
 
 @Composable
-private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
+private fun VioraTopBar(
+    state: VioraUiState,
+    detail: DetailSelection?,
+    closeDetail: () -> Unit,
+    refresh: () -> Unit,
+    reauthenticate: () -> Unit,
+) {
+    val rotation by animateFloatAsState(if (state.loading) 360f else 0f, animationSpec = spring(), label = "sync rotation")
+    Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (detail != null) {
+                TextButton(onClick = closeDetail) { Text("← Back") }
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text("viora", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+                    Text(state.activeSemester?.name ?: "your VTOP, distilled", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+            if (detail != null) Spacer(Modifier.weight(1f))
+            if (state.reauthRequired) {
+                AssistChip(onClick = reauthenticate, label = { Text("Sign in") })
+            } else {
+                Surface(
+                    onClick = refresh,
+                    enabled = !state.loading,
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (state.loading) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary,
+                    contentColor = if (state.loading) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp).rotate(rotation))
+                        Text(if (state.loading) "Syncing" else "Sync", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (String, ClassCheckIn?) -> Unit) {
     val todayDate = LocalDate.now()
-    val today = todayDate.dayOfWeek.value
-    val nowMinute = java.time.LocalTime.now().hour * 60 + java.time.LocalTime.now().minute
+    val now = LocalTime.now()
+    val nowMinute = now.hour * 60 + now.minute
     val todaySlots = state.slotsForDate(todayDate)
+    val focusSlots = focusedSlots(todaySlots, nowMinute)
     val timeline = state.academicTimeline(todayDate)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Text("Today", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            Text(
-                state.activeSemester?.name ?: "No semester selected",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(todayDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
+                Text(greeting(now.hour), style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
+                Text(homeSubtitle(focusSlots, todaySlots, nowMinute), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        todaySlots.firstOrNull { it.endMinute >= nowMinute }?.let { slot -> item { SummaryCard(if (slot.startMinute <= nowMinute) "Happening now" else "Up next", "${slot.code} · ${slot.title}", "${slot.startMinute.asTime()}–${slot.endMinute.asTime()} · ${slot.venue}") } }
         if (todaySlots.isEmpty()) {
-            item { SummaryCard("Schedule", "No cached classes", "Sync with VTOP to load your timetable") }
+            item { EmptyStateCard("No classes today", "Your day is clear—or sync to refresh the timetable.") }
+        } else if (focusSlots.isEmpty()) {
+            item { EmptyStateCard("All done", "No more classes today. You made it.") }
         } else {
-            items(todaySlots, key = SlotWithCourse::slotId) { slot -> ClassCard(slot) }
+            item { SectionLabel(if (focusSlots.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE }) "HAPPENING NOW" else "UP NEXT") }
+            items(focusSlots, key = SlotWithCourse::slotId) { slot ->
+                val attendance = state.attendanceFor(slot)
+                val key = classCheckInKey(todayDate, slot.slotId)
+                val phase = classPhase(slot.startMinute, slot.endMinute, nowMinute)
+                ClassCard(slot, attendance, phase, state.classCheckIns[key], key.takeIf { phase != ClassPhase.UPCOMING }, markClass)
+            }
         }
         val risks = state.attendance.filter { it.recovery > 0 || it.skippable == 0 }.take(3)
         if (risks.isNotEmpty()) {
-            item { Text("Attendance watch", style = MaterialTheme.typography.titleLarge) }
+            item { SectionLabel("ATTENDANCE WATCH") }
             items(risks, key = AttendanceUi::id) { AttendanceCard(it) }
         }
         state.assignments.firstOrNull { it.dueEpochMillis == null || it.dueEpochMillis > System.currentTimeMillis() }?.let {
@@ -248,12 +359,25 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
             item { SummaryCard("Next exam", "${it.examType} · ${it.courseCode}", it.startsEpochMillis.asAcademicTime()) }
         }
         if (timeline.isNotEmpty()) {
-            item { Text("Coming up", style = MaterialTheme.typography.titleLarge) }
-            items(timeline.take(12), key = TimelineItem::id) { entry -> SummaryCard(entry.kind, entry.title, entry.whenText) }
+            item { SectionLabel("COMING UP") }
+            items(timeline.filter { it.at > System.currentTimeMillis() }.take(5), key = TimelineItem::id) { entry -> SummaryCard(entry.kind, entry.title, entry.whenText) }
         }
-        state.syncMessage?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
+        state.syncMessage?.let { item { SyncStatusCard(it, state.loading) } }
         state.syncResources.maxByOrNull { it.lastAttemptEpochMillis }?.let { sync -> item { SummaryCard("Local sync", sync.status.lowercase().replaceFirstChar(Char::uppercase), sync.lastSuccessEpochMillis.asAcademicTime("Not synced yet")) } }
     }
+}
+
+private fun greeting(hour: Int): String = when (hour) {
+    in 5..11 -> "Good morning"
+    in 12..16 -> "Good afternoon"
+    else -> "Good evening"
+}
+
+private fun homeSubtitle(focus: List<SlotWithCourse>, today: List<SlotWithCourse>, nowMinute: Int): String = when {
+    today.isEmpty() -> "Nothing on the timetable today."
+    focus.isEmpty() -> "The rest of the day is yours."
+    focus.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE } -> "Stay present—this is your current class."
+    else -> "One thing at a time. Here’s what’s next."
 }
 
 @Composable
@@ -283,23 +407,34 @@ private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database
 
 @Composable
 private fun AttendanceCard(item: AttendanceUi) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val healthy = item.recovery == 0 && item.skippable > 0
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (healthy) VioraMint.copy(alpha = 0.22f) else VioraCoral.copy(alpha = 0.28f)),
+    ) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 if (item.courseTitle.isBlank()) item.courseCode else "${item.courseCode} · ${item.courseTitle}",
                 style = MaterialTheme.typography.titleMedium,
             )
-            Text("${item.attended}/${item.held} · ${"%.1f".format(item.percentage)}%")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${item.attended}/${item.held} classes", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${"%.1f".format(item.percentage)}%", color = if (healthy) VioraMint else VioraCoral, fontWeight = FontWeight.Bold)
+            }
             listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             when {
                 item.recovery > 0 -> Text(
-                    "Attend ${if (item.blockSize > 1) item.recoveryBlocks else item.recovery} consecutive ${if (item.blockSize > 1) "blocks" else "classes"} to reach the target",
-                    color = MaterialTheme.colorScheme.error,
+                    "Attend next ${if (item.blockSize > 1) item.recoveryBlocks else item.recovery} ${if (item.blockSize > 1) "lab blocks" else "classes"} to recover",
+                    color = VioraCoral,
+                    style = MaterialTheme.typography.labelLarge,
                 )
-                item.skippable == 0 -> Text("No projected buffer at the selected target", color = MaterialTheme.colorScheme.error)
+                item.skippable == 0 -> Text("At the target · don’t skip the next class", color = VioraAmber, style = MaterialTheme.typography.labelLarge)
                 else -> Text(
-                    if (item.blockSize > 1) "Projected buffer: ${item.skippableBlocks} lab ${if (item.skippableBlocks == 1) "block" else "blocks"}" else "Projected buffer: ${item.skippable} ${if (item.skippable == 1) "class" else "classes"}",
-                    color = MaterialTheme.colorScheme.primary,
+                    if (item.blockSize > 1) "Safe to skip ${item.skippableBlocks} lab ${if (item.skippableBlocks == 1) "block" else "blocks"}" else "Safe to skip ${item.skippable} ${if (item.skippable == 1) "class" else "classes"}",
+                    color = VioraMint,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
@@ -311,42 +446,89 @@ private fun ScheduleScreen(
     state: VioraUiState,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
     shareTimetableQr: () -> Unit,
+    markClass: (String, ClassCheckIn?) -> Unit,
     showExam: (ExamUi) -> Unit,
 ) {
+    val today = LocalDate.now()
+    val now = LocalTime.now()
+    val nowMinute = now.hour * 60 + now.minute
+    var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
+    var focusMode by remember { mutableStateOf(true) }
+    val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
+    val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
+    val shownSlots = if (focusMode && selectedDay == today.dayOfWeek.value) focusedSlots(daySlots, nowMinute) else daySlots
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Schedule", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }); Button(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Text("Share timetable QR") } } }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Timetable", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    Text(if (focusMode) "Focused on what matters now" else "Your complete weekly rhythm", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable") }
+            }
+        }
         if (state.semesters.size > 1) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     state.semesters.take(3).forEach { semester ->
-                        Button(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester) {
-                            Text(semester.name)
-                        }
+                        FilterChip(selected = semester == state.activeSemester, onClick = { selectSemester(semester) }, label = { Text(semester.name) })
                     }
                 }
             }
         }
-        val grouped = state.slots.groupBy(SlotWithCourse::dayOfWeek).toSortedMap()
-        grouped.forEach { (day, slots) ->
-            item {
-                Text(
-                    DayOfWeek.of(day).getDisplayName(TextStyle.FULL, Locale.getDefault()),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(top = 8.dp),
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..7).forEach { day ->
+                    val hasClasses = state.slots.any { it.dayOfWeek == day }
+                    FilterChip(
+                        selected = selectedDay == day,
+                        onClick = { selectedDay = day },
+                        label = { Text(DayOfWeek.of(day).getDisplayName(TextStyle.SHORT, Locale.ENGLISH).uppercase()) },
+                        enabled = hasClasses || selectedDay == day,
+                    )
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    SectionLabel(DayOfWeek.of(selectedDay).getDisplayName(TextStyle.FULL, Locale.getDefault()).uppercase())
+                    Text("${daySlots.size} ${if (daySlots.size == 1) "class" else "classes"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                }
+                FilterChip(
+                    selected = focusMode,
+                    onClick = { focusMode = !focusMode },
+                    leadingIcon = { Icon(Icons.Outlined.Schedule, null, Modifier.size(17.dp)) },
+                    label = { Text(if (focusMode) "Now" else "Full day") },
+                    enabled = selectedDay == today.dayOfWeek.value,
                 )
             }
-            items(slots, key = SlotWithCourse::slotId) { ClassCard(it) }
         }
-        if (grouped.isEmpty()) item { Text("No timetable has been cached for this semester.") }
+        if (shownSlots.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    if (daySlots.isEmpty()) "No classes" else "You’re done for today",
+                    if (daySlots.isEmpty()) "This day has no cached timetable entries." else "Switch to Full day to review earlier classes.",
+                )
+            }
+        } else {
+            items(shownSlots, key = SlotWithCourse::slotId) { slot ->
+                val isToday = selectedDay == today.dayOfWeek.value
+                val phase = if (isToday) classPhase(slot.startMinute, slot.endMinute, nowMinute) else ClassPhase.UPCOMING
+                val key = classCheckInKey(selectedDate, slot.slotId)
+                ClassCard(slot, state.attendanceFor(slot), phase, state.classCheckIns[key], if (selectedDate <= today && phase != ClassPhase.UPCOMING) key else null, markClass)
+            }
+        }
         if (state.calendar.isNotEmpty()) {
-            item { Text("Academic calendar", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+            item { SectionLabel("ACADEMIC CALENDAR") }
             items(state.calendar, key = { it.id }) { day -> SummaryCard(day.dayType.ifBlank { "Calendar" }, day.title, LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern("EEE, dd MMM"))) }
         }
         if (state.exams.isNotEmpty()) {
-            item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+            item { SectionLabel("EXAMINATIONS") }
             items(state.exams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         }
     }
@@ -399,15 +581,86 @@ private fun ExamCard(exam: ExamUi) {
 }
 
 @Composable
-private fun ClassCard(slot: SlotWithCourse) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("${slot.code} · ${slot.title}", style = MaterialTheme.typography.titleMedium)
-            Text("${slot.startMinute.asTime()}–${slot.endMinute.asTime()} · ${slot.venue}")
-            if (slot.faculty.isNotBlank()) {
-                Text(slot.faculty, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun ClassCard(
+    slot: SlotWithCourse,
+    attendance: AttendanceUi? = null,
+    phase: ClassPhase = ClassPhase.UPCOMING,
+    checkIn: ClassCheckIn? = null,
+    checkInKey: String? = null,
+    markClass: (String, ClassCheckIn?) -> Unit = { _, _ -> },
+) {
+    val accent = when (checkIn) {
+        ClassCheckIn.ATTENDED -> VioraMint
+        ClassCheckIn.MISSED -> VioraCoral
+        null -> if (phase == ClassPhase.LIVE) VioraBlue else MaterialTheme.colorScheme.outlineVariant
+    }
+    Surface(
+        Modifier.fillMaxWidth().animateContentSize(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (phase == ClassPhase.LIVE) VioraBlue.copy(alpha = 0.09f) else MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(if (phase == ClassPhase.LIVE || checkIn != null) 1.5.dp else 1.dp, accent),
+    ) {
+        Row {
+            Spacer(Modifier.width(4.dp).height(148.dp).background(accent, RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)))
+            Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
+                    ClassStatusBadge(phase, checkIn)
+                }
+                Text(slot.code, style = MaterialTheme.typography.titleLarge)
+                if (slot.title.isNotBlank() && slot.title != slot.code) Text(slot.title, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val metadata = listOf(slot.venue, slot.faculty).filter(String::isNotBlank).joinToString("  ·  ")
+                if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                attendance?.let { AttendanceGuidance(it) }
+                if (checkInKey != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = checkIn == ClassCheckIn.ATTENDED,
+                            onClick = { markClass(checkInKey, if (checkIn == ClassCheckIn.ATTENDED) null else ClassCheckIn.ATTENDED) },
+                            leadingIcon = { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) },
+                            label = { Text("Attended") },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VioraMint.copy(alpha = 0.2f), selectedLabelColor = VioraMint, selectedLeadingIconColor = VioraMint),
+                        )
+                        FilterChip(
+                            selected = checkIn == ClassCheckIn.MISSED,
+                            onClick = { markClass(checkInKey, if (checkIn == ClassCheckIn.MISSED) null else ClassCheckIn.MISSED) },
+                            leadingIcon = { Icon(Icons.Outlined.Close, null, Modifier.size(16.dp)) },
+                            label = { Text("Missed") },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VioraCoral.copy(alpha = 0.2f), selectedLabelColor = VioraCoral, selectedLeadingIconColor = VioraCoral),
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
+    val (label, color) = when (checkIn) {
+        ClassCheckIn.ATTENDED -> "ATTENDED" to VioraMint
+        ClassCheckIn.MISSED -> "MISSED" to VioraCoral
+        null -> when (phase) {
+            ClassPhase.LIVE -> "LIVE" to VioraBlue
+            ClassPhase.ENDED -> "ENDED" to MaterialTheme.colorScheme.onSurfaceVariant
+            ClassPhase.UPCOMING -> "UPCOMING" to VioraAmber
+        }
+    }
+    Text(label, color = color, style = MaterialTheme.typography.labelMedium, modifier = Modifier.background(color.copy(alpha = 0.11f), CircleShape).padding(horizontal = 9.dp, vertical = 5.dp))
+}
+
+@Composable
+private fun AttendanceGuidance(attendance: AttendanceUi) {
+    val (text, color) = when {
+        attendance.recovery > 0 -> "Attend next ${if (attendance.blockSize > 1) attendance.recoveryBlocks else attendance.recovery} to recover" to VioraCoral
+        attendance.skippable > 0 -> "Can skip ${if (attendance.blockSize > 1) attendance.skippableBlocks else attendance.skippable} ${if (attendance.blockSize > 1) "lab blocks" else "classes"}" to VioraMint
+        else -> "At target · attend this one" to VioraAmber
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Spacer(Modifier.size(7.dp).background(color, CircleShape))
+        Text(text, color = color, style = MaterialTheme.typography.labelLarge)
+        Text("${"%.0f".format(attendance.percentage)}%", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -453,12 +706,40 @@ private fun Long?.asAcademicTime(fallback: String = "Time unavailable"): String 
     this?.let { academicDateTime.format(Instant.ofEpochMilli(it).atZone(academicZone)) } ?: fallback
 
 @Composable
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.2.sp)
+}
+
+@Composable
+private fun EmptyStateCard(title: String, body: String) {
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SyncStatusCard(message: String, loading: Boolean) {
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = VioraBlue.copy(alpha = 0.09f), border = androidx.compose.foundation.BorderStroke(1.dp, VioraBlue.copy(alpha = 0.22f))) {
+        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = VioraBlue) else Spacer(Modifier.size(9.dp).background(VioraMint, CircleShape))
+            Column {
+                Text(if (loading) "Syncing with VTOP" else "Sync complete", style = MaterialTheme.typography.labelLarge)
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
 private fun SummaryCard(title: String, value: String, supporting: String) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(value, color = MaterialTheme.colorScheme.primary)
-            Text(supporting, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            if (supporting.isNotBlank()) Text(supporting, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -536,11 +817,15 @@ private fun ResultsScreen(state: VioraUiState) {
     }
 }
 
-@Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Card(modifier) { Column(Modifier.padding(16.dp)) { Text(label); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
+@Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Surface(modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(Modifier.padding(17.dp)) { SectionLabel(label.uppercase()); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
 private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.2f".format(this).trimEnd('0')
 private fun Long.readableBytes(): String = when { this >= 1024 * 1024 -> "%.1f MB".format(this / 1024.0 / 1024.0); this >= 1024 -> "%.1f KB".format(this / 1024.0); else -> "$this B" }
 
 private data class TimelineItem(val id: String, val at: Long, val kind: String, val title: String, val whenText: String)
+
+private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = attendance.firstOrNull {
+    it.courseCode.equals(slot.code, true) || (it.courseTitle.isNotBlank() && it.courseTitle.equals(slot.title, true))
+}
 
 private fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
     val exception = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
