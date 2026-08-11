@@ -1,6 +1,6 @@
 # Viora
 
-> **Made by students, for students.** Viora is an unofficial project built to make VTOP easier to use. It is not connected to or endorsed by VIT or VTOP.
+> **A student-made project for students.** Viora is an unofficial app built to make VTOP easier to use. It is not connected to or endorsed by VIT or VTOP.
 
 Viora is an Android app for keeping VTOP stuff in one place without opening ten different pages every time.
 
@@ -74,9 +74,15 @@ gradle assembleDebug
 
 Device smoke runs can be captured with `scripts/device-smoke.sh --apk app/build/outputs/apk/debug/app-debug.apk`. See [the closed-test runbook](docs/CLOSED_TEST.md) for the release matrix and privacy rules.
 
-## Signed releases
+## Installing the APK
 
-The **Signed APK release** GitHub Actions workflow runs tests and lint, builds a shareable APK, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Android requires the APK to be signed so later builds install as updates. Configure these repository secrets before running it:
+Open the latest GitHub Release on your Android phone, download `Viora-<version>.apk`, and tap the download to install it. Android may ask you to allow installs from the browser or file manager because Viora is shared directly instead of through the Play Store. You can turn that permission off again after installing.
+
+Future versions can be installed over the current one without clearing Viora's local data. Download APKs only from this repository's Releases page so Android can verify that they use the same student-project signing key.
+
+## Sharing releases
+
+The **Signed APK release** GitHub Actions workflow runs tests and lint, builds an APK to share with friends, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Android requires the APK to be signed so later builds install as updates. The signature only lets Android recognize updates from the same project; it does not make Viora an official app. Configure these repository secrets before running it:
 
 - `VIORA_KEYSTORE_BASE64`
 - `VIORA_KEYSTORE_PASSWORD`
