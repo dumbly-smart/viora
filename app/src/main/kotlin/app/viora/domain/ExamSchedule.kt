@@ -15,10 +15,23 @@ fun isExamActive(startsEpochMillis: Long, examType: String, nowEpochMillis: Long
 
 fun shouldShowExamInSchedule(startsEpochMillis: Long, examType: String, nowEpochMillis: Long): Boolean {
     val endsEpochMillis = startsEpochMillis + examDurationMinutes(examType) * 60_000L
-    if (endsEpochMillis <= nowEpochMillis) return false
-    val normalized = examType.lowercase().replace(Regex("[^a-z0-9]+"), "")
-    val isCat2OrFat = normalized.contains("cat2") || normalized.contains("catii") || normalized.contains("fat")
-    return !isCat2OrFat || startsEpochMillis - nowEpochMillis <= EXAM_LEAD_TIME_MILLIS
+    return endsEpochMillis > nowEpochMillis && startsEpochMillis - nowEpochMillis <= EXAM_LEAD_TIME_MILLIS
+}
+
+fun isExamPeriodActive(exams: List<Pair<Long, String>>, nowEpochMillis: Long): Boolean {
+    return exams.groupBy { (_, type) -> normalizeExamType(type) }.values.any { series ->
+        val firstStart = series.minOf { it.first }
+        val lastEnd = series.maxOf { (start, type) -> start + examDurationMinutes(type) * 60_000L }
+        nowEpochMillis in firstStart until lastEnd
+    }
+}
+
+private fun normalizeExamType(value: String): String = when (
+    val normalized = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
+) {
+    "cati" -> "cat1"
+    "catii" -> "cat2"
+    else -> normalized
 }
 
 fun overlapsExam(
