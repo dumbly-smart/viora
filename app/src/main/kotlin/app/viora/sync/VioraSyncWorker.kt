@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.viora.VioraGraph
 import app.viora.auth.LocalAccountManager
+import app.viora.auth.SessionResolution
 import app.viora.widget.NextClassWidgetProvider
 import java.util.concurrent.TimeUnit
 
@@ -30,10 +31,11 @@ class VioraSyncWorker(
         val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
             ?: return Result.success() to "not configured"
         val semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
-        return when (graph.timetableSync.refresh(semesterId, semesterName)) {
-            SyncOutcome.Updated -> {
+        return when (graph.sessions.ensureActive()) {
+            SessionResolution.Ready -> {
                 val results = listOf(
                     graph.exams.refresh(semesterId),
+                    graph.timetable.refresh(semesterId, semesterName),
                     graph.attendance.refresh(semesterId),
                     graph.assignments.refresh(semesterId),
                     graph.results.refresh(semesterId),
@@ -44,9 +46,9 @@ class VioraSyncWorker(
                 if (results.all { it.isSuccess }) Result.success() to "success"
                 else Result.retry() to "partial retry"
             }
-            SyncOutcome.SignInRequired -> Result.failure() to "sign-in required"
-            SyncOutcome.VerificationRequired -> Result.failure() to "verification required"
-            is SyncOutcome.Failed -> Result.retry() to "network retry"
+            SessionResolution.SignInRequired -> Result.failure() to "sign-in required"
+            SessionResolution.VerificationRequired -> Result.failure() to "verification required"
+            SessionResolution.Unavailable -> Result.retry() to "network retry"
         }
     }
 }

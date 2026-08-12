@@ -118,8 +118,9 @@ import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.focusedSlots
 import app.viora.domain.sameCourseCode
-import app.viora.domain.examDurationMinutes
+import app.viora.domain.isExamActive
 import app.viora.domain.overlapsExam
+import app.viora.domain.shouldShowExamInSchedule
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -328,11 +329,10 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
     val todaySlots = state.slotsForDate(todayDate)
     val focusSlots = focusedSlots(todaySlots, nowMinute)
     val todayExams = state.examsForDate(todayDate)
-    val focusExam = todayExams.firstOrNull { exam ->
-        val start = exam.startMinute()
-        nowMinute in start until (start + examDurationMinutes(exam.examType))
-    } ?: todayExams.firstOrNull { it.startMinute() > nowMinute && it.startMinute() <= (focusSlots.firstOrNull()?.startMinute ?: Int.MAX_VALUE) }
-    val timeline = state.academicTimeline(todayDate)
+    val nowEpochMillis = System.currentTimeMillis()
+    val activeExam = todayExams.firstOrNull { isExamActive(it.startsEpochMillis, it.examType, nowEpochMillis) }
+    val focusExam = activeExam ?: todayExams.firstOrNull { it.startMinute() > nowMinute && it.startMinute() <= (focusSlots.firstOrNull()?.startMinute ?: Int.MAX_VALUE) }
+    val timeline = state.academicTimeline(todayDate, includeClasses = activeExam == null)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -369,8 +369,9 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
         state.assignments.firstOrNull { it.dueEpochMillis == null || it.dueEpochMillis > System.currentTimeMillis() }?.let {
             item { SummaryCard("Next assignment", "${it.courseCode} · ${it.title}", it.dueEpochMillis.asAcademicTime()) }
         }
-        state.exams.firstOrNull { it.startsEpochMillis > System.currentTimeMillis() }?.let {
-            item { SummaryCard("Next exam", "${it.examType} · ${it.courseCode}", it.startsEpochMillis.asAcademicTime()) }
+        state.exams.firstOrNull { it.id != focusExam?.id && shouldShowExamInSchedule(it.startsEpochMillis, it.examType, nowEpochMillis) }?.let { exam ->
+            item { SectionLabel("UPCOMING EXAM") }
+            item { ExamCard(exam) }
         }
         if (timeline.isNotEmpty()) {
             item { SectionLabel("COMING UP") }
@@ -471,8 +472,9 @@ private fun ScheduleScreen(
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     var focusMode by remember { mutableStateOf(true) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
+    val daySlots = state.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute)
     val shownSlots = if (focusMode && selectedDay == today.dayOfWeek.value) focusedSlots(daySlots, nowMinute) else daySlots
+    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.examType, System.currentTimeMillis()) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -543,9 +545,9 @@ private fun ScheduleScreen(
             item { SectionLabel("ACADEMIC CALENDAR") }
             items(state.calendar, key = { it.id }) { day -> SummaryCard(day.dayType.ifBlank { "Calendar" }, day.title, LocalDate.ofEpochDay(day.dateEpochDay).format(DateTimeFormatter.ofPattern("EEE, dd MMM"))) }
         }
-        if (state.exams.isNotEmpty()) {
+        if (visibleExams.isNotEmpty()) {
             item { SectionLabel("EXAMINATIONS") }
-            items(state.exams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
+            items(visibleExams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         }
     }
 }
@@ -865,7 +867,7 @@ private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = at
 internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
     val exception = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
     val description = listOfNotNull(exception?.title, exception?.dayType).joinToString(" ")
-    if (description.contains("holiday", true) || description.contains("exam day", true)) return emptyList()
+    if (description.contains("holiday", true)) return emptyList()
     val order = DayOfWeek.entries.firstOrNull { description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
     val examsToday = examsForDate(date)
     return slots.filter { slot ->
@@ -884,15 +886,17 @@ private fun ExamUi.startMinute(): Int {
     return time.hour * 60 + time.minute
 }
 
-private fun VioraUiState.academicTimeline(from: LocalDate): List<TimelineItem> {
+private fun VioraUiState.academicTimeline(from: LocalDate, includeClasses: Boolean = true): List<TimelineItem> {
     val zone = academicZone
     val end = from.plusDays(7)
     val items = mutableListOf<TimelineItem>()
     var day = from
     while (!day.isAfter(end)) {
-        slotsForDate(day).forEach { slot ->
-            val at = day.atStartOfDay(zone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
-            items += TimelineItem("class:${day}:${slot.slotId}", at, "Class", "${slot.code} · ${slot.title}", at.asAcademicTime())
+        if (includeClasses) {
+            slotsForDate(day).forEach { slot ->
+                val at = day.atStartOfDay(zone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
+                items += TimelineItem("class:${day}:${slot.slotId}", at, "Class", "${slot.code} · ${slot.title}", at.asAcademicTime())
+            }
         }
         calendar.filter { it.dateEpochDay == day.toEpochDay() }.forEach { event ->
             val at = day.atStartOfDay(zone).toInstant().toEpochMilli()

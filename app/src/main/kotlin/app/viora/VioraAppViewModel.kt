@@ -342,15 +342,16 @@ class VioraAppViewModel(
         val profile = graph.syncDiagnostics.start("foreground")
         var diagnosticOutcome = "failure"
         try {
-        when (graph.timetableSync.refresh(semester.id, semester.name)) {
-            SyncOutcome.Updated -> {
+        when (graph.sessions.ensureActive()) {
+            SessionResolution.Ready -> {
                 val examResult = graph.exams.refresh(semester.id)
+                val timetableResult = graph.timetable.refresh(semester.id, semester.name)
                 val attendanceResult = graph.attendance.refresh(semester.id)
                 val assignmentResult = graph.assignments.refresh(semester.id)
                 val resultsResult = graph.results.refresh(semester.id)
                 val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
                 graph.notifications.publishUpcoming(semester.id)
-                val failed = listOf(attendanceResult, assignmentResult, examResult, resultsResult, extrasResult).count(Result<*>::isFailure)
+                val failed = listOf(examResult, timetableResult, attendanceResult, assignmentResult, resultsResult, extrasResult).count(Result<*>::isFailure)
                 diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
                 mutableState.update {
                     it.copy(
@@ -360,11 +361,9 @@ class VioraAppViewModel(
                     )
                 }
             }
-            SyncOutcome.SignInRequired -> { diagnosticOutcome = "sign-in required"; requireSignIn("Sign in again to refresh VTOP") }
-            SyncOutcome.VerificationRequired -> { diagnosticOutcome = "verification required"; requireSignIn("VTOP requires interactive verification") }
-            is SyncOutcome.Failed -> mutableState.update {
-                it.copy(loading = false, syncMessage = null, error = "Could not refresh; showing cached timetable")
-            }
+            SessionResolution.SignInRequired -> { diagnosticOutcome = "sign-in required"; requireSignIn("Sign in again to refresh VTOP") }
+            SessionResolution.VerificationRequired -> { diagnosticOutcome = "verification required"; requireSignIn("VTOP requires interactive verification") }
+            SessionResolution.Unavailable -> useCachedDataAfterConnectionFailure()
         }
         } finally {
             graph.syncDiagnostics.finish(profile, diagnosticOutcome)

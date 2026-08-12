@@ -133,19 +133,8 @@ class HttpVtopGateway(
 
     override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
         val token = ensureAuthenticatedPage(EXAM_PAGE)
-        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val body = FormBody.Builder()
-            .add("_csrf", token)
-            .add("authorizedID", id)
-            .add("semesterSubId", semesterId)
-            .add("x", System.currentTimeMillis().toString())
-            .build()
-        val html = execute(Request.Builder().url(EXAM_PROCESS).post(body).build())
-        when (val result = examParser.parse(html)) {
-            is ParseResult.Success -> result.value
-            ParseResult.AuthenticationRequired -> throw AuthenticationException()
-            is ParseResult.InvalidDocument -> throw IOException(result.reason)
-        }
+        val html = academicPost(EXAM_PROCESS, token, semesterId)
+        examParser.parse(html).valueOrThrow().sortedBy(ExamRecord::startsAt)
     }
 
     override suspend fun marks(semesterId: String): List<MarkRecord> = withContext(Dispatchers.IO) {
