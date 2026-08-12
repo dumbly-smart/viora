@@ -33,9 +33,9 @@ class VioraSyncWorker(
         return when (graph.timetableSync.refresh(semesterId, semesterName)) {
             SyncOutcome.Updated -> {
                 val results = listOf(
+                    graph.exams.refresh(semesterId),
                     graph.attendance.refresh(semesterId),
                     graph.assignments.refresh(semesterId),
-                    graph.exams.refresh(semesterId),
                     graph.results.refresh(semesterId),
                     graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
                 )

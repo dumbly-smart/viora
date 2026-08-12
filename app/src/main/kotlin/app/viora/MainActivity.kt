@@ -118,6 +118,8 @@ import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.focusedSlots
 import app.viora.domain.sameCourseCode
+import app.viora.domain.examDurationMinutes
+import app.viora.domain.overlapsExam
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -325,6 +327,11 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
     val nowMinute = now.hour * 60 + now.minute
     val todaySlots = state.slotsForDate(todayDate)
     val focusSlots = focusedSlots(todaySlots, nowMinute)
+    val todayExams = state.examsForDate(todayDate)
+    val focusExam = todayExams.firstOrNull { exam ->
+        val start = exam.startMinute()
+        nowMinute in start until (start + examDurationMinutes(exam.examType))
+    } ?: todayExams.firstOrNull { it.startMinute() > nowMinute && it.startMinute() <= (focusSlots.firstOrNull()?.startMinute ?: Int.MAX_VALUE) }
     val timeline = state.academicTimeline(todayDate)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -335,13 +342,16 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(todayDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
                 Text(greeting(now.hour), style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
-                Text(homeSubtitle(focusSlots, todaySlots, nowMinute), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(homeSubtitle(focusSlots, todaySlots, nowMinute, focusExam), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (todaySlots.isEmpty()) {
-            item { EmptyStateCard("No classes today", "Your day is clear—or sync to refresh the timetable.") }
+        if (focusExam != null) {
+            item { SectionLabel(if (nowMinute >= focusExam.startMinute()) "HAPPENING NOW" else "UP NEXT") }
+            item { ExamCard(focusExam) }
+        } else if (todaySlots.isEmpty() && todayExams.isEmpty()) {
+            item { EmptyStateCard("Nothing scheduled today", "Your day is clear—or sync to refresh the schedule.") }
         } else if (focusSlots.isEmpty()) {
-            item { EmptyStateCard("All done", "No more classes today. You made it.") }
+            item { EmptyStateCard("All done", "No more classes or exams today.") }
         } else {
             item { SectionLabel(if (focusSlots.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE }) "HAPPENING NOW" else "UP NEXT") }
             items(focusSlots, key = SlotWithCourse::slotId) { slot ->
@@ -377,7 +387,9 @@ private fun greeting(hour: Int): String = when (hour) {
     else -> "Good evening"
 }
 
-private fun homeSubtitle(focus: List<SlotWithCourse>, today: List<SlotWithCourse>, nowMinute: Int): String = when {
+private fun homeSubtitle(focus: List<SlotWithCourse>, today: List<SlotWithCourse>, nowMinute: Int, exam: ExamUi?): String = when {
+    exam != null && nowMinute >= exam.startMinute() -> "Your exam is happening now."
+    exam != null -> "Your exam is next."
     today.isEmpty() -> "Nothing on the timetable today."
     focus.isEmpty() -> "The rest of the day is yours."
     focus.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE } -> "Stay present—this is your current class."
@@ -578,7 +590,10 @@ private fun ExamCard(exam: ExamUi) {
             Text("${exam.examType} · ${exam.courseCode}", style = MaterialTheme.typography.titleMedium)
             if (exam.courseTitle.isNotBlank()) Text(exam.courseTitle)
             Text(exam.startsEpochMillis.asAcademicTime())
-            val details = listOf(exam.venue, exam.seatNumber).filter(String::isNotBlank).joinToString(" · ")
+            val details = listOfNotNull(
+                exam.venue.takeIf(String::isNotBlank)?.let { "Room $it" },
+                exam.seatNumber.takeIf(String::isNotBlank)?.let { "Seat $it" },
+            ).joinToString(" · ")
             if (details.isNotBlank()) Text(details, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -847,12 +862,26 @@ private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = at
     it.courseCode.equals(slot.code, true) || (it.courseTitle.isNotBlank() && it.courseTitle.equals(slot.title, true))
 }
 
-private fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
+internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
     val exception = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
     val description = listOfNotNull(exception?.title, exception?.dayType).joinToString(" ")
     if (description.contains("holiday", true) || description.contains("exam day", true)) return emptyList()
     val order = DayOfWeek.entries.firstOrNull { description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
-    return slots.filter { it.dayOfWeek == (order ?: date.dayOfWeek).value }
+    val examsToday = examsForDate(date)
+    return slots.filter { slot ->
+        slot.dayOfWeek == (order ?: date.dayOfWeek).value && examsToday.none { exam ->
+            overlapsExam(slot.startMinute, slot.endMinute, exam.startMinute(), exam.examType)
+        }
+    }
+}
+
+private fun VioraUiState.examsForDate(date: LocalDate): List<ExamUi> = exams
+    .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).toLocalDate() == date }
+    .sortedBy(ExamUi::startsEpochMillis)
+
+private fun ExamUi.startMinute(): Int {
+    val time = Instant.ofEpochMilli(startsEpochMillis).atZone(academicZone).toLocalTime()
+    return time.hour * 60 + time.minute
 }
 
 private fun VioraUiState.academicTimeline(from: LocalDate): List<TimelineItem> {

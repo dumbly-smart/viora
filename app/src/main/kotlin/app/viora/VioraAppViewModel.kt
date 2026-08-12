@@ -344,9 +344,9 @@ class VioraAppViewModel(
         try {
         when (graph.timetableSync.refresh(semester.id, semester.name)) {
             SyncOutcome.Updated -> {
+                val examResult = graph.exams.refresh(semester.id)
                 val attendanceResult = graph.attendance.refresh(semester.id)
                 val assignmentResult = graph.assignments.refresh(semester.id)
-                val examResult = graph.exams.refresh(semester.id)
                 val resultsResult = graph.results.refresh(semester.id)
                 val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
                 graph.notifications.publishUpcoming(semester.id)
