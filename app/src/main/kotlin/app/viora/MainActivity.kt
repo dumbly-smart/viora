@@ -119,6 +119,9 @@ import app.viora.domain.ClassPhase
 import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.sameCourseCode
+import app.viora.domain.ExamWindow
+import app.viora.domain.isExamActive
+import app.viora.domain.isExamPeriodActive
 import app.viora.domain.overlapsExam
 import app.viora.domain.shouldShowExamInSchedule
 import java.time.DayOfWeek
@@ -340,11 +343,9 @@ private fun VioraTopBar(
 
 @Composable
 private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (String, ClassCheckIn?) -> Unit) {
-    val todayDate = LocalDate.now()
-    val now = LocalTime.now()
-    val nowMinute = now.hour * 60 + now.minute
-    val todaySlots = state.slotsForDate(todayDate)
-    val upcomingSlots = todaySlots.filter { it.startMinute > nowMinute }
+    val nowEpochMillis = System.currentTimeMillis()
+    val now = Instant.ofEpochMilli(nowEpochMillis).atZone(academicZone)
+    val agenda = state.homeAgenda(nowEpochMillis)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -352,17 +353,26 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(todayDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
+                Text(now.toLocalDate().format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
                 Text(greeting(now.hour), style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
-                Text("Your upcoming classes for today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (agenda.examDates) "Exams are here. Lock in—you've gooned enough already."
+                    else "Your upcoming classes and exams.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        if (upcomingSlots.isEmpty()) {
-            item { EmptyStateCard("No more classes today", "The timetable is clear for the rest of the day.") }
+        if (agenda.items.isEmpty()) {
+            item { EmptyStateCard("Nothing coming up", "Your fetched schedule is clear for now.") }
         } else {
-            item { SectionLabel("UPCOMING CLASSES") }
-            items(upcomingSlots, key = SlotWithCourse::slotId) { slot ->
-                ClassCard(slot, state.attendanceFor(slot), ClassPhase.UPCOMING, null, null, markClass)
+            item { SectionLabel(if (agenda.items.first().isActiveExam) "HAPPENING NOW" else "UPCOMING EVENTS") }
+            items(agenda.items, key = HomeAgendaItem::id) { event ->
+                event.exam?.let { ExamCard(it) }
+                event.slot?.let { slot ->
+                    val starts = Instant.ofEpochMilli(event.at).atZone(academicZone)
+                    val label = "${starts.format(DateTimeFormatter.ofPattern("EEE, d MMM"))} · ${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}"
+                    ClassCard(slot, state.attendanceFor(slot), ClassPhase.UPCOMING, null, null, markClass, label)
+                }
             }
         }
     }
@@ -577,6 +587,7 @@ private fun ClassCard(
     checkIn: ClassCheckIn? = null,
     checkInKey: String? = null,
     markClass: (String, ClassCheckIn?) -> Unit = { _, _ -> },
+    whenText: String? = null,
 ) {
     val accent = when (checkIn) {
         ClassCheckIn.ATTENDED -> VioraSuccess
@@ -593,7 +604,7 @@ private fun ClassCard(
             Spacer(Modifier.width(4.dp).height(148.dp).background(accent, RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)))
             Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
+                    Text(whenText ?: "${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
                     ClassStatusBadge(phase, checkIn)
                 }
                 Text(slot.code, style = MaterialTheme.typography.titleLarge)
@@ -827,7 +838,15 @@ private fun ResultsScreen(state: VioraUiState) {
 private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.2f".format(this).trimEnd('0')
 private fun Long.readableBytes(): String = when { this >= 1024 * 1024 -> "%.1f MB".format(this / 1024.0 / 1024.0); this >= 1024 -> "%.1f KB".format(this / 1024.0); else -> "$this B" }
 
-private data class TimelineItem(val id: String, val at: Long, val kind: String, val title: String, val whenText: String)
+internal data class HomeAgendaItem(
+    val id: String,
+    val at: Long,
+    val slot: SlotWithCourse? = null,
+    val exam: ExamUi? = null,
+    val isActiveExam: Boolean = false,
+)
+
+internal data class HomeAgenda(val examDates: Boolean, val items: List<HomeAgendaItem>)
 
 private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = attendance.firstOrNull {
     it.courseCode.equals(slot.code, true) || (it.courseTitle.isNotBlank() && it.courseTitle.equals(slot.title, true))
@@ -859,29 +878,27 @@ private fun ExamUi.endMinute(): Int? = endsEpochMillis?.let {
     startMinute() + ((it - startsEpochMillis) / 60_000L).toInt()
 }
 
-private fun VioraUiState.academicTimeline(from: LocalDate, includeClasses: Boolean = true, nowEpochMillis: Long = System.currentTimeMillis()): List<TimelineItem> {
-    val zone = academicZone
-    val end = from.plusDays(7)
-    val items = mutableListOf<TimelineItem>()
-    var day = from
-    while (!day.isAfter(end)) {
-        if (includeClasses) {
-            slotsForDate(day).forEach { slot ->
-                val at = day.atStartOfDay(zone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
-                items += TimelineItem("class:${day}:${slot.slotId}", at, "Class", "${slot.code} · ${slot.title}", at.asAcademicTime())
-            }
+internal fun VioraUiState.homeAgenda(nowEpochMillis: Long, classLookAheadDays: Long = 7): HomeAgenda {
+    val now = Instant.ofEpochMilli(nowEpochMillis).atZone(academicZone)
+    val examDates = isExamPeriodActive(exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }, nowEpochMillis)
+    val examItems = exams
+        .filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
+        .map { exam ->
+            HomeAgendaItem(
+                id = "exam:${exam.id}:${exam.startsEpochMillis}",
+                at = exam.startsEpochMillis,
+                exam = exam,
+                isActiveExam = isExamActive(exam.startsEpochMillis, exam.endsEpochMillis, nowEpochMillis),
+            )
         }
-        calendar.filter { it.dateEpochDay == day.toEpochDay() }.forEach { event ->
-            val at = day.atStartOfDay(zone).toInstant().toEpochMilli()
-            items += TimelineItem("calendar:${event.id}", at, event.dayType.ifBlank { "Calendar" }, event.title, at.asAcademicTime())
+    if (examDates) return HomeAgenda(true, examItems.sortedBy { if (it.isActiveExam) Long.MIN_VALUE else it.at })
+
+    val classItems = (0..classLookAheadDays).flatMap { offset ->
+        val date = now.toLocalDate().plusDays(offset)
+        slotsForDate(date).mapNotNull { slot ->
+            val at = date.atStartOfDay(academicZone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
+            if (at <= nowEpochMillis) null else HomeAgendaItem("class:${date.toEpochDay()}:${slot.slotId}", at, slot = slot)
         }
-        day = day.plusDays(1)
     }
-    assignments.filter { it.dueEpochMillis != null }.forEach { assignment -> items += TimelineItem("assignment:${assignment.id}", assignment.dueEpochMillis!!, "Assignment", "${assignment.courseCode} · ${assignment.title}", assignment.dueEpochMillis.asAcademicTime()) }
-    exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }.forEach { exam ->
-        items += TimelineItem("exam:${exam.id}", exam.startsEpochMillis, exam.examType, "${exam.courseCode} · ${exam.courseTitle}", exam.startsEpochMillis.asAcademicTime())
-    }
-    messages.filter { it.postedEpochMillis != null }.take(5).forEach { message -> items += TimelineItem("message:${message.id}", message.postedEpochMillis!!, "Message", message.subject.ifBlank { message.body.take(80) }, message.postedEpochMillis.asAcademicTime()) }
-    val start = from.atStartOfDay(zone).toInstant().toEpochMilli()
-    return items.filter { it.at >= start }.sortedBy(TimelineItem::at)
+    return HomeAgenda(false, (classItems + examItems).sortedBy(HomeAgendaItem::at))
 }

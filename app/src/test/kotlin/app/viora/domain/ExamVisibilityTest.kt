@@ -32,7 +32,7 @@ class ExamVisibilityTest {
             ExamWindow(10 * day, 10 * day + 75 * 60_000, "CAT 1"),
             ExamWindow(13 * day, 13 * day + 75 * 60_000, "CAT-I"),
         )
-        assertFalse(isExamPeriodActive(exams, 10 * day - 1))
+        assertFalse(isExamPeriodActive(exams, 9 * day))
         assertTrue(isExamPeriodActive(exams, 11 * day))
         assertFalse(isExamPeriodActive(exams, 13 * day + 75 * 60_000))
     }

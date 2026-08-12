@@ -1,5 +1,8 @@
 package app.viora.domain
 
+import java.time.Instant
+import java.time.ZoneId
+
 private const val EXAM_LEAD_TIME_MILLIS = 7L * 24 * 60 * 60 * 1000
 
 data class ExamWindow(val startsEpochMillis: Long, val endsEpochMillis: Long?, val examType: String)
@@ -11,11 +14,17 @@ fun shouldShowExamInSchedule(startsEpochMillis: Long, endsEpochMillis: Long?, no
     (endsEpochMillis ?: startsEpochMillis) > nowEpochMillis &&
         startsEpochMillis - nowEpochMillis <= EXAM_LEAD_TIME_MILLIS
 
-fun isExamPeriodActive(exams: List<ExamWindow>, nowEpochMillis: Long): Boolean {
+fun isExamPeriodActive(
+    exams: List<ExamWindow>,
+    nowEpochMillis: Long,
+    zone: ZoneId = ZoneId.of("Asia/Kolkata"),
+): Boolean {
     return exams.groupBy { normalizeExamType(it.examType) }.values.any { series ->
         val completed = series.filter { it.endsEpochMillis != null }
         if (completed.isEmpty()) return@any false
-        val firstStart = completed.minOf { it.startsEpochMillis }
+        val firstStart = completed.minOf { it.startsEpochMillis }.let {
+            Instant.ofEpochMilli(it).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        }
         val lastEnd = completed.maxOf { requireNotNull(it.endsEpochMillis) }
         nowEpochMillis in firstStart until lastEnd
     }
