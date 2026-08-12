@@ -53,7 +53,6 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
@@ -119,11 +118,7 @@ import app.viora.ui.VioraSuccess
 import app.viora.domain.ClassPhase
 import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
-import app.viora.domain.focusedSlots
 import app.viora.domain.sameCourseCode
-import app.viora.domain.ExamWindow
-import app.viora.domain.isExamPeriodActive
-import app.viora.domain.isExamActive
 import app.viora.domain.overlapsExam
 import app.viora.domain.shouldShowExamInSchedule
 import java.time.DayOfWeek
@@ -349,19 +344,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
     val now = LocalTime.now()
     val nowMinute = now.hour * 60 + now.minute
     val todaySlots = state.slotsForDate(todayDate)
-    val focusSlots = focusedSlots(todaySlots, nowMinute)
-    val todayExams = state.examsForDate(todayDate)
-    val nowEpochMillis = System.currentTimeMillis()
-    val activeExam = todayExams.firstOrNull { isExamActive(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
-    val examPeriod = isExamPeriodActive(state.exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }, nowEpochMillis)
-    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
-    val focusExam = if (examPeriod) {
-        activeExam ?: visibleExams.firstOrNull { it.startsEpochMillis > nowEpochMillis }
-    } else {
-        todayExams.firstOrNull { it.startMinute() > nowMinute && it.startMinute() <= (focusSlots.firstOrNull()?.startMinute ?: Int.MAX_VALUE) }
-    }
-    val weekend = weekendHome(todayDate, now.hour).takeUnless { examPeriod }
-    val timeline = state.academicTimeline(todayDate, nowEpochMillis = nowEpochMillis)
+    val upcomingSlots = todaySlots.filter { it.startMinute > nowMinute }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -370,106 +353,25 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(todayDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
-                Text(
-                    when {
-                        examPeriod -> "Exams are coming up"
-                        weekend != null -> weekend.title
-                        else -> greeting(now.hour)
-                    },
-                    style = MaterialTheme.typography.displaySmall,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Text(
-                    when {
-                        examPeriod -> "Lock in. The syllabus has suffered enough gooning."
-                        weekend != null -> weekend.subtitle
-                        else -> homeSubtitle(focusSlots, todaySlots, nowMinute, focusExam)
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(greeting(now.hour), style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
+                Text("Your upcoming classes for today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (examPeriod) {
-            if (focusExam != null) {
-                item { SectionLabel(if (activeExam != null) "HAPPENING NOW" else "NEXT EXAM") }
-                item { ExamCard(focusExam) }
-            } else {
-                item { EmptyStateCard("Exams complete for now", "The next exam will appear here seven days before it starts.") }
-            }
-        } else if (weekend != null) {
-            item { EmptyStateCard(weekend.cardTitle, weekend.cardBody) }
+        if (upcomingSlots.isEmpty()) {
+            item { EmptyStateCard("No more classes today", "The timetable is clear for the rest of the day.") }
         } else {
-            if (focusExam != null) {
-                item { SectionLabel("UP NEXT") }
-                item { ExamCard(focusExam) }
-            } else if (todaySlots.isEmpty() && todayExams.isEmpty()) {
-                item { EmptyStateCard("Nothing scheduled today", "Your day is clear—or sync to refresh the schedule.") }
-            } else if (focusSlots.isEmpty()) {
-                item { EmptyStateCard("All done", "No more classes or exams today.") }
-            } else {
-                item { SectionLabel(if (focusSlots.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE }) "HAPPENING NOW" else "UP NEXT") }
-                items(focusSlots, key = SlotWithCourse::slotId) { slot ->
-                    val attendance = state.attendanceFor(slot)
-                    val key = classCheckInKey(todayDate, slot.slotId)
-                    val phase = classPhase(slot.startMinute, slot.endMinute, nowMinute)
-                    ClassCard(slot, attendance, phase, state.classCheckIns[key], key.takeIf { phase != ClassPhase.UPCOMING }, markClass)
-                }
+            item { SectionLabel("UPCOMING CLASSES") }
+            items(upcomingSlots, key = SlotWithCourse::slotId) { slot ->
+                ClassCard(slot, state.attendanceFor(slot), ClassPhase.UPCOMING, null, null, markClass)
             }
-            val risks = state.attendance.filter { it.recovery > 0 || it.skippable == 0 }.take(3)
-            if (risks.isNotEmpty()) {
-                item { SectionLabel("ATTENDANCE WATCH") }
-                items(risks, key = AttendanceUi::id) { AttendanceCard(it) }
-            }
-            state.assignments.firstOrNull { it.dueEpochMillis == null || it.dueEpochMillis > nowEpochMillis }?.let {
-                item { SummaryCard("Next assignment", "${it.courseCode} · ${it.title}", it.dueEpochMillis.asAcademicTime()) }
-            }
-            visibleExams.firstOrNull { it.id != focusExam?.id }?.let { exam ->
-                item { SectionLabel("UPCOMING EXAM") }
-                item { ExamCard(exam) }
-            }
-            if (timeline.isNotEmpty()) {
-                item { SectionLabel("COMING UP") }
-                items(timeline.filter { it.at > nowEpochMillis }.take(5), key = TimelineItem::id) { entry -> SummaryCard(entry.kind, entry.title, entry.whenText) }
-            }
-            state.syncMessage?.let { item { SyncStatusCard(it, state.loading) } }
-            state.syncResources.maxByOrNull { it.lastAttemptEpochMillis }?.let { sync -> item { SummaryCard("Local sync", sync.status.lowercase().replaceFirstChar(Char::uppercase), sync.lastSuccessEpochMillis.asAcademicTime("Not synced yet")) } }
         }
     }
-}
-
-internal data class WeekendHome(val title: String, val subtitle: String, val cardTitle: String, val cardBody: String)
-
-internal fun weekendHome(date: LocalDate, hour: Int): WeekendHome? {
-    if (date.dayOfWeek == DayOfWeek.FRIDAY && hour >= 18) return WeekendHome(
-        "Friday night unlocked",
-        "The academic weapon is off duty.",
-        "Go make some lore",
-        "Clock out before your screen time becomes a personality trait.",
-    )
-    if (date.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) return null
-    val prompts = listOf(
-        "Acquire food for the squad" to "Side quest unlocked. Payment: one aura point and somebody saying “bro came in clutch.”",
-        "Touch grass immediately" to "Monday is respawning. Install the outdoor firmware update before it does.",
-        "Go be a side character" to "Leave the room, obtain snacks, create lore. The timetable cannot hurt you today.",
-        "Weekend patch notes" to "Zero lectures. Maximum nonsense. Academic weapon temporarily nerfed for balancing.",
-    )
-    val prompt = prompts[Math.floorMod(date.toEpochDay(), prompts.size.toLong()).toInt()]
-    return WeekendHome("Weekend mode", "No productivity cosplay required.", prompt.first, prompt.second)
 }
 
 private fun greeting(hour: Int): String = when (hour) {
     in 5..11 -> "Good morning"
     in 12..16 -> "Good afternoon"
     else -> "Good evening"
-}
-
-private fun homeSubtitle(focus: List<SlotWithCourse>, today: List<SlotWithCourse>, nowMinute: Int, exam: ExamUi?): String = when {
-    exam != null && nowMinute >= exam.startMinute() -> "Your exam is happening now."
-    exam != null -> "Your exam is next."
-    today.isEmpty() -> "Nothing on the timetable today."
-    focus.isEmpty() -> "The rest of the day is yours."
-    focus.any { classPhase(it.startMinute, it.endMinute, nowMinute) == ClassPhase.LIVE } -> "Stay present—this is your current class."
-    else -> "One thing at a time. Here’s what’s next."
 }
 
 @Composable
@@ -545,10 +447,8 @@ private fun ScheduleScreen(
     val now = LocalTime.now()
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
-    var focusMode by remember { mutableStateOf(true) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val daySlots = state.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute)
-    val shownSlots = if (focusMode && selectedDay == today.dayOfWeek.value) focusedSlots(daySlots, nowMinute) else daySlots
+    val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
     val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis()) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -559,7 +459,7 @@ private fun ScheduleScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Timetable", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    Text(if (focusMode) "Focused on what matters now" else "Your complete weekly rhythm", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Your complete weekly timetable", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable") }
             }
@@ -592,24 +492,14 @@ private fun ScheduleScreen(
                     SectionLabel(DayOfWeek.of(selectedDay).getDisplayName(TextStyle.FULL, Locale.getDefault()).uppercase())
                     Text("${daySlots.size} ${if (daySlots.size == 1) "class" else "classes"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
-                FilterChip(
-                    selected = focusMode,
-                    onClick = { focusMode = !focusMode },
-                    leadingIcon = { Icon(Icons.Outlined.Schedule, null, Modifier.size(17.dp)) },
-                    label = { Text(if (focusMode) "Now" else "Full day") },
-                    enabled = selectedDay == today.dayOfWeek.value,
-                )
             }
         }
-        if (shownSlots.isEmpty()) {
+        if (daySlots.isEmpty()) {
             item {
-                EmptyStateCard(
-                    if (daySlots.isEmpty()) "No classes" else "You’re done for today",
-                    if (daySlots.isEmpty()) "This day has no cached timetable entries." else "Switch to Full day to review earlier classes.",
-                )
+                EmptyStateCard("No classes", "This day has no cached timetable entries.")
             }
         } else {
-            items(shownSlots, key = SlotWithCourse::slotId) { slot ->
+            items(daySlots, key = SlotWithCourse::slotId) { slot ->
                 val isToday = selectedDay == today.dayOfWeek.value
                 val phase = if (isToday) classPhase(slot.startMinute, slot.endMinute, nowMinute) else ClassPhase.UPCOMING
                 val key = classCheckInKey(selectedDate, slot.slotId)

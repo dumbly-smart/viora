@@ -55,6 +55,21 @@ class ReminderPlannerTest {
         assertFalse(plans.any { it.channel == VioraNotifications.EXAMS })
     }
 
+    @Test fun `recurring class gets a separate reminder for every occurrence in the rolling window`() {
+        val plans = ReminderPlanner.create(
+            slots = listOf(slot(startMinute = 10 * 60)),
+            exams = emptyList(),
+            calendar = emptyList(),
+            now = now,
+            includeExamReminders = true,
+            classLookAheadDays = 14,
+        )
+
+        assertEquals(3, plans.size)
+        assertEquals(3, plans.map { it.id }.distinct().size)
+        assertTrue(plans.all { it.title == "Class in 10 minutes" })
+    }
+
     private fun slot(startMinute: Int) = SlotWithCourse(
         slotId = "slot",
         courseId = "course",

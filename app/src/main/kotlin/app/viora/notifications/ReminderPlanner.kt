@@ -3,9 +3,7 @@ package app.viora.notifications
 import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ExamEntity
 import app.viora.database.SlotWithCourse
-import app.viora.domain.overlapsExam
 import java.time.DayOfWeek
-import java.time.Duration
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -29,7 +27,7 @@ object ReminderPlanner {
         calendar: List<AcademicCalendarEntity>,
         now: ZonedDateTime,
         includeExamReminders: Boolean,
-        classLookAheadDays: Long = 8,
+        classLookAheadDays: Long = 14,
     ): List<ReminderPlan> {
         val nowMillis = now.toInstant().toEpochMilli()
         val classPlans = (0..classLookAheadDays).flatMap { offset ->
@@ -41,20 +39,7 @@ object ReminderPlanner {
             val dayOrder = DayOfWeek.entries.firstOrNull {
                 description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true)
             } ?: date.dayOfWeek
-            val dateExams = exams.filter {
-                it.startsEpochMillis.toZoned(now).toLocalDate() == date
-            }
-            slots.filter { slot ->
-                slot.dayOfWeek == dayOrder.value && dateExams.none { exam ->
-                    val examStart = exam.startsEpochMillis.toZoned(now)
-                    val examTime = examStart.toLocalTime()
-                    val examStartMinute = examTime.hour * 60 + examTime.minute
-                    val examEndMinute = exam.endsEpochMillis?.let { end ->
-                        examStartMinute + Duration.between(examStart, end.toZoned(now)).toMinutes().toInt()
-                    }
-                    overlapsExam(slot.startMinute, slot.endMinute, examStartMinute, examEndMinute)
-                }
-            }.mapNotNull { slot ->
+            slots.filter { it.dayOfWeek == dayOrder.value }.mapNotNull { slot ->
                 val starts = date.atStartOfDay(now.zone).plusMinutes(slot.startMinute.toLong())
                 val trigger = starts.minusMinutes(10).toInstant().toEpochMilli()
                 if (trigger <= nowMillis) return@mapNotNull null
