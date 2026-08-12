@@ -56,6 +56,7 @@ data class ExamRecord(
     val courseTitle: String,
     val examType: String,
     val startsAt: LocalDateTime,
+    val endsAt: LocalDateTime?,
     val venue: String,
     val seatNumber: String,
 )

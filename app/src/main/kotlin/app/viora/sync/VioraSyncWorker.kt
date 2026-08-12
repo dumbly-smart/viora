@@ -42,6 +42,7 @@ class VioraSyncWorker(
                     graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
                 )
                 graph.notifications.publishUpcoming(semesterId)
+                graph.reminders.schedule(semesterId)
                 NextClassWidgetProvider.updateAll(applicationContext)
                 if (results.all { it.isSuccess }) Result.success() to "success"
                 else Result.retry() to "partial retry"

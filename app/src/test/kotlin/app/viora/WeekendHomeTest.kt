@@ -7,10 +7,10 @@ import org.junit.Test
 import java.time.LocalDate
 
 class WeekendHomeTest {
-    @Test fun `friday night points to tarama`() {
+    @Test fun `friday night uses a universal prompt`() {
         val friday = LocalDate.of(2026, 8, 14)
         assertNull(weekendHome(friday, 17))
-        assertEquals("Go to Tarama", weekendHome(friday, 18)?.cardTitle)
+        assertEquals("Go make some lore", weekendHome(friday, 18)?.cardTitle)
     }
 
     @Test fun `weekend gets stable unserious copy`() {

@@ -25,6 +25,7 @@ class VioraNotifications(
         manager.createNotificationChannels(
             listOf(
                 NotificationChannel(DEADLINES, "Deadlines", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CLASSES, "Classes", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(EXAMS, "Examinations", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(UPDATES, "Academic updates", NotificationManager.IMPORTANCE_DEFAULT),
             ),
@@ -44,16 +45,6 @@ class VioraNotifications(
                 title = if (withinThreeHours) "Assignment due within 3 hours" else "Assignment due soon",
                 text = "${assignment.courseCode} · ${assignment.title}",
                 destination = "tasks",
-            )
-        }
-        dao.examsBetween(semesterId, now, horizon).forEach { exam ->
-            if (!preferences.getBoolean("notify_exams", true)) return@forEach
-            notifyOnce(
-                key = "exam-24h:$semesterId:${exam.id}:${exam.startsEpochMillis}",
-                channel = EXAMS,
-                title = "${exam.examType} exam within 24 hours",
-                text = listOf(exam.courseCode, exam.venue).filter(String::isNotBlank).joinToString(" · "),
-                destination = "schedule",
             )
         }
         val target = preferences.getInt("attendance_target", 75)
@@ -80,10 +71,18 @@ class VioraNotifications(
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
             .setContentText(text)
+            .setCategory(android.app.Notification.CATEGORY_REMINDER)
+            .setVisibility(android.app.Notification.VISIBILITY_PRIVATE)
             .setContentIntent(launch)
             .setAutoCancel(true)
             .build()
         manager.notify(key.hashCode(), notification)
+    }
+
+    suspend fun deliverScheduled(key: String, channel: String, title: String, text: String, destination: String) {
+        if (!canNotify()) return
+        if (channel !in setOf(CLASSES, EXAMS) || destination != "schedule") return
+        notifyOnce("scheduled:$key", channel, title, text, destination)
     }
 
     private fun canNotify(): Boolean =
@@ -94,6 +93,7 @@ class VioraNotifications(
 
     companion object {
         const val DEADLINES = "viora-deadlines"
+        const val CLASSES = "viora-classes"
         const val EXAMS = "viora-exams"
         const val UPDATES = "viora-updates"
     }

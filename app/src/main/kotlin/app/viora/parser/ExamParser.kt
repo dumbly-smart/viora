@@ -44,16 +44,23 @@ class ExamParser {
         val code = values.find("course code", "course", "subject code")?.trim().orEmpty()
         val examType = values.findExact("exam type", "exam", "type")?.trim().orEmpty()
             .ifBlank { groupedExamType }
-        val time = values.find("exam time", "time", "session")?.substringBefore("-")?.trim()
-        val startsAt = VtopDateParser.dateAndTime(values.find("exam date", "date"), time)
+        val date = values.find("exam date", "date")
+        val timeRange = values.find("exam time", "time", "session")
+        val times = timeRange?.split(Regex("\\s*[-–—]\\s*"), limit = 2).orEmpty()
+        val startTime = times.firstOrNull()?.trim()
+        val endTime = times.getOrNull(1)?.trim()
+        val startsAt = VtopDateParser.dateAndTime(date, startTime)
             ?: VtopDateParser.dateTime(values.find("exam date & time", "date and time"))
         if (code.isBlank() || examType.isBlank() || startsAt == null) return null
+        val parsedEnd = VtopDateParser.dateAndTime(date, endTime)
+        val endsAt = parsedEnd?.let { if (it.isBefore(startsAt)) it.plusDays(1) else it }
         return ExamRecord(
             id = stableId("$examType-$code-$startsAt"),
             courseCode = code,
             courseTitle = values.find("course title", "course name", "title").orEmpty().trim(),
             examType = examType,
             startsAt = startsAt,
+            endsAt = endsAt,
             venue = values.find("venue", "room", "location").orEmpty().trim(),
             seatNumber = values.find("seat no", "seat number", "seat no.").orEmpty().trim(),
         )

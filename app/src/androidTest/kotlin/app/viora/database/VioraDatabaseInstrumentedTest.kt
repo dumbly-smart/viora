@@ -39,4 +39,25 @@ class VioraDatabaseInstrumentedTest {
         assertTrue(cursor.moveToFirst())
         cursor.close(); helper.close(); context.deleteDatabase(name)
     }
+
+    @Test fun migration_6_7_adds_vtop_exam_end_time_without_erasing_rows() {
+        val name = "migration-6-7.db"
+        context.deleteDatabase(name)
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(6) {
+                override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    db.execSQL("CREATE TABLE exams (semesterId TEXT NOT NULL, id TEXT NOT NULL, courseCode TEXT NOT NULL, courseTitle TEXT NOT NULL, examType TEXT NOT NULL, startsEpochMillis INTEGER NOT NULL, venue TEXT NOT NULL, seatNumber TEXT NOT NULL, sourceEpochMillis INTEGER NOT NULL, PRIMARY KEY(semesterId, id))")
+                    db.execSQL("INSERT INTO exams VALUES ('semester', 'exam', 'CODE', 'Course', 'Exam', 1000, 'Room', '1', 1000)")
+                }
+                override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            }).build(),
+        )
+        val db = helper.writableDatabase
+        VioraDatabase.MIGRATION_6_7.migrate(db)
+        val cursor = db.query("SELECT id, endsEpochMillis FROM exams")
+        assertTrue(cursor.moveToFirst())
+        assertEquals("exam", cursor.getString(0))
+        assertTrue(cursor.isNull(1))
+        cursor.close(); helper.close(); context.deleteDatabase(name)
+    }
 }

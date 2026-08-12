@@ -42,6 +42,7 @@ class ExamParserTest {
 
         assertEquals(listOf("CAT 1", "CAT 2", "CAT 3"), result.value.map { it.examType })
         assertEquals(LocalDateTime.of(2026, 8, 14, 9, 30), result.value.last().startsAt)
+        assertEquals(LocalDateTime.of(2026, 8, 14, 11, 0), result.value.last().endsAt)
         assertEquals("TT301", result.value.last().venue)
         assertEquals("9", result.value.last().seatNumber)
     }

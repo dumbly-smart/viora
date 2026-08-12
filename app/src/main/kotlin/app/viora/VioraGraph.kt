@@ -21,6 +21,7 @@ import app.viora.security.EncryptedPreferencesBlobStore
 import app.viora.sync.TimetableSyncCoordinator
 import app.viora.sync.SyncDiagnostics
 import app.viora.notifications.VioraNotifications
+import app.viora.notifications.VioraReminderScheduler
 import app.viora.auth.LocalAccountManager
 import app.viora.share.TimetableQrShare
 
@@ -49,6 +50,7 @@ class VioraGraph(context: Context) {
     val materialManager = CourseMaterialManager(appContext, gateway)
     val timetableQr = TimetableQrShare(appContext)
     val notifications = VioraNotifications(appContext, database.academicDao())
+    val reminders = VioraReminderScheduler(appContext, database.academicDao())
     val sessions = SessionManager(gateway, credentials)
     val account = LocalAccountManager(appContext, gateway, credentials, secureBlobs)
     val timetableSync = TimetableSyncCoordinator(sessions, timetable)

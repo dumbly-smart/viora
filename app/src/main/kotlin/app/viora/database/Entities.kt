@@ -108,6 +108,7 @@ data class ExamEntity(
     val courseTitle: String,
     val examType: String,
     val startsEpochMillis: Long,
+    val endsEpochMillis: Long?,
     val venue: String,
     val seatNumber: String,
     val sourceEpochMillis: Long,

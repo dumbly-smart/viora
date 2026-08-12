@@ -106,6 +106,7 @@ data class ExamUi(
     val courseTitle: String,
     val examType: String,
     val startsEpochMillis: Long,
+    val endsEpochMillis: Long?,
     val venue: String,
     val seatNumber: String,
 )
@@ -188,7 +189,11 @@ class VioraAppViewModel(
     }
     fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_deadlines", enabled).apply(); mutableState.update { it.copy(deadlineNotifications = enabled) } }
-    fun setExamNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_exams", enabled).apply(); mutableState.update { it.copy(examNotifications = enabled) } }
+    fun setExamNotifications(enabled: Boolean) {
+        graph.settings.edit().putBoolean("notify_exams", enabled).apply()
+        mutableState.update { it.copy(examNotifications = enabled) }
+        state.value.activeSemester?.let { semester -> viewModelScope.launch { graph.reminders.schedule(semester.id) } }
+    }
     fun setAttendanceTarget(target: Int) { graph.settings.edit().putInt("attendance_target", target).apply(); mutableState.update { state -> state.copy(attendanceTarget = target, attendance = state.attendance.reproject(target, state.plannedMissedBlocks)) } }
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
@@ -351,6 +356,7 @@ class VioraAppViewModel(
                 val resultsResult = graph.results.refresh(semester.id)
                 val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
                 graph.notifications.publishUpcoming(semester.id)
+                graph.reminders.schedule(semester.id)
                 val failed = listOf(examResult, timetableResult, attendanceResult, assignmentResult, resultsResult, extrasResult).count(Result<*>::isFailure)
                 diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
                 mutableState.update {
@@ -441,7 +447,7 @@ class VioraAppViewModel(
                             exams = records.map {
                                 ExamUi(
                                     it.id, it.courseCode, it.courseTitle, it.examType,
-                                    it.startsEpochMillis, it.venue, it.seatNumber,
+                                    it.startsEpochMillis, it.endsEpochMillis, it.venue, it.seatNumber,
                                 )
                             },
                         )

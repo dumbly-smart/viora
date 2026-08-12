@@ -3,7 +3,10 @@ package app.viora
 import android.os.Bundle
 import android.content.Intent
 import android.Manifest
+import android.app.AlarmManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
@@ -118,6 +121,7 @@ import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.focusedSlots
 import app.viora.domain.sameCourseCode
+import app.viora.domain.ExamWindow
 import app.viora.domain.isExamPeriodActive
 import app.viora.domain.isExamActive
 import app.viora.domain.overlapsExam
@@ -139,7 +143,7 @@ class MainActivity : ComponentActivity() {
     }
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { }
+    ) { if (model.state.value.configured) requestPreciseReminderAccess() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_Viora)
@@ -152,7 +156,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(state.configured) {
                     if (state.configured && Build.VERSION.SDK_INT >= 33) {
                         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else if (state.configured) {
+                        requestPreciseReminderAccess()
                     }
+                }
+                LaunchedEffect(state.activeSemester?.id) {
+                    state.activeSemester?.let { graph.reminders.schedule(it.id) }
                 }
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
@@ -181,6 +190,18 @@ class MainActivity : ComponentActivity() {
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); notificationDestination.value = intent.getStringExtra("viora_destination") }
+
+    private fun requestPreciseReminderAccess() {
+        if (Build.VERSION.SDK_INT < 31) return
+        val alarms = getSystemService(AlarmManager::class.java)
+        if (alarms.canScheduleExactAlarms()) return
+        val preferences = getSharedPreferences(VioraGraph.SETTINGS_NAME, MODE_PRIVATE)
+        if (preferences.getBoolean("asked_precise_reminders", false)) return
+        preferences.edit().putBoolean("asked_precise_reminders", true).apply()
+        runCatching {
+            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+        }
+    }
 }
 
 private data class Destination(val label: String, val icon: ImageVector)
@@ -331,9 +352,9 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
     val focusSlots = focusedSlots(todaySlots, nowMinute)
     val todayExams = state.examsForDate(todayDate)
     val nowEpochMillis = System.currentTimeMillis()
-    val activeExam = todayExams.firstOrNull { isExamActive(it.startsEpochMillis, it.examType, nowEpochMillis) }
-    val examPeriod = isExamPeriodActive(state.exams.map { it.startsEpochMillis to it.examType }, nowEpochMillis)
-    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.examType, nowEpochMillis) }
+    val activeExam = todayExams.firstOrNull { isExamActive(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
+    val examPeriod = isExamPeriodActive(state.exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }, nowEpochMillis)
+    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
     val focusExam = if (examPeriod) {
         activeExam ?: visibleExams.firstOrNull { it.startsEpochMillis > nowEpochMillis }
     } else {
@@ -422,7 +443,7 @@ internal fun weekendHome(date: LocalDate, hour: Int): WeekendHome? {
     if (date.dayOfWeek == DayOfWeek.FRIDAY && hour >= 18) return WeekendHome(
         "Friday night unlocked",
         "The academic weapon is off duty.",
-        "Go to Tarama",
+        "Go make some lore",
         "Clock out before your screen time becomes a personality trait.",
     )
     if (date.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) return null
@@ -528,7 +549,7 @@ private fun ScheduleScreen(
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
     val daySlots = state.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute)
     val shownSlots = if (focusMode && selectedDay == today.dayOfWeek.value) focusedSlots(daySlots, nowMinute) else daySlots
-    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.examType, System.currentTimeMillis()) }
+    val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis()) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -609,7 +630,7 @@ private fun ScheduleScreen(
 @Composable
 private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
     val visibleExams = state.exams.filter {
-        shouldShowExamInSchedule(it.startsEpochMillis, it.examType, System.currentTimeMillis())
+        shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis())
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -790,9 +811,10 @@ internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openM
     } }
 }
 
-private fun Int.asTime(): String = "%02d:%02d".format(this / 60, this % 60)
+private val classTime = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+private fun Int.asTime(): String = LocalTime.of(this / 60, this % 60).format(classTime)
 
-private val academicDateTime = DateTimeFormatter.ofPattern("EEE, dd MMM · hh:mm a")
+private val academicDateTime = DateTimeFormatter.ofPattern("EEE, dd MMM · h:mm a")
 private val academicZone = ZoneId.of("Asia/Kolkata")
 
 private fun Long?.asAcademicTime(fallback: String = "Time unavailable"): String =
@@ -929,7 +951,7 @@ internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
     val examsToday = examsForDate(date)
     return slots.filter { slot ->
         slot.dayOfWeek == (order ?: date.dayOfWeek).value && examsToday.none { exam ->
-            overlapsExam(slot.startMinute, slot.endMinute, exam.startMinute(), exam.examType)
+            overlapsExam(slot.startMinute, slot.endMinute, exam.startMinute(), exam.endMinute())
         }
     }
 }
@@ -941,6 +963,10 @@ private fun VioraUiState.examsForDate(date: LocalDate): List<ExamUi> = exams
 private fun ExamUi.startMinute(): Int {
     val time = Instant.ofEpochMilli(startsEpochMillis).atZone(academicZone).toLocalTime()
     return time.hour * 60 + time.minute
+}
+
+private fun ExamUi.endMinute(): Int? = endsEpochMillis?.let {
+    startMinute() + ((it - startsEpochMillis) / 60_000L).toInt()
 }
 
 private fun VioraUiState.academicTimeline(from: LocalDate, includeClasses: Boolean = true, nowEpochMillis: Long = System.currentTimeMillis()): List<TimelineItem> {
@@ -962,7 +988,7 @@ private fun VioraUiState.academicTimeline(from: LocalDate, includeClasses: Boole
         day = day.plusDays(1)
     }
     assignments.filter { it.dueEpochMillis != null }.forEach { assignment -> items += TimelineItem("assignment:${assignment.id}", assignment.dueEpochMillis!!, "Assignment", "${assignment.courseCode} · ${assignment.title}", assignment.dueEpochMillis.asAcademicTime()) }
-    exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.examType, nowEpochMillis) }.forEach { exam ->
+    exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }.forEach { exam ->
         items += TimelineItem("exam:${exam.id}", exam.startsEpochMillis, exam.examType, "${exam.courseCode} · ${exam.courseTitle}", exam.startsEpochMillis.asAcademicTime())
     }
     messages.filter { it.postedEpochMillis != null }.take(5).forEach { message -> items += TimelineItem("message:${message.id}", message.postedEpochMillis!!, "Message", message.subject.ifBlank { message.body.take(80) }, message.postedEpochMillis.asAcademicTime()) }

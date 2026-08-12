@@ -28,12 +28,13 @@ class ExamRepository(
                 courseTitle = it.courseTitle,
                 examType = it.examType,
                 startsEpochMillis = it.startsAt.atZone(DigitalAssignmentRepository.VTOP_ZONE).toInstant().toEpochMilli(),
+                endsEpochMillis = it.endsAt?.atZone(DigitalAssignmentRepository.VTOP_ZONE)?.toInstant()?.toEpochMilli(),
                 venue = it.venue,
                 seatNumber = it.seatNumber,
                 sourceEpochMillis = attempt,
             )
         }
-        val changes = records.mapNotNull { current -> previous[current.id]?.takeIf { it.startsEpochMillis != current.startsEpochMillis || it.venue != current.venue || it.seatNumber != current.seatNumber }?.let { AcademicChangeEntity("exam:${current.id}:${current.startsEpochMillis}:${current.venue}", "exams", "Exam schedule changed", "${current.examType} · ${current.courseCode} · ${current.venue}", attempt) } }
+        val changes = records.mapNotNull { current -> previous[current.id]?.takeIf { it.startsEpochMillis != current.startsEpochMillis || it.endsEpochMillis != current.endsEpochMillis || it.venue != current.venue || it.seatNumber != current.seatNumber }?.let { AcademicChangeEntity("exam:${current.id}:${current.startsEpochMillis}:${current.venue}", "exams", "Exam schedule changed", "${current.examType} · ${current.courseCode} · ${current.venue}", attempt) } }
         dao.insertChanges(changes)
         dao.replaceExams(
             semesterId,

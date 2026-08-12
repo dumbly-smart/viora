@@ -7,36 +7,42 @@ import org.junit.Test
 class ExamVisibilityTest {
     private val day = 24L * 60 * 60 * 1000
 
-    @Test fun `active exam lasts for its configured duration`() {
+    @Test fun `active exam uses the end time supplied by vtop`() {
         val start = 10 * day
-        assertTrue(isExamActive(start, "CAT 2", start + 30 * 60_000))
-        assertFalse(isExamActive(start, "CAT 2", start + 90 * 60_000))
+        val end = start + 75 * 60_000
+        assertTrue(isExamActive(start, end, start + 30 * 60_000))
+        assertFalse(isExamActive(start, end, end))
     }
 
     @Test fun `completed exam is removed from schedule`() {
         val start = 10 * day
-        assertFalse(shouldShowExamInSchedule(start, "CAT 1", start + 90 * 60_000))
+        val end = start + 75 * 60_000
+        assertFalse(shouldShowExamInSchedule(start, end, end))
     }
 
     @Test fun `every exam appears from seven days before`() {
         val start = 20 * day
-        assertFalse(shouldShowExamInSchedule(start, "CAT 1", start - 8 * day))
-        assertTrue(shouldShowExamInSchedule(start, "CAT 1", start - 7 * day))
-        assertFalse(shouldShowExamInSchedule(start, "CAT-II", start - 8 * day))
-        assertTrue(shouldShowExamInSchedule(start, "CAT 2", start - 7 * day))
-        assertFalse(shouldShowExamInSchedule(start, "FAT", start - 8 * day))
-        assertTrue(shouldShowExamInSchedule(start, "FAT", start - 7 * day))
+        val end = start + 75 * 60_000
+        assertFalse(shouldShowExamInSchedule(start, end, start - 8 * day))
+        assertTrue(shouldShowExamInSchedule(start, end, start - 7 * day))
     }
 
     @Test fun `exam period spans first exam start through final exam end`() {
-        val exams = listOf(10 * day to "CAT 1", 13 * day to "CAT-I")
+        val exams = listOf(
+            ExamWindow(10 * day, 10 * day + 75 * 60_000, "CAT 1"),
+            ExamWindow(13 * day, 13 * day + 75 * 60_000, "CAT-I"),
+        )
         assertFalse(isExamPeriodActive(exams, 10 * day - 1))
         assertTrue(isExamPeriodActive(exams, 11 * day))
-        assertFalse(isExamPeriodActive(exams, 13 * day + 90 * 60_000))
+        assertFalse(isExamPeriodActive(exams, 13 * day + 75 * 60_000))
     }
 
     @Test fun `different exam series do not create one long exam period`() {
-        val exams = listOf(10 * day to "CAT 1", 40 * day to "CAT 2", 80 * day to "FAT")
+        val exams = listOf(
+            ExamWindow(10 * day, 10 * day + 75 * 60_000, "CAT 1"),
+            ExamWindow(40 * day, 40 * day + 75 * 60_000, "CAT 2"),
+            ExamWindow(80 * day, 80 * day + 75 * 60_000, "FAT"),
+        )
         assertFalse(isExamPeriodActive(exams, 20 * day))
     }
 }
