@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 
 class HomeAgendaTest {
     private val zone = ZoneId.of("Asia/Kolkata")
@@ -57,6 +58,12 @@ class HomeAgendaTest {
 
         assertTrue(agenda.examDates)
         assertEquals(listOf("first"), agenda.items.map { it.exam?.id })
+    }
+
+    @Test fun `empty home gets weekend copy`() {
+        val saturday = ZonedDateTime.of(2026, 8, 15, 10, 0, 0, 0, zone)
+
+        assertEquals("Weekend detected", emptyHomeCopy(saturday).first)
     }
 
     private fun time(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =

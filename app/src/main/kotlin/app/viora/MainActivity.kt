@@ -129,6 +129,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -363,7 +364,8 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
             }
         }
         if (agenda.items.isEmpty()) {
-            item { EmptyStateCard("Nothing coming up", "Your fetched schedule is clear for now.") }
+            val emptyCopy = emptyHomeCopy(now)
+            item { EmptyStateCard(emptyCopy.first, emptyCopy.second) }
         } else {
             item { SectionLabel(if (agenda.items.first().isActiveExam) "HAPPENING NOW" else "UPCOMING EVENTS") }
             items(agenda.items, key = HomeAgendaItem::id) { event ->
@@ -376,6 +378,14 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
             }
         }
     }
+}
+
+internal fun emptyHomeCopy(now: ZonedDateTime): Pair<String, String> = when {
+    now.dayOfWeek == DayOfWeek.FRIDAY && now.hour >= 18 ->
+        "Friday night survived" to "Go to Tarama. Academic comeback resumes later."
+    now.dayOfWeek == DayOfWeek.SATURDAY || now.dayOfWeek == DayOfWeek.SUNDAY ->
+        "Weekend detected" to "Go outside. VTOP cannot hurt you here."
+    else -> "Nothing coming up" to "Your fetched schedule is clear for now."
 }
 
 private fun greeting(hour: Int): String = when (hour) {
