@@ -351,7 +351,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
                 Text(todayDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.labelMedium, color = VioraBlue)
                 Text(
                     when {
-                        examPeriod -> "Exam mode"
+                        examPeriod -> "Exams are coming up"
                         weekend != null -> weekend.title
                         else -> greeting(now.hour)
                     },
@@ -360,7 +360,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
                 )
                 Text(
                     when {
-                        examPeriod -> "No class noise here until your final exam is done."
+                        examPeriod -> "Lock in. The syllabus has suffered enough gooning."
                         weekend != null -> weekend.subtitle
                         else -> homeSubtitle(focusSlots, todaySlots, nowMinute, focusExam)
                     },
@@ -608,6 +608,9 @@ private fun ScheduleScreen(
 
 @Composable
 private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
+    val visibleExams = state.exams.filter {
+        shouldShowExamInSchedule(it.startsEpochMillis, it.examType, System.currentTimeMillis())
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -634,8 +637,8 @@ private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> U
             } }
         }
         item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
-        items(state.exams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
-        if (state.exams.isEmpty()) item { Text("No examination schedule is cached.") }
+        items(visibleExams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
+        if (visibleExams.isEmpty()) item { Text("No upcoming examinations.") }
     }
 }
 
