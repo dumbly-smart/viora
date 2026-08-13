@@ -39,8 +39,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -93,7 +91,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -274,9 +271,6 @@ private fun Dashboard(
                 }
             }
         Column(Modifier.weight(1f).fillMaxSize()) {
-            AnimatedVisibility(visible = state.loading, enter = fadeIn(), exit = fadeOut()) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-            }
             AnimatedVisibility(visible = state.error != null, enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 state.error?.let { message ->
                     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
@@ -307,7 +301,6 @@ private fun VioraTopBar(
     refresh: () -> Unit,
     reauthenticate: () -> Unit,
 ) {
-    val rotation by animateFloatAsState(if (state.loading) 360f else 0f, animationSpec = spring(), label = "sync rotation")
     Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
         Row(
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 18.dp, vertical = 12.dp),
@@ -320,6 +313,7 @@ private fun VioraTopBar(
                 Column(Modifier.weight(1f)) {
                     Text("viora", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
                     Text(state.activeSemester?.name ?: "your VTOP, distilled", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    state.syncSummary()?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
             if (detail != null) Spacer(Modifier.weight(1f))
@@ -330,17 +324,25 @@ private fun VioraTopBar(
                     onClick = refresh,
                     enabled = !state.loading,
                     shape = RoundedCornerShape(18.dp),
-                    color = if (state.loading) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary,
-                    contentColor = if (state.loading) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp).rotate(rotation))
-                        Text(if (state.loading) "Syncing" else "Sync", style = MaterialTheme.typography.labelLarge)
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Text("Sync", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
         }
     }
+}
+
+internal fun VioraUiState.syncSummary(): String? {
+    val latest = syncResources.filter { it.status != "SYNCING" }.maxByOrNull { it.lastAttemptEpochMillis } ?: return null
+    val label = if (latest.status == "ERROR") "Sync failed" else "Synced"
+    val time = Instant.ofEpochMilli(latest.lastAttemptEpochMillis).atZone(academicZone)
+        .format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
+    return "$label · $time"
 }
 
 @Composable
