@@ -3,6 +3,8 @@ package app.viora.notifications
 import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ExamEntity
 import app.viora.database.SlotWithCourse
+import app.viora.domain.ExamWindow
+import app.viora.domain.isExamPeriodActive
 import java.time.DayOfWeek
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -30,6 +32,7 @@ object ReminderPlanner {
         classLookAheadDays: Long = 14,
     ): List<ReminderPlan> {
         val nowMillis = now.toInstant().toEpochMilli()
+        val examWindows = exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }
         val classPlans = (0..classLookAheadDays).flatMap { offset ->
             val date = now.toLocalDate().plusDays(offset)
             val description = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
@@ -41,6 +44,7 @@ object ReminderPlanner {
             } ?: date.dayOfWeek
             slots.filter { it.dayOfWeek == dayOrder.value }.mapNotNull { slot ->
                 val starts = date.atStartOfDay(now.zone).plusMinutes(slot.startMinute.toLong())
+                if (isExamPeriodActive(examWindows, starts.toInstant().toEpochMilli(), now.zone)) return@mapNotNull null
                 val trigger = starts.minusMinutes(10).toInstant().toEpochMilli()
                 if (trigger <= nowMillis) return@mapNotNull null
                 ReminderPlan(

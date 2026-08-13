@@ -70,6 +70,19 @@ class ReminderPlannerTest {
         assertTrue(plans.all { it.title == "Class in 10 minutes" })
     }
 
+    @Test fun `class reminders are skipped during exam dates`() {
+        val plans = ReminderPlanner.create(
+            slots = listOf(slot(startMinute = 10 * 60)),
+            exams = listOf(exam(now.withHour(9))),
+            calendar = emptyList(),
+            now = now,
+            includeExamReminders = true,
+            classLookAheadDays = 14,
+        )
+
+        assertEquals(2, plans.count { it.channel == VioraNotifications.CLASSES })
+    }
+
     private fun slot(startMinute: Int) = SlotWithCourse(
         slotId = "slot",
         courseId = "course",
