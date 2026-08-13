@@ -116,6 +116,7 @@ import app.viora.ui.VioraBlue
 import app.viora.ui.VioraCoral
 import app.viora.ui.VioraSuccess
 import app.viora.domain.ClassPhase
+import app.viora.domain.AttendanceCalculator
 import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.sameCourseCode
@@ -662,15 +663,15 @@ private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
 
 @Composable
 private fun AttendanceGuidance(attendance: AttendanceUi) {
+    val projection = AttendanceCalculator.calculate(attendance.attended, attendance.held, 75, attendance.blockSize)
     val (text, color) = when {
-        attendance.recovery > 0 -> "Attend next ${if (attendance.blockSize > 1) attendance.recoveryBlocks else attendance.recovery} to recover" to VioraCoral
-        attendance.skippable > 0 -> "Can skip ${if (attendance.blockSize > 1) attendance.skippableBlocks else attendance.skippable} ${if (attendance.blockSize > 1) "lab blocks" else "classes"}" to VioraSuccess
-        else -> "At target · attend this one" to VioraAmber
+        projection.classesToRecover > 0 -> "Attend next ${if (attendance.blockSize > 1) projection.blocksToRecover else projection.classesToRecover} to reach 75%" to VioraCoral
+        projection.skippableClasses > 0 -> "Can skip ${if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses} ${if (attendance.blockSize > 1) "lab blocks" else "classes"} safely" to VioraSuccess
+        else -> "At 75% limit · attend this one" to VioraAmber
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Spacer(Modifier.size(7.dp).background(color, CircleShape))
-        Text(text, color = color, style = MaterialTheme.typography.labelLarge)
-        Text("${"%.0f".format(attendance.percentage)}%", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+        Text("${"%.0f".format(attendance.percentage)}% · $text", color = color, style = MaterialTheme.typography.labelLarge)
     }
 }
 
