@@ -66,6 +66,29 @@ class HomeAgendaTest {
         assertEquals("Weekend detected", emptyHomeCopy(saturday).first)
     }
 
+    @Test fun `home moves to next class day after todays classes finish`() {
+        val now = time(2026, 8, 12, 18, 0)
+        val state = VioraUiState(slots = listOf(
+            slot("finished", 3, 10 * 60, 11 * 60),
+            slot("tomorrow", 4, 9 * 60, 10 * 60),
+        ))
+
+        val agenda = state.homeAgenda(now)
+
+        assertEquals(listOf("tomorrow"), agenda.items.map { it.slot?.slotId })
+    }
+
+    @Test fun `home due assignments excludes uploaded work`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val due = now + 24 * 60 * 60 * 1000
+        val state = VioraUiState(assignments = listOf(
+            AssignmentUi("open", "CSE1001", "DA 1", due, "Not uploaded"),
+            AssignmentUi("done", "CSE1002", "DA 2", due, "Open", "12-Aug-2026 10:00 PM"),
+        ))
+
+        assertEquals(listOf("open"), state.homeDueAssignments(now).map(AssignmentUi::id))
+    }
+
     private fun time(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
         LocalDateTime.of(year, month, day, hour, minute).atZone(zone).toInstant().toEpochMilli()
 

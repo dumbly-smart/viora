@@ -53,6 +53,8 @@ data class VioraUiState(
     val grades: List<GradeUi> = emptyList(),
     val gpa: Double? = null,
     val cgpa: Double? = null,
+    val registeredCredits: Double? = null,
+    val earnedCredits: Double? = null,
     val syncResources: List<SyncResourceEntity> = emptyList(),
     val calendar: List<AcademicCalendarEntity> = emptyList(),
     val messages: List<ClassMessageEntity> = emptyList(),
@@ -100,6 +102,7 @@ data class AssignmentUi(
     val title: String,
     val dueEpochMillis: Long?,
     val status: String,
+    val lastUpload: String = "",
 )
 
 data class ExamUi(
@@ -463,7 +466,7 @@ class VioraAppViewModel(
                     mutableState.update { state ->
                         state.copy(
                             assignments = records.map {
-                                AssignmentUi(it.id, it.courseCode, it.title, it.dueEpochMillis, it.status)
+                                AssignmentUi(it.id, it.courseCode, it.title, it.dueEpochMillis, it.status, it.lastUpload)
                             },
                         )
                     }
@@ -496,7 +499,7 @@ class VioraAppViewModel(
         resultsObservation = viewModelScope.launch {
             launch { graph.results.observeMarks(semesterId).collect { rows -> mutableState.update { state -> state.copy(marks = rows.map { MarkUi(it.id, it.courseTitle, it.title, it.scoredMark, it.maxMarks, it.weightageMark, it.status) }) } } }
             launch { graph.results.observeGrades(semesterId).collect { rows -> mutableState.update { state -> state.copy(grades = rows.map { GradeUi(it.courseCode, it.courseTitle, it.credits, it.total, it.grade) }) } } }
-            launch { graph.results.observeSummary().collect { summary -> mutableState.update { it.copy(gpa = summary?.gpa, cgpa = summary?.cgpa) } } }
+            launch { graph.results.observeSummary().collect { summary -> mutableState.update { it.copy(gpa = summary?.gpa, cgpa = summary?.cgpa, registeredCredits = summary?.registeredCredits, earnedCredits = summary?.earnedCredits) } } }
         }
     }
     private fun observeExtras(semesterId: String) {

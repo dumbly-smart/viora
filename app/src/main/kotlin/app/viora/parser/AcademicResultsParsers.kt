@@ -56,12 +56,20 @@ class CgpaParser {
         val document = Jsoup.parse(html)
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
         val text = document.text()
-        fun value(label: String) = Regex("$label\\s*[:=-]\\s*([0-9.]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDoubleOrNull()
+        fun value(vararg labels: String) = labels.firstNotNullOfOrNull { label ->
+            Regex("${Regex.escape(label)}\\s*(?:[:=-]\\s*)?([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+                .find(text)?.groupValues?.get(1)?.toDoubleOrNull()
+        }
         val counts = document.select("table tr").mapNotNull { row ->
             val cells = row.select("th,td").map(Element::text)
             if (cells.size < 2) null else Regex("([SABCDENF])\\s*Grades?", RegexOption.IGNORE_CASE).find(cells[0])?.groupValues?.get(1)?.uppercase()?.let { it to (cells[1].filter(Char::isDigit).toIntOrNull() ?: 0) }
         }.toMap()
-        val result = CgpaSnapshot(value("Credits Registered"), value("Credits Earned"), value("CGPA"), counts)
+        val result = CgpaSnapshot(
+            value("Credits Registered", "Registered Credits"),
+            value("Credits Earned", "Earned Credits"),
+            value("CGPA"),
+            counts,
+        )
         return if (result.cgpa == null) ParseResult.InvalidDocument("CGPA was not found") else ParseResult.Success(result)
     }
 }

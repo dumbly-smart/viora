@@ -121,6 +121,7 @@ import app.viora.domain.sameCourseCode
 import app.viora.domain.ExamWindow
 import app.viora.domain.isExamActive
 import app.viora.domain.isExamPeriodActive
+import app.viora.domain.isAssignmentSubmitted
 import app.viora.domain.overlapsExam
 import app.viora.domain.shouldShowExamInSchedule
 import java.time.DayOfWeek
@@ -284,7 +285,7 @@ private fun Dashboard(
             }
             AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
                 if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, uploadAssignment) else when (destination) {
-                    0 -> HomeScreen(state, PaddingValues(), markClass)
+                    0 -> HomeScreen(state, PaddingValues())
                     1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
                     2 -> CoursesScreen(state, openMaterial, downloadMaterial, downloadMaterials) { kind, id -> detail = DetailSelection(kind, id) }
                     3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
@@ -350,10 +351,11 @@ internal fun VioraUiState.syncSummary(): String? {
 }
 
 @Composable
-private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (String, ClassCheckIn?) -> Unit) {
+private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
     val nowEpochMillis = System.currentTimeMillis()
     val now = Instant.ofEpochMilli(nowEpochMillis).atZone(academicZone)
     val agenda = state.homeAgenda(nowEpochMillis)
+    val dueAssignments = state.homeDueAssignments(nowEpochMillis)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -365,12 +367,16 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
                 Text(greeting(now.hour), style = MaterialTheme.typography.displaySmall, modifier = Modifier.semantics { heading() })
                 Text(
                     if (agenda.examDates) "Exams are here. Lock in—you've gooned enough already."
-                    else "Your upcoming classes and exams.",
+                    else "Today's classes, deadlines and what comes next.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        if (agenda.items.isEmpty()) {
+        if (!agenda.examDates && dueAssignments.isNotEmpty()) {
+            item { SectionLabel("DUE SOON") }
+            items(dueAssignments, key = AssignmentUi::id) { assignment -> CompactAssignmentCard(assignment) }
+        }
+        if (agenda.items.isEmpty() && dueAssignments.isEmpty()) {
             val emptyCopy = emptyHomeCopy(now)
             item { EmptyStateCard(emptyCopy.first, emptyCopy.second) }
         } else {
@@ -379,10 +385,38 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues, markClass: (
                 event.exam?.let { ExamCard(it) }
                 event.slot?.let { slot ->
                     val starts = Instant.ofEpochMilli(event.at).atZone(academicZone)
-                    val label = "${starts.format(DateTimeFormatter.ofPattern("EEE, d MMM"))} · ${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}"
-                    ClassCard(slot, state.attendanceFor(slot), ClassPhase.UPCOMING, null, null, markClass, label)
+                    CompactHomeClassCard(slot, state.attendanceFor(slot), starts.toLocalDate())
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?, date: LocalDate) {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(slot.title.ifBlank { slot.code }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(slot.startMinute.asTime(), style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace)
+            }
+            Text("${date.format(DateTimeFormatter.ofPattern("EEE, d MMM"))} · ${slot.venue.ifBlank { "Room unavailable" }}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            attendance?.let { AttendanceGuidance(it) }
+        }
+    }
+}
+
+@Composable
+private fun CompactAssignmentCard(assignment: AssignmentUi) {
+    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = VioraAmber.copy(alpha = 0.08f)) {
+        Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
+            Text(assignment.dueEpochMillis.asAcademicTime("Due time unavailable"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -899,6 +933,7 @@ private fun ResultsScreen(state: VioraUiState) {
             if (results.isEmpty()) item { Text("No cached results found.") }
         }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { SummaryMetric("GPA", state.gpa?.cleanNumber() ?: "—"); SummaryMetric("CGPA", state.cgpa?.cleanNumber() ?: "—") } }
+        item { GpaPlanner(state) }
         item { Text("Class messages", style = MaterialTheme.typography.titleLarge) }
         items(state.messages, key = { it.id }) { message -> SummaryCard(message.subject.ifBlank { "Class message" }, message.body, listOf(message.courseCode, message.faculty).filter(String::isNotBlank).joinToString(" · ")) }
         if (state.messages.isEmpty()) item { Text("No class messages are cached.") }
@@ -929,6 +964,110 @@ private fun ResultsScreen(state: VioraUiState) {
         item { Text("Viora stores academic data, credentials and its isolated VTOP cookies only on this device. Logging out here does not call VTOP logout or affect browser sessions.") }
         item { Button(onClick = logout) { Text("Erase local Viora account") } }
     }
+}
+
+internal data class ManualSubjectInput(val name: String = "", val grade: String = "", val credits: String = "")
+internal data class ManualSemesterInput(val sgpa: String = "", val credits: String = "")
+
+private val gradePoints = mapOf("S" to 10.0, "A" to 9.0, "B" to 8.0, "C" to 7.0, "D" to 6.0, "E" to 5.0, "F" to 0.0, "N" to 0.0)
+
+internal fun manualSgpa(rows: List<ManualSubjectInput>): Double? {
+    val values = rows.mapNotNull { row ->
+        val points = gradePoints[row.grade.trim().uppercase(Locale.ENGLISH)] ?: return@mapNotNull null
+        val credits = row.credits.toDoubleOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        points to credits
+    }
+    return values.takeIf { it.isNotEmpty() }?.let { it.sumOf { (points, credits) -> points * credits } / it.sumOf { (_, credits) -> credits } }
+}
+
+internal fun manualCgpa(rows: List<ManualSemesterInput>): Double? {
+    val values = rows.mapNotNull { row ->
+        val sgpa = row.sgpa.toDoubleOrNull()?.takeIf { it in 0.0..10.0 } ?: return@mapNotNull null
+        val credits = row.credits.toDoubleOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        sgpa to credits
+    }
+    return values.takeIf { it.isNotEmpty() }?.let { it.sumOf { (sgpa, credits) -> sgpa * credits } / it.sumOf { (_, credits) -> credits } }
+}
+
+internal fun requiredFutureSgpa(currentCgpa: Double, completedCredits: Double, futureCreditsPerSemester: Double, target: Double, semesters: Int): Double? {
+    if (completedCredits <= 0 || futureCreditsPerSemester <= 0 || semesters <= 0) return null
+    return (target * (completedCredits + futureCreditsPerSemester * semesters) - currentCgpa * completedCredits) /
+        (futureCreditsPerSemester * semesters)
+}
+
+@Composable
+private fun GpaPlanner(state: VioraUiState) {
+    var manualMode by remember { mutableIntStateOf(0) }
+    var subjects by remember { mutableStateOf(listOf(ManualSubjectInput())) }
+    var semesters by remember { mutableStateOf(listOf(ManualSemesterInput())) }
+    var showScale by remember { mutableStateOf(false) }
+    val completedCredits = state.registeredCredits ?: state.earnedCredits
+    val futureCredits = state.grades.mapNotNull(GradeUi::credits).sum().takeIf { it > 0 } ?: 20.0
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("GPA planner", style = MaterialTheme.typography.titleLarge)
+        Text("Uses VTOP-fetched grades, CGPA and credits. Future semesters assume ${futureCredits.cleanNumber()} credits each.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.grades.isNotEmpty()) {
+            state.grades.forEach { grade ->
+                Text("${grade.courseCode} · ${grade.grade.ifBlank { "—" }} · ${grade.credits?.let { "${it.cleanNumber()} credits" } ?: "credits unavailable"}", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if (state.cgpa != null && completedCredits != null) {
+            listOf(9.0, 9.5, 10.0).forEach { target ->
+                val required = (1..4).associateWith { count ->
+                    requiredFutureSgpa(state.cgpa, completedCredits, futureCredits, target, count)
+                }
+                SummaryCard(
+                    "Target ${target.cleanNumber()} CGPA",
+                    "1 sem: ${required.getValue(1).asRequiredGpa()}",
+                    (2..4).joinToString(" · ") { count -> "$count sems: ${required.getValue(count).asRequiredGpa()} avg" },
+                )
+            }
+        } else Text("Sync VTOP results once to unlock target projections.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Text("Manual calculator", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = manualMode == 0, onClick = { manualMode = 0 }, label = { Text("SGPA") })
+            FilterChip(selected = manualMode == 1, onClick = { manualMode = 1 }, label = { Text("CGPA") })
+        }
+        if (manualMode == 0) {
+            subjects.forEachIndexed { index, row ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    OutlinedTextField(value = row.name, onValueChange = { value -> subjects = subjects.toMutableList().also { it[index] = row.copy(name = value.take(60)) } }, label = { Text("Course") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = row.grade, onValueChange = { value -> subjects = subjects.toMutableList().also { it[index] = row.copy(grade = value.uppercase(Locale.ENGLISH).filter(Char::isLetter).take(1)) } }, label = { Text("Grade") }, singleLine = true, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = row.credits, onValueChange = { value -> subjects = subjects.toMutableList().also { it[index] = row.copy(credits = value.filter { char -> char.isDigit() || char == '.' }.take(5)) } }, label = { Text("Credits") }, singleLine = true, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            manualSgpa(subjects)?.let { SummaryCard("Calculated SGPA", it.cleanNumber(), "${(it * 10).cleanNumber()}%") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { subjects = subjects + ManualSubjectInput() }) { Text("Add course") }
+                TextButton(onClick = { subjects = listOf(ManualSubjectInput()) }) { Text("Reset") }
+            }
+        } else {
+            semesters.forEachIndexed { index, row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = row.sgpa, onValueChange = { value -> semesters = semesters.toMutableList().also { it[index] = row.copy(sgpa = value.filter { char -> char.isDigit() || char == '.' }.take(5)) } }, label = { Text("SGPA") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = row.credits, onValueChange = { value -> semesters = semesters.toMutableList().also { it[index] = row.copy(credits = value.filter { char -> char.isDigit() || char == '.' }.take(5)) } }, label = { Text("Credits") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
+            }
+            manualCgpa(semesters)?.let { SummaryCard("Calculated CGPA", it.cleanNumber(), "${(it * 10).cleanNumber()}%") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { semesters = semesters + ManualSemesterInput() }) { Text("Add semester") }
+                TextButton(onClick = { semesters = listOf(ManualSemesterInput()) }) { Text("Reset") }
+            }
+        }
+        TextButton(onClick = { showScale = !showScale }) { Text(if (showScale) "Hide grade scale" else "Show grade scale") }
+        if (showScale) Text("S 10 · A 9 · B 8 · C 7 · D 6 · E 5 · F/N 0", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Raw marks are not converted to grades because VIT relative grading can vary by course.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun Double?.asRequiredGpa(): String = when {
+    this == null -> "Unavailable"
+    this <= 0 -> "Already reached"
+    this > 10.0 -> "Not possible"
+    else -> cleanNumber()
 }
 
 @Composable private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) { Surface(modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(Modifier.padding(17.dp)) { SectionLabel(label.uppercase()); Text(value, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary) } } }
@@ -990,12 +1129,21 @@ internal fun VioraUiState.homeAgenda(nowEpochMillis: Long, classLookAheadDays: L
         }
     if (examDates) return HomeAgenda(true, examItems.sortedBy { if (it.isActiveExam) Long.MIN_VALUE else it.at })
 
-    val classItems = (0..classLookAheadDays).flatMap { offset ->
+    val classItems = (0..classLookAheadDays).firstNotNullOfOrNull { offset ->
         val date = now.toLocalDate().plusDays(offset)
         slotsForDate(date).mapNotNull { slot ->
             val at = date.atStartOfDay(academicZone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
-            if (at <= nowEpochMillis) null else HomeAgendaItem("class:${date.toEpochDay()}:${slot.slotId}", at, slot = slot)
-        }
-    }
+            val ends = date.atStartOfDay(academicZone).plusMinutes(slot.endMinute.toLong()).toInstant().toEpochMilli()
+            if (ends <= nowEpochMillis) null else HomeAgendaItem("class:${date.toEpochDay()}:${slot.slotId}", at, slot = slot)
+        }.takeIf { it.isNotEmpty() }
+    }.orEmpty()
     return HomeAgenda(false, (classItems + examItems).sortedBy(HomeAgendaItem::at))
+}
+
+internal fun VioraUiState.homeDueAssignments(nowEpochMillis: Long, lookAheadDays: Long = 7): List<AssignmentUi> {
+    val horizon = nowEpochMillis + lookAheadDays * 24 * 60 * 60 * 1000
+    return assignments.filter { assignment ->
+        val due = assignment.dueEpochMillis ?: return@filter false
+        due in (nowEpochMillis + 1)..horizon && !isAssignmentSubmitted(assignment.status, assignment.lastUpload)
+    }.sortedBy { it.dueEpochMillis }
 }

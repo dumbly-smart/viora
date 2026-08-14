@@ -6,6 +6,7 @@ import app.viora.database.DigitalAssignmentEntity
 import app.viora.database.SlotWithCourse
 import app.viora.domain.ExamWindow
 import app.viora.domain.isExamPeriodActive
+import app.viora.domain.isAssignmentSubmitted
 import java.time.DayOfWeek
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -79,7 +80,7 @@ object ReminderPlanner {
         }
         val assignmentPlans = assignments.flatMap { assignment ->
             val due = assignment.dueEpochMillis?.toZoned(now) ?: return@flatMap emptyList()
-            val submitted = assignment.isSubmitted()
+            val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
             val times = if (submitted) {
                 listOf(due.toLocalDate().atTime(22, 0).atZone(now.zone) to "DA submitted")
             } else {
@@ -112,10 +113,4 @@ object ReminderPlanner {
 
     private fun Long.toZoned(reference: ZonedDateTime): ZonedDateTime =
         java.time.Instant.ofEpochMilli(this).atZone(reference.zone)
-}
-
-private fun DigitalAssignmentEntity.isSubmitted(): Boolean {
-    val value = "$status $lastUpload".lowercase(Locale.ENGLISH)
-    return !value.contains("not upload") && !value.contains("not submit") &&
-        (value.contains("upload") || value.contains("submit"))
 }
