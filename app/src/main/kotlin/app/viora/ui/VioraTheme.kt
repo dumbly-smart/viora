@@ -13,35 +13,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val VioraIce = Color(0xFFE8EEF7)
-val VioraBlue = Color(0xFF7DD3FC)
-val VioraSuccess = Color(0xFF5EE0B5)
-val VioraCoral = Color(0xFFFF8E8E)
-val VioraAmber = Color(0xFFFFCA72)
+val VioraIce = Color(0xFFF1F1F1)
+val VioraBlue = Color(0xFFD7D7D7)
+val VioraSuccess = Color(0xFFE6E6E6)
+val VioraCoral = Color(0xFFB8B8B8)
+val VioraAmber = Color(0xFF989898)
 val VioraCanvas = Color(0xFF09090B)
-val VioraSurface = Color(0xFF121318)
-val VioraSurfaceHigh = Color(0xFF1B1D25)
+val VioraSurface = Color(0xFF121212)
+val VioraSurfaceHigh = Color(0xFF1B1B1B)
 
 private val VioraColors = darkColorScheme(
     primary = VioraIce,
-    onPrimary = Color(0xFF151A22),
-    primaryContainer = Color(0xFF27313E),
-    onPrimaryContainer = Color(0xFFF4F7FC),
+    onPrimary = Color(0xFF151515),
+    primaryContainer = Color(0xFF2A2A2A),
+    onPrimaryContainer = Color(0xFFF5F5F5),
     secondary = VioraBlue,
-    onSecondary = Color(0xFF00363D),
-    secondaryContainer = Color(0xFF153B43),
-    onSecondaryContainer = Color(0xFFB8F2FA),
+    onSecondary = Color(0xFF191919),
+    secondaryContainer = Color(0xFF303030),
+    onSecondaryContainer = Color(0xFFE8E8E8),
     tertiary = VioraAmber,
     error = VioraCoral,
-    errorContainer = Color(0xFF481E23),
+    errorContainer = Color(0xFF343434),
     background = VioraCanvas,
-    onBackground = Color(0xFFF3F6FA),
+    onBackground = Color(0xFFF3F3F3),
     surface = VioraSurface,
-    onSurface = Color(0xFFF3F6FA),
+    onSurface = Color(0xFFF3F3F3),
     surfaceVariant = VioraSurfaceHigh,
-    onSurfaceVariant = Color(0xFFADB7C5),
-    outline = Color(0xFF414A57),
-    outlineVariant = Color(0xFF282E37),
+    onSurfaceVariant = Color(0xFFB2B2B2),
+    outline = Color(0xFF4A4A4A),
+    outlineVariant = Color(0xFF2D2D2D),
 )
 
 private val VioraTypography = Typography(

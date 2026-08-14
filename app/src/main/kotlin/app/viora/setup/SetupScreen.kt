@@ -85,9 +85,9 @@ fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
                         OutlinedTextField(
                             value = state.username,
                             onValueChange = { onAction(SetupAction.UsernameChanged(it)) },
-                            label = { Text("Registration number") },
+                            label = { Text("VTOP username") },
                             leadingIcon = { Icon(Icons.Outlined.AccountCircle, null) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
                             enabled = !state.loading,
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
