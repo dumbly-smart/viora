@@ -50,7 +50,12 @@ data class DigitalAssignmentRecord(
     val status: String,
 )
 
-data class VtopWebSession(val url: String, val cookies: List<String>)
+data class VtopWebSession(
+    val url: String,
+    val cookies: List<String>,
+    val postBody: String? = null,
+    val shellUrl: String? = null,
+)
 
 data class ExamRecord(
     val id: String,
@@ -69,15 +74,15 @@ interface VtopGateway {
     suspend fun semesters(): List<SemesterOption>
     suspend fun timetable(semesterId: String): TimetableSnapshot
     suspend fun attendance(semesterId: String): AttendanceSnapshot
-    suspend fun digitalAssignments(): List<DigitalAssignmentRecord>
-    suspend fun digitalAssignmentUploadSession(): VtopWebSession
+    suspend fun digitalAssignments(semesterId: String): List<DigitalAssignmentRecord>
+    suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession
     suspend fun exams(semesterId: String): List<ExamRecord>
     suspend fun marks(semesterId: String): List<MarkRecord>
     suspend fun grades(semesterId: String): GradeSnapshot
     suspend fun cgpa(): CgpaSnapshot
     suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord>
     suspend fun classMessages(): List<ClassMessageRecord>
-    suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord>
+    suspend fun courseMaterials(semesterId: String, courseCode: String, courseTitle: String, faculty: String): List<CourseMaterialRecord>
     suspend fun importInteractiveSession(cookieHeader: String): SessionState
     suspend fun downloadCourseMaterial(downloadPath: String): ByteArray
 

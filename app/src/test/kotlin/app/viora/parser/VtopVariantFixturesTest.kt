@@ -32,5 +32,19 @@ class VtopVariantFixturesTest {
         assertEquals("Week 1 notes", result.value.single().title)
         assertTrue(result.value.single().downloadPath.contains("downloadcoursematerial"))
     }
+    @Test fun `materials parse consolidated module topic date and file id`() {
+        val html = """
+            <table id="materialTable"><tbody><tr>
+              <td>1</td><td>ignored</td>
+              <td><div class="mt-1"><span style="color:#2E86C1">Network notes</span><span style="color:#28B463">3</span></div></td>
+              <td><div class="mt-1"><span>1001 - Faculty - SCOPE</span><span>14-Aug-2026</span></div></td>
+              <td><button name="downloadmat" data-fileid="file-42">Download</button></td>
+            </tr></tbody></table>
+        """.trimIndent()
+        val material = (CourseMaterialParser().parse(html, "CSE1001") as ParseResult.Success).value.single()
+        assertEquals("Module 3 · Network notes", material.title)
+        assertEquals("fileId:file-42", material.downloadPath)
+        assertEquals(14, material.postedAt?.dayOfMonth)
+    }
     private fun fixture(name: String) = checkNotNull(javaClass.getResource("/fixtures/$name")).readText()
 }

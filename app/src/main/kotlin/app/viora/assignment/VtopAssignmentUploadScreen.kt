@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.viora.network.VtopWebSession
 import java.io.ByteArrayInputStream
+import org.json.JSONObject
 
 @SuppressLint("SetJavaScriptEnabled")
 @Suppress("DEPRECATION")
@@ -65,6 +66,7 @@ fun VtopAssignmentUploadScreen(session: VtopWebSession, close: (String?) -> Unit
             factory = { context ->
                 cookies.setAcceptCookie(true)
                 WebView(context).apply {
+                    var openedAssignmentPage = false
                     cookies.setAcceptThirdPartyCookies(this, false)
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
@@ -90,11 +92,41 @@ fun VtopAssignmentUploadScreen(session: VtopWebSession, close: (String?) -> Unit
                         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                             if (request.url.isTrustedVtop()) null else WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) = handler.cancel()
+                        override fun onPageFinished(view: WebView, url: String) {
+                            super.onPageFinished(view, url)
+                            val body = session.postBody ?: return
+                            val finishedUri = Uri.parse(url)
+                            if (openedAssignmentPage || session.shellUrl == null || !finishedUri.isTrustedVtop() || finishedUri.path != "/vtop/content") return
+                            openedAssignmentPage = true
+                            val target = JSONObject.quote(session.url)
+                            val data = JSONObject.quote(body)
+                            view.evaluateJavascript(
+                                """
+                                (function openDigitalAssignments(attempt) {
+                                  if (typeof ConfirmBox !== 'function') {
+                                    if (attempt < 40) setTimeout(function () { openDigitalAssignments(attempt + 1); }, 100);
+                                    return;
+                                  }
+                                  new ConfirmBox().withParameters({
+                                    submitTo: { url: $target, data: $data },
+                                    updateResponseTo: 'vtop-body-content',
+                                    onSuccess: function () { if (typeof unblockGUI === 'function') unblockGUI(); },
+                                    onError: function () { if (typeof unblockGUI === 'function') unblockGUI(); }
+                                  }).call();
+                                })(0);
+                                """.trimIndent(),
+                                null,
+                            )
+                        }
                     }
                     cookies.removeAllCookies {
                         session.cookies.forEach { cookies.setCookie(session.url, it) }
                         cookies.flush()
-                        post { loadUrl(session.url) }
+                        post {
+                            val initialUrl = session.shellUrl ?: session.url
+                            if (session.postBody == null || session.shellUrl != null) loadUrl(initialUrl)
+                            else postUrl(session.url, session.postBody.toByteArray(Charsets.UTF_8))
+                        }
                     }
                 }
             },

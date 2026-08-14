@@ -140,8 +140,8 @@ class MainActivity : ComponentActivity() {
     private val model by viewModels<VioraAppViewModel> {
         VioraAppViewModel.Factory(graph, VioraSyncScheduler(applicationContext))
     }
-    private val notificationPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
+    private val runtimePermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) { if (model.state.value.configured) requestPreciseReminderAccess() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,10 +153,13 @@ class MainActivity : ComponentActivity() {
             VioraTheme {
                 val state by model.state.collectAsState()
                 LaunchedEffect(state.configured) {
-                    if (state.configured && Build.VERSION.SDK_INT >= 33) {
-                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else if (state.configured) {
-                        requestPreciseReminderAccess()
+                    if (state.configured) {
+                        val permissions = buildList {
+                            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+                            if (Build.VERSION.SDK_INT <= 28) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        }
+                        if (permissions.isNotEmpty()) runtimePermissions.launch(permissions.toTypedArray())
+                        else requestPreciseReminderAccess()
                     }
                 }
                 LaunchedEffect(state.activeSemester?.id) {
@@ -284,11 +287,11 @@ private fun Dashboard(
                 }
             }
             AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
-                if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, uploadAssignment) else when (destination) {
+                if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, downloadMaterial, downloadMaterials, uploadAssignment) else when (destination) {
                     0 -> HomeScreen(state, PaddingValues())
                     1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
-                    2 -> CoursesScreen(state, openMaterial, downloadMaterial, downloadMaterials) { kind, id -> detail = DetailSelection(kind, id) }
-                    3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
+                    2 -> CoursesScreen(state) { kind, id -> detail = DetailSelection(kind, id) }
+                    3 -> TasksScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
                     else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
                 }
             }
@@ -385,7 +388,12 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
                 event.exam?.let { ExamCard(it) }
                 event.slot?.let { slot ->
                     val starts = Instant.ofEpochMilli(event.at).atZone(academicZone)
-                    CompactHomeClassCard(slot, state.attendanceFor(slot), starts.toLocalDate())
+                    CompactHomeClassCard(
+                        slot = slot,
+                        attendance = state.attendanceFor(slot),
+                        courseName = state.courseNameFor(slot),
+                        date = starts.toLocalDate(),
+                    )
                 }
             }
         }
@@ -393,20 +401,36 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
 }
 
 @Composable
-private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?, date: LocalDate) {
+private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?, courseName: String, date: LocalDate) {
+    val accent = VioraBlue
     Surface(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().animateContentSize(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
     ) {
-        Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(slot.title.ifBlank { slot.code }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text(slot.startMinute.asTime(), style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace)
+        Row {
+            Spacer(Modifier.width(4.dp).height(136.dp).background(accent, RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)))
+            Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        "${slot.startMinute.asTime()} — ${slot.endMinute.asTime()}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        date.format(DateTimeFormatter.ofPattern("EEE, d MMM")).uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(courseName, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    listOf(slot.code, slot.venue.ifBlank { "Room unavailable" }).filter(String::isNotBlank).joinToString("  ·  "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                attendance?.let { AttendanceGuidance(it) }
             }
-            Text("${date.format(DateTimeFormatter.ofPattern("EEE, d MMM"))} · ${slot.venue.ifBlank { "Room unavailable" }}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            attendance?.let { AttendanceGuidance(it) }
         }
     }
 }
@@ -438,12 +462,14 @@ private fun greeting(hour: Int): String = when (hour) {
 @Composable
 private fun CoursesScreen(
     state: VioraUiState,
-    openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
-    downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit,
-    downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit,
     showDetail: (String, String) -> Unit,
 ) {
     val courses = state.consolidatedCourses()
+    var query by remember { mutableStateOf("") }
+    val visibleCourses = courses.filter { course ->
+        query.isBlank() || listOf(course.code, course.title, course.faculty)
+            .any { it.contains(query.trim(), ignoreCase = true) }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -451,38 +477,31 @@ private fun CoursesScreen(
     ) {
         item {
             Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            Text("Every course and material fetched from VTOP, in one place.")
+            Text("Tap a course to view and download its VTOP materials.")
         }
-        if (state.materials.isNotEmpty()) item {
-            Button(onClick = { downloadMaterials(state.materials) }, enabled = state.downloads.values.none { it.status == "DOWNLOADING" }) {
-                Text("Download all materials")
-            }
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it.take(80) },
+                label = { Text("Search courses") },
+                placeholder = { Text("Course code, name or faculty") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        items(courses, key = ConsolidatedCourseUi::code) { course ->
-            Card(Modifier.fillMaxWidth()) {
+        items(visibleCourses, key = ConsolidatedCourseUi::code) { course ->
+            Card(Modifier.fillMaxWidth().clickable { showDetail("course", course.code) }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(course.code, style = MaterialTheme.typography.titleLarge)
-                            if (course.title.isNotBlank() && course.title != course.code) Text(course.title, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        TextButton(onClick = { showDetail("course", course.code) }) { Text("View course") }
-                    }
+                    Text(course.code, style = MaterialTheme.typography.titleLarge)
+                    if (course.title.isNotBlank() && course.title != course.code) Text(course.title, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     course.attendance?.let { Text("${"%.1f".format(it.percentage)}% attendance", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (course.faculty.isNotBlank()) Text(course.faculty, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    HorizontalDivider()
-                    Text("Materials (${course.materials.size})", style = MaterialTheme.typography.titleMedium)
-                    if (course.materials.isEmpty()) Text("No materials fetched for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else {
-                        TextButton(onClick = { downloadMaterials(course.materials) }) { Text("Download all for ${course.code}") }
-                        course.materials.forEach { material ->
-                            CourseMaterialActions(material, state, openMaterial, downloadMaterial)
-                        }
-                    }
+                    Text("${course.materials.size} ${if (course.materials.size == 1) "material" else "materials"} · Tap to open", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
         if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
+        else if (visibleCourses.isEmpty()) item { Text("No courses match your search.") }
     }
 }
 
@@ -653,7 +672,7 @@ private fun ScheduleScreen(
 }
 
 @Composable
-private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
+private fun TasksScreen(state: VioraUiState, uploadAssignment: () -> Unit, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
     val visibleExams = state.exams.filter {
         shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis())
     }
@@ -663,13 +682,21 @@ private fun TasksScreen(state: VioraUiState, showAssignment: (AssignmentUi) -> U
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { Text("Tasks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
-        item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge) }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Digital assignments", style = MaterialTheme.typography.titleLarge)
+                Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") }
+            }
+        }
         items(state.assignments, key = AssignmentUi::id) { assignment ->
+            val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
             Card(Modifier.fillMaxWidth().clickable { showAssignment(assignment) }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
-                    Text(assignment.dueEpochMillis.asAcademicTime("Due time unavailable"))
-                    if (assignment.status.isNotBlank()) Text(assignment.status)
+                    Text(assignment.dueEpochMillis.asAcademicTime("Due date unavailable"))
+                    Text(if (submitted) "Submitted" else "Not submitted", color = if (submitted) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
+                    if (assignment.lastUpload.isNotBlank() && !assignment.lastUpload.equals("N/A", true)) Text("Last upload · ${assignment.lastUpload}")
+                    if (assignment.status.isNotBlank()) Text(assignment.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -780,7 +807,16 @@ private fun AttendanceGuidance(attendance: AttendanceUi) {
     val projection = AttendanceCalculator.calculate(attendance.attended, attendance.held, 75, attendance.blockSize)
     val (text, color) = when {
         projection.classesToRecover > 0 -> "Attend next ${if (attendance.blockSize > 1) projection.blocksToRecover else projection.classesToRecover} to reach 75%" to VioraCoral
-        projection.skippableClasses > 0 -> "Can skip ${if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses} ${if (attendance.blockSize > 1) "lab blocks" else "classes"} safely" to VioraSuccess
+        projection.skippableClasses > 0 -> {
+            val amount = if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses
+            val unit = when {
+                attendance.blockSize > 1 && amount == 1 -> "lab block"
+                attendance.blockSize > 1 -> "lab blocks"
+                amount == 1 -> "class"
+                else -> "classes"
+            }
+            "Can skip $amount $unit safely" to VioraSuccess
+        }
         else -> "At 75% limit · attend this one" to VioraAmber
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -790,7 +826,15 @@ private fun AttendanceGuidance(attendance: AttendanceUi) {
 }
 
 @Composable
-internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit, uploadAssignment: () -> Unit = {}) {
+internal fun DetailScreen(
+    state: VioraUiState,
+    selection: DetailSelection,
+    openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
+    downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit = {},
+    downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit = {},
+    uploadAssignment: () -> Unit = {},
+) {
+    var materialQuery by remember(selection.kind, selection.id) { mutableStateOf("") }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (selection.kind) {
             "course" -> {
@@ -801,17 +845,42 @@ internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openM
                     ?: code
                 item { Text(title, style = MaterialTheme.typography.headlineMedium) }
                 attendance?.let { item { AttendanceCard(it) } }
+                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, code) }
+                val materials = state.materials.filter { sameCourseCode(it.courseCode, code) }
+                val visibleMaterials = materials.filter {
+                    materialQuery.isBlank() || "${it.title} ${it.fileName}".contains(materialQuery.trim(), true)
+                }
+                item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
+                if (materials.isEmpty()) item { Text("No materials are cached for this course yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                else {
+                    item {
+                        OutlinedTextField(
+                            value = materialQuery,
+                            onValueChange = { materialQuery = it.take(100) },
+                            label = { Text("Search materials") },
+                            placeholder = { Text("Module, topic or filename") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        Button(
+                            onClick = { downloadMaterials(visibleMaterials) },
+                            enabled = visibleMaterials.isNotEmpty() && state.downloads.values.none { it.status == "DOWNLOADING" },
+                        ) { Text(if (materialQuery.isBlank()) "Download all materials" else "Download search results") }
+                    }
+                    visibleMaterials.forEach { material ->
+                        item("material:${material.id}") { CourseMaterialActions(material, state, openMaterial, downloadMaterial) }
+                    }
+                    if (visibleMaterials.isEmpty()) item { Text("No materials match your search.") }
+                }
+                item { Text("Class schedule", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
                 state.slots.filter { sameCourseCode(it.code, code) }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
                 state.marks.filter { it.courseTitle.equals(title, true) }.forEach { mark -> item("mark:${mark.id}") { SummaryCard(mark.title, mark.scoredMark?.cleanNumber() ?: mark.status, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" } ?: "") } }
                 state.grades.filter { sameCourseCode(it.courseCode, code) }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
-                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, code) }
-                val materials = state.materials.filter { sameCourseCode(it.courseCode, code) }
                 item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
                 if (assignments.isEmpty()) item { Text("No digital assignments are cached for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 assignments.forEach { assignment -> item("assignment:${assignment.id}") { AssignmentCard(assignment) } }
-                item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
-                if (materials.isEmpty()) item { Text("No materials are cached for this course yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                materials.forEach { material -> item("material:${material.id}") { MaterialDetailCard(material, state, openMaterial) } }
             }
             "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
                 item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
@@ -957,7 +1026,7 @@ private fun ResultsScreen(state: VioraUiState) {
             item { SummaryCard("Last profiled sync", diagnostics.lastOutcome?.replaceFirstChar(Char::uppercase) ?: "No run recorded", listOfNotNull(diagnostics.lastSource, diagnostics.lastDurationMillis?.let { "${it} ms" }, diagnostics.lastRunEpochMillis?.asAcademicTime()).joinToString(" · ")) }
         }
         item { TextButton(onClick = refreshDiagnostics) { Text("Refresh diagnostics") } }
-        item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Viora's private app folder") }
+        item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Downloads/Viora-VIT/<course name>") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
         item { Text("Viora is a student-made, unofficial project and is not connected to or endorsed by VIT or VTOP.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -1085,7 +1154,20 @@ internal data class HomeAgendaItem(
 internal data class HomeAgenda(val examDates: Boolean, val items: List<HomeAgendaItem>)
 
 private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = attendance.firstOrNull {
-    it.courseCode.equals(slot.code, true) || (it.courseTitle.isNotBlank() && it.courseTitle.equals(slot.title, true))
+    sameCourseCode(it.courseCode, slot.code) ||
+        (it.courseTitle.isNotBlank() && slot.title.isNotBlank() && it.courseTitle.equals(slot.title, true))
+}
+
+private fun VioraUiState.courseNameFor(slot: SlotWithCourse): String {
+    val candidates = listOfNotNull(
+        attendanceFor(slot)?.courseTitle,
+        grades.firstOrNull { sameCourseCode(it.courseCode, slot.code) }?.courseTitle,
+        slot.title,
+    )
+    return candidates.firstOrNull { name ->
+        name.isNotBlank() && !name.filter(Char::isLetterOrDigit)
+            .equals(slot.code.filter(Char::isLetterOrDigit), true)
+    } ?: slot.title.takeIf(String::isNotBlank) ?: slot.code
 }
 
 internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {

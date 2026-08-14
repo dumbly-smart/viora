@@ -13,6 +13,7 @@ import app.viora.parser.CourseMaterialParser
 import app.viora.parser.SemesterParser
 import app.viora.parser.TimetableParser
 import app.viora.parser.VtopDocument
+import app.viora.domain.sameCourseCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -115,26 +116,42 @@ class HttpVtopGateway(
         }
     }
 
-    override suspend fun digitalAssignments(): List<DigitalAssignmentRecord> = withContext(Dispatchers.IO) {
-        val token = ensureAuthenticatedPage(DA_PAGE)
+    override suspend fun digitalAssignments(semesterId: String): List<DigitalAssignmentRecord> = withContext(Dispatchers.IO) {
+        val token = currentToken()
         val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val body = FormBody.Builder()
-            .add("_csrf", token)
-            .add("authorizedID", id)
-            .add("x", System.currentTimeMillis().toString())
-            .build()
-        val html = execute(Request.Builder().url(DA_PROCESS).post(body).build())
-        when (val result = assignmentParser.parse(html)) {
-            is ParseResult.Success -> result.value
-            ParseResult.AuthenticationRequired -> throw AuthenticationException()
-            is ParseResult.InvalidDocument -> throw IOException(result.reason)
+        val subjectsHtml = execute(Request.Builder().url(DA_PAGE).post(academicBody(token, id, semesterId)).build())
+        val subjects = assignmentParser.parseSubjects(subjectsHtml).valueOrThrow()
+        val attempts = subjects.map { subject ->
+            runCatching {
+                val body = FormBody.Builder()
+                    .add("_csrf", token)
+                    .add("authorizedID", id)
+                    .add("classId", subject.classId)
+                    .add("x", System.currentTimeMillis().toString())
+                    .build()
+                assignmentParser.parseDetails(
+                    execute(Request.Builder().url(DA_PROCESS).post(body).build()),
+                    subject,
+                ).valueOrThrow()
+            }
         }
+        val records = attempts.mapNotNull { it.getOrNull() }.flatten().distinctBy(DigitalAssignmentRecord::id)
+        if (subjects.isNotEmpty() && attempts.none { it.isSuccess }) throw attempts.first().exceptionOrNull() ?: IOException("DA details could not be fetched")
+        records
     }
 
-    override suspend fun digitalAssignmentUploadSession(): VtopWebSession = withContext(Dispatchers.IO) {
-        ensureAuthenticatedPage(DA_PAGE)
+    override suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession = withContext(Dispatchers.IO) {
+        val token = currentToken()
+        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
         val url = DA_PAGE.toHttpUrl()
-        VtopWebSession(DA_PAGE, cookieJar.loadForRequest(url).map { "${it.name}=${it.value}; Path=/vtop; Secure" })
+        val body = academicBody(token, id, semesterId)
+        val encoded = (0 until body.size).joinToString("&") { "${body.encodedName(it)}=${body.encodedValue(it)}" }
+        VtopWebSession(
+            url = DA_PAGE,
+            cookies = cookieJar.loadForRequest(url).map { "${it.name}=${it.value}; Path=/vtop; Secure" },
+            postBody = encoded,
+            shellUrl = VTOP_SHELL,
+        )
     }
 
     override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
@@ -168,21 +185,34 @@ class HttpVtopGateway(
         messageParser.parse(menuPage(MESSAGES_PAGE)).valueOrThrow()
     }
 
-    override suspend fun courseMaterials(semesterId: String, courseCode: String, faculty: String): List<CourseMaterialRecord> = withContext(Dispatchers.IO) {
-        val token = ensureAuthenticatedPage(COURSE_PAGE)
+    override suspend fun courseMaterials(semesterId: String, courseCode: String, courseTitle: String, faculty: String): List<CourseMaterialRecord> = withContext(Dispatchers.IO) {
+        val token = currentToken()
         val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        fun lookup(url: String, fields: Map<String, String>): String {
-            val builder = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("x", System.currentTimeMillis().toString())
-            fields.forEach { (key, value) -> builder.add(key, value) }
-            return execute(Request.Builder().url(url).post(builder.build()).build())
-        }
-        val courseHtml = lookup(COURSE_LIST, emptyMap())
-        val course = Jsoup.parse(courseHtml).select("option").firstOrNull { it.text().contains(courseCode, true) }
-        val classId = course?.attr("value")?.takeIf(String::isNotBlank).orEmpty()
-        val facultyHtml = lookup(FACULTY_LIST, mapOf("courseCode" to courseCode, "classId" to classId))
-        val facultyId = Jsoup.parse(facultyHtml).select("option").firstOrNull { it.text().contains(faculty, true) }?.attr("value")?.takeIf(String::isNotBlank) ?: faculty
-        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("courseCode", courseCode).add("classId", classId).add("facultyId", facultyId).add("x", System.currentTimeMillis().toString()).build()
-        materialParser.parse(execute(Request.Builder().url(COURSE_DETAIL).post(body).build()), courseCode).valueOrThrow()
+        val pageBody = FormBody.Builder()
+            .add("_csrf", token).add("authorizedID", id).add("verifyMenu", "true")
+            .add("x", System.currentTimeMillis().toString()).build()
+        val courseHtml = execute(Request.Builder().url(COURSE_PAGE_CONSOLIDATED).post(pageBody).build())
+        val courses = Jsoup.parse(courseHtml).select("select#courseId option")
+            .filter { option ->
+                option.text().contains(courseCode, true) ||
+                    sameCourseCode(option.text(), courseCode) ||
+                    courseTitle.courseTitleKey().let { title -> title.isNotBlank() && option.text().courseTitleKey().contains(title) }
+            }
+            .filter { it.attr("value").isNotBlank() }
+            .distinctBy { "${it.attr("value")}|${it.text()}" }
+        if (courses.isEmpty()) throw IOException("VTOP did not return $courseCode on the consolidated course page")
+        courses.flatMap { course ->
+            val parts = course.text().split(" - ").map(String::trim)
+            val courseType = parts.getOrNull(parts.size - 3).orEmpty()
+            val detailBody = FormBody.Builder()
+                .add("_csrf", token).add("authorizedID", id).add("CourseId", course.attr("value"))
+                .add("CoursType", courseType).add("x", System.currentTimeMillis().toString()).build()
+            materialParser.parse(
+                execute(Request.Builder().url(COURSE_CONSOLIDATED_DETAIL).post(detailBody).build()),
+                courseCode,
+                faculty,
+            ).valueOrThrow()
+        }.distinctBy { it.id }
     }
 
     override suspend fun importInteractiveSession(cookieHeader: String): SessionState = withContext(Dispatchers.IO) {
@@ -196,6 +226,21 @@ class HttpVtopGateway(
     }
 
     override suspend fun downloadCourseMaterial(downloadPath: String): ByteArray = withContext(Dispatchers.IO) {
+        if (downloadPath.startsWith("fileId:")) {
+            val fileId = downloadPath.removePrefix("fileId:").takeIf(String::isNotBlank)
+                ?: throw IOException("VTOP provided an invalid material ID")
+            val token = currentToken()
+            val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
+            val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("fileId", fileId).build()
+            return@withContext client.newCall(Request.Builder().url(COURSE_MATERIAL_DOWNLOAD).post(body).build()).execute().use { response ->
+                if (response.code == 404) throw AuthenticationException()
+                if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
+                response.body.bytes().also {
+                    require(it.size <= MAX_MATERIAL_BYTES) { "Course material is too large" }
+                    if (it.looksLikeHtml()) throw IOException("VTOP returned a page instead of the requested material")
+                }
+            }
+        }
         val candidate = Regex("['\"]([^'\"]*(?:download|Material)[^'\"]*)['\"]", RegexOption.IGNORE_CASE).find(downloadPath)?.groupValues?.get(1) ?: downloadPath
         val url = BASE.toHttpUrl().resolve(candidate) ?: throw IOException("VTOP provided an invalid material link")
         if (url.host != "vtop.vit.ac.in") throw IOException("Blocked a non-VTOP material link")
@@ -263,8 +308,21 @@ class HttpVtopGateway(
 
     private fun academicPost(url: String, token: String, semesterId: String): String {
         val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("semesterSubId", semesterId).add("x", System.currentTimeMillis().toString()).build()
+        val body = academicBody(token, id, semesterId)
         return execute(Request.Builder().url(url).post(body).build())
+    }
+
+    private fun academicBody(token: String, id: String, semesterId: String) = FormBody.Builder()
+        .add("_csrf", token)
+        .add("authorizedID", id)
+        .add("semesterSubId", semesterId)
+        .add("x", System.currentTimeMillis().toString())
+        .build()
+
+    private fun currentToken(): String {
+        csrf?.let { return it }
+        updateTokens(get(INIT_PAGE))
+        return csrf ?: throw IOException("VTOP did not provide a CSRF token")
     }
 
     private fun <T> ParseResult<T>.valueOrThrow(): T = when (this) {
@@ -295,6 +353,12 @@ class HttpVtopGateway(
     }
 
     private fun execute(request: Request): String = client.newCall(request).execute().use { response ->
+        if (response.code == 404) {
+            cookieJar.clear()
+            csrf = null
+            authorizedId = null
+            throw AuthenticationException()
+        }
         if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
         response.body.string()
     }
@@ -323,7 +387,14 @@ class HttpVtopGateway(
             html.contains("Student Profile", ignoreCase = true)
     }
 
+    private fun String.courseTitleKey(): String = substringBefore(" - ")
+        .lowercase()
+        .replace(Regex("\\b(theory|lab|embedded|only|project)\\b"), " ")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
+
     companion object {
+        private const val VTOP_SHELL = "https://vtop.vit.ac.in/vtop/init/page"
         private const val SITE_ROOT = "https://vtop.vit.ac.in/"
         private const val VTOP_ROOT = "https://vtop.vit.ac.in/vtop/"
         private const val BASE = "https://vtop.vit.ac.in/vtop"
@@ -349,13 +420,17 @@ class HttpVtopGateway(
         private const val CALENDAR_PAGE = "$BASE/academics/common/CalendarPreview"
         private const val CALENDAR_PROCESS = "$BASE/processViewCalendar"
         private const val MESSAGES_PAGE = "$BASE/academics/common/StudentClassMessage"
-        private const val COURSE_PAGE = "$BASE/academics/common/StudentCoursePage"
-        private const val COURSE_DETAIL = "$BASE/processViewStudentCourseDetail"
-        private const val COURSE_LIST = "$BASE/getCourseForCoursePage"
-        private const val FACULTY_LIST = "$BASE/getFacultyForCoursePage"
+        private const val COURSE_PAGE_CONSOLIDATED = "$BASE/academics/common/CoursePageConsolidated"
+        private const val COURSE_CONSOLIDATED_DETAIL = "$BASE/academics/CoursePageConsolidated/getCourseDetail"
+        private const val COURSE_MATERIAL_DOWNLOAD = "$BASE/downloadCourseMaterialFacultyPdf"
     }
 
     private data class LoginChallenge(val csrf: String, val imageDataUri: String)
+}
+
+private fun ByteArray.looksLikeHtml(): Boolean {
+    val prefix = take(128).toByteArray().toString(Charsets.UTF_8).trimStart().lowercase()
+    return prefix.startsWith("<!doctype html") || prefix.startsWith("<html")
 }
 
 class AuthenticationException : IOException("VTOP authentication is required")

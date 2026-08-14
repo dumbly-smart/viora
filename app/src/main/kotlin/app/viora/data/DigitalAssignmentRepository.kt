@@ -21,7 +21,7 @@ class DigitalAssignmentRepository(
         clock = clock,
     ) { attempt ->
         val previous = dao.assignmentSnapshot(semesterId).associateBy { it.id }
-        val records = gateway.digitalAssignments().map {
+        val records = gateway.digitalAssignments(semesterId).map {
             DigitalAssignmentEntity(
                 semesterId = semesterId,
                 id = it.id,

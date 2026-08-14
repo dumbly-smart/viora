@@ -17,6 +17,7 @@ import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
 import app.viora.network.VtopWebSession
+import app.viora.network.AuthenticationException
 import app.viora.sync.SyncOutcome
 import app.viora.sync.VioraSyncScheduler
 import app.viora.sync.SyncDiagnosticsSnapshot
@@ -121,7 +122,7 @@ class VioraAppViewModel(
     private val scheduler: VioraSyncScheduler,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(
-        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = graph.settings.getInt("attendance_target", 75), quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6), classCheckIns = loadClassCheckIns()),
+        VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = ATTENDANCE_TARGET, quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6), classCheckIns = loadClassCheckIns()),
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
     private var timetableObservation: Job? = null
@@ -132,6 +133,7 @@ class VioraAppViewModel(
     private var extrasObservation: Job? = null
 
     init {
+        graph.settings.edit().putInt("attendance_target", ATTENDANCE_TARGET).apply()
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
@@ -203,7 +205,7 @@ class VioraAppViewModel(
         mutableState.update { it.copy(examNotifications = enabled) }
         state.value.activeSemester?.let { semester -> viewModelScope.launch { graph.reminders.schedule(semester.id) } }
     }
-    fun setAttendanceTarget(target: Int) { graph.settings.edit().putInt("attendance_target", target).apply(); mutableState.update { state -> state.copy(attendanceTarget = target, attendance = state.attendance.reproject(target, state.plannedMissedBlocks)) } }
+    fun setAttendanceTarget(target: Int) { mutableState.update { state -> state.copy(attendanceTarget = ATTENDANCE_TARGET, attendance = state.attendance.reproject(ATTENDANCE_TARGET, state.plannedMissedBlocks)) } }
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
@@ -212,7 +214,8 @@ class VioraAppViewModel(
         viewModelScope.launch {
             runCatching {
                 check(graph.sessions.ensureActive() == SessionResolution.Ready) { "Sign in again before uploading" }
-                graph.gateway.digitalAssignmentUploadSession()
+                val semester = requireNotNull(state.value.activeSemester) { "Select a semester before uploading" }
+                graph.gateway.digitalAssignmentUploadSession(semester.id)
             }.onSuccess { session -> mutableState.update { it.copy(loading = false, assignmentUploadSession = session) } }
                 .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.message ?: "Could not open VTOP assignment upload") } }
         }
@@ -257,16 +260,27 @@ class VioraAppViewModel(
     fun interactiveVerificationError(message: String) = mutableState.update { it.copy(loading = false, error = message) }
     fun openMaterial(material: CourseMaterialEntity, share: Boolean = false) {
         mutableState.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch { graph.materialManager.open(material, share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }
+        viewModelScope.launch { graph.materialManager.open(material, courseName(material), share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }
     }
     fun downloadMaterial(material: CourseMaterialEntity) {
-        viewModelScope.launch { graph.materialManager.download(material).onFailure { mutableState.update { state -> state.copy(error = "Could not download that material") } } }
+        viewModelScope.launch { graph.materialManager.download(material, courseName(material)).onFailure { mutableState.update { state -> state.copy(error = "Could not download that material") } } }
     }
     fun downloadMaterials(materials: List<CourseMaterialEntity>) {
         viewModelScope.launch {
-            val failures = materials.count { graph.materialManager.download(it).isFailure }
+            val failures = materials.count { graph.materialManager.download(it, courseName(it)).isFailure }
             if (failures > 0) mutableState.update { it.copy(error = "$failures material download(s) failed") }
         }
+    }
+    private fun courseName(material: CourseMaterialEntity): String {
+        val snapshot = state.value
+        return listOfNotNull(
+            snapshot.attendance.firstOrNull { app.viora.domain.sameCourseCode(it.courseCode, material.courseCode) }?.courseTitle,
+            snapshot.slots.firstOrNull { app.viora.domain.sameCourseCode(it.code, material.courseCode) }?.title,
+            snapshot.grades.firstOrNull { app.viora.domain.sameCourseCode(it.courseCode, material.courseCode) }?.courseTitle,
+        ).firstOrNull { title ->
+            title.isNotBlank() && !title.filter(Char::isLetterOrDigit)
+                .equals(material.courseCode.filter(Char::isLetterOrDigit), true)
+        }?.substringBefore(" - ")?.trim().orEmpty().ifBlank { material.courseCode.ifBlank { "Course" } }
     }
     fun shareTimetableQr() {
         val snapshot = state.value
@@ -395,7 +409,13 @@ class VioraAppViewModel(
                 val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
                 graph.notifications.publishUpcoming(semester.id)
                 graph.reminders.schedule(semester.id)
-                val failed = listOf(examResult, timetableResult, attendanceResult, assignmentResult, resultsResult, extrasResult).count(Result<*>::isFailure)
+                val refreshResults = listOf(examResult, timetableResult, attendanceResult, assignmentResult, resultsResult, extrasResult)
+                if (refreshResults.any { it.exceptionOrNull() is AuthenticationException }) {
+                    diagnosticOutcome = "sign-in required"
+                    requireSignIn("VTOP session expired. Sign in again to refresh and upload.")
+                    return
+                }
+                val failed = refreshResults.count(Result<*>::isFailure)
                 diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
                 mutableState.update {
                     it.copy(
@@ -434,7 +454,7 @@ class VioraAppViewModel(
                     val projections = records.map { record ->
                         val blockSize = if (record.courseType.contains("lab", true)) 2 else 1
                         val projectedHeld = record.held + state.value.plannedMissedBlocks * blockSize
-                        val projection = AttendanceCalculator.calculate(record.attended, projectedHeld, state.value.attendanceTarget, blockSize)
+                        val projection = AttendanceCalculator.calculate(record.attended, projectedHeld, ATTENDANCE_TARGET, blockSize)
                         AttendanceUi(
                             record.id,
                             record.courseCode,
@@ -562,7 +582,10 @@ class VioraAppViewModel(
             VioraAppViewModel(graph, scheduler) as T
     }
 
-    companion object { const val CLASS_CHECK_IN_PREFIX = "class_check_in:" }
+    companion object {
+        const val CLASS_CHECK_IN_PREFIX = "class_check_in:"
+        const val ATTENDANCE_TARGET = 75
+    }
 }
 
 private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<AttendanceUi> = map { item ->

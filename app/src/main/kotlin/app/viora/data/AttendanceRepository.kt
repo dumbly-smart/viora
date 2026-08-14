@@ -47,7 +47,7 @@ class AttendanceRepository(
                     "ERROR",
                     attempt,
                     null,
-                    error.message?.take(120) ?: "Attendance could not be refreshed",
+                    error.message?.take(300) ?: "Attendance could not be refreshed",
                 ),
             )
         }

@@ -17,6 +17,12 @@ class AttendanceCalculatorTest {
         assertEquals(0, result.classesToRecover)
     }
 
+    @Test fun `allows skipping as soon as attendance remains at least seventy five percent`() {
+        val result = AttendanceCalculator.calculate(attended = 76, held = 100)
+        assertEquals(1, result.skippableClasses)
+        assertEquals(0, result.classesToRecover)
+    }
+
     @Test fun `calculates classes required to recover`() {
         val result = AttendanceCalculator.calculate(attended = 6, held = 10)
         assertEquals(0, result.skippableClasses)

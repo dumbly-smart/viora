@@ -32,23 +32,41 @@ class ClassMessageParser {
 }
 
 class CourseMaterialParser {
-    fun parse(html: String, courseCode: String): ParseResult<List<CourseMaterialRecord>> {
+    fun parse(html: String, courseCode: String, requestedFaculty: String = ""): ParseResult<List<CourseMaterialRecord>> {
         val doc = Jsoup.parse(html); if (VtopDocument.isAuthenticationPage(doc)) return ParseResult.AuthenticationRequired
-        val rows = doc.select("table tbody tr").mapIndexedNotNull { index, row ->
+        val consolidatedRows = doc.select("table#materialTable tbody tr")
+        if (consolidatedRows.isEmpty()) return ParseResult.Success(parseLegacyMaterials(doc, courseCode))
+        val rows = consolidatedRows.mapIndexedNotNull { index, row ->
             val cells = row.select("td")
-            val link = row.select("a, button, input").firstOrNull { element ->
-                listOf(element.attr("href"), element.attr("onclick"), element.attr("data-url"))
-                    .any { action -> action.contains("download", true) || action.contains("material", true) }
-            }
-            val title = cells.firstOrNull { it.text().isNotBlank() }?.text().orEmpty(); if (link == null && title.isBlank()) null else {
-                val path = link?.attr("href").orEmpty()
-                    .ifBlank { link?.attr("onclick").orEmpty() }
-                    .ifBlank { link?.attr("data-url").orEmpty() }
-                CourseMaterialRecord(stable("$courseCode-$index-$title-$path"), courseCode, title.ifBlank { link?.text().orEmpty() }, link?.attr("download").orEmpty().ifBlank { link?.text().orEmpty() }, path, null)
-            }
+            if (cells.size < 5) return@mapIndexedNotNull null
+            val facultyText = cells[3].select("div.mt-1 span").firstOrNull()?.text().orEmpty()
+            if (requestedFaculty.isNotBlank() && !facultyText.contains(requestedFaculty, true)) return@mapIndexedNotNull null
+            val materialSpans = cells[2].select("div.mt-1 span")
+            val topic = materialSpans.firstOrNull { it.attr("style").contains("#2E86C1", true) }
+                ?.text()?.trim().orEmpty().ifBlank { materialSpans.firstOrNull()?.text()?.trim().orEmpty() }
+            val module = materialSpans.firstOrNull { it.attr("style").contains("#28B463", true) }?.text()?.trim().orEmpty()
+            val fileId = cells[4].selectFirst("button[name=downloadmat][data-fileid]")?.attr("data-fileid").orEmpty()
+            if (fileId.isBlank()) return@mapIndexedNotNull null
+            val title = listOf(module.takeIf(String::isNotBlank)?.let { "Module $it" }, topic).filterNotNull().filter(String::isNotBlank).joinToString(" · ").ifBlank { "Course material ${index + 1}" }
+            val postedAt = cells[3].select("div.mt-1 span").getOrNull(1)?.text()?.let { VtopDateParser.dateAndTime(it, "12:00 AM") }
+            CourseMaterialRecord(stable("$courseCode-$fileId"), courseCode, title, topic.ifBlank { title }, "fileId:$fileId", postedAt)
         }
         return ParseResult.Success(rows)
     }
+
+    private fun parseLegacyMaterials(doc: org.jsoup.nodes.Document, courseCode: String) =
+        doc.select("table tbody tr").mapIndexedNotNull { index, row ->
+            val cells = row.select("td")
+            val control = row.select("a,button,input").firstOrNull { element ->
+                listOf(element.attr("href"), element.attr("onclick"), element.attr("data-url"))
+                    .any { it.contains("download", true) || it.contains("material", true) }
+            }
+            val title = cells.firstOrNull { it.text().isNotBlank() }?.text().orEmpty()
+            if (control == null && title.isBlank()) null else {
+                val path = control?.attr("href").orEmpty().ifBlank { control?.attr("onclick").orEmpty() }.ifBlank { control?.attr("data-url").orEmpty() }
+                CourseMaterialRecord(stable("$courseCode-$index-$title-$path"), courseCode, title.ifBlank { control?.text().orEmpty() }, control?.attr("download").orEmpty().ifBlank { control?.text().orEmpty() }, path, null)
+            }
+        }
 }
 
 private fun <T> parseTable(html: String, row: (Map<String, String>, Int) -> T?): ParseResult<List<T>> {

@@ -55,6 +55,24 @@ class AttendanceParserTest {
         )
     }
 
+    @Test fun `parses consolidated course faculty and class detail columns`() {
+        val html = """
+            <table id="getStudentDetails">
+              <tr><th>Sl.No.</th><th>Class Group</th><th>Course Detail</th><th>Class Detail</th><th>Faculty Detail</th><th>Attended Classes</th><th>Total Classes</th></tr>
+              <tr><td>1</td><td>General</td><td>BAHUM107 - Example Course</td><td>Theory Only</td><td>Faculty A</td><td>14</td><td>16</td></tr>
+            </table>
+        """.trimIndent()
+
+        val record = (parser.parse(html) as ParseResult.Success).value.records.single()
+
+        assertEquals("BAHUM107", record.courseCode)
+        assertEquals("Example Course", record.courseTitle)
+        assertEquals("Theory Only", record.courseType)
+        assertEquals("Faculty A", record.faculty)
+        assertEquals(14, record.attended)
+        assertEquals(16, record.held)
+    }
+
     @Test fun `parses current VTOP getStudentDetails layout without thead`() {
         val html = """
             <table id="getStudentDetails">

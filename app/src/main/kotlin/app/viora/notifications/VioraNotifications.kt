@@ -35,11 +35,11 @@ class VioraNotifications(
     suspend fun publishUpcoming(semesterId: String) {
         if (!canNotify() || inQuietHours()) return
         val now = clock()
-        val target = preferences.getInt("attendance_target", 75)
+        val target = 75
         dao.attendanceSnapshot(semesterId).filter { it.held > 0 && it.attended * 100 < target * it.held }.forEach { attendance ->
             notifyOnce("attendance:$semesterId:${attendance.id}:${attendance.attended}:${attendance.held}:$target", DEADLINES, "Attendance below $target%", attendance.courseTitle.ifBlank { attendance.courseCode }, "courses")
         }
-        dao.changesSince(now - Duration.ofDays(7).toMillis()).forEach { change ->
+        dao.changesSince(now - Duration.ofDays(7).toMillis()).filterNot { it.category == "materials" }.forEach { change ->
             notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) { "exams" -> "schedule"; "messages" -> "more"; else -> "courses" })
         }
     }
