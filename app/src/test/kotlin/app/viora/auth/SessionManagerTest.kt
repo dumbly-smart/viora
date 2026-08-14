@@ -66,6 +66,7 @@ class SessionManagerTest {
         override suspend fun timetable(semesterId: String) = TimetableSnapshot(emptyList(), emptyList())
         override suspend fun attendance(semesterId: String) = app.viora.network.AttendanceSnapshot(emptyList())
         override suspend fun digitalAssignments() = emptyList<app.viora.network.DigitalAssignmentRecord>()
+        override suspend fun digitalAssignmentUploadSession() = app.viora.network.VtopWebSession("https://vtop.vit.ac.in/vtop/examinations/doDigitalAssignment", emptyList())
         override suspend fun exams(semesterId: String) = emptyList<app.viora.network.ExamRecord>()
         override suspend fun marks(semesterId: String) = emptyList<app.viora.network.MarkRecord>()
         override suspend fun grades(semesterId: String) = app.viora.network.GradeSnapshot(emptyList(), null)

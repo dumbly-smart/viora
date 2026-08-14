@@ -131,6 +131,12 @@ class HttpVtopGateway(
         }
     }
 
+    override suspend fun digitalAssignmentUploadSession(): VtopWebSession = withContext(Dispatchers.IO) {
+        ensureAuthenticatedPage(DA_PAGE)
+        val url = DA_PAGE.toHttpUrl()
+        VtopWebSession(DA_PAGE, cookieJar.loadForRequest(url).map { "${it.name}=${it.value}; Path=/vtop; Secure" })
+    }
+
     override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
         val token = ensureAuthenticatedPage(EXAM_PAGE)
         val html = academicPost(EXAM_PROCESS, token, semesterId)

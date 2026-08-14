@@ -106,6 +106,7 @@ import app.viora.setup.SetupAction
 import app.viora.setup.SetupScreen
 import app.viora.setup.SetupState
 import app.viora.setup.VtopVerificationScreen
+import app.viora.assignment.VtopAssignmentUploadScreen
 import app.viora.sync.VioraSyncScheduler
 import app.viora.ui.VioraTheme
 import app.viora.ui.VioraAmber
@@ -162,8 +163,10 @@ class MainActivity : ComponentActivity() {
                 }
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
+                } else if (state.assignmentUploadSession != null) {
+                    VtopAssignmentUploadScreen(requireNotNull(state.assignmentUploadSession), model::closeAssignmentUpload)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::setAttendanceTarget, model::setPlannedMissedBlocks, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, model::beginAssignmentUpload, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -223,8 +226,9 @@ private fun Dashboard(
     setDeadlineNotifications: (Boolean) -> Unit,
     setExamNotifications: (Boolean) -> Unit,
     openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
-    setAttendanceTarget: (Int) -> Unit,
-    setPlannedMissedBlocks: (Int) -> Unit,
+    downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit,
+    downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit,
+    uploadAssignment: () -> Unit,
     setSearchQuery: (String) -> Unit,
     setQuietHours: (Boolean) -> Unit,
     setSyncHours: (Int) -> Unit,
@@ -279,10 +283,10 @@ private fun Dashboard(
                 }
             }
             AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
-                if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial) else when (destination) {
+                if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, uploadAssignment) else when (destination) {
                     0 -> HomeScreen(state, PaddingValues(), markClass)
                     1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
-                    2 -> CoursesScreen(state, openMaterial, setAttendanceTarget, setPlannedMissedBlocks) { kind, id -> detail = DetailSelection(kind, id) }
+                    2 -> CoursesScreen(state, openMaterial, downloadMaterial, downloadMaterials) { kind, id -> detail = DetailSelection(kind, id) }
                     3 -> TasksScreen(state, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
                     else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
                 }
@@ -398,7 +402,14 @@ private fun greeting(hour: Int): String = when (hour) {
 }
 
 @Composable
-private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit, setAttendanceTarget: (Int) -> Unit, setPlannedMissedBlocks: (Int) -> Unit, showDetail: (String, String) -> Unit) {
+private fun CoursesScreen(
+    state: VioraUiState,
+    openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
+    downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit,
+    downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit,
+    showDetail: (String, String) -> Unit,
+) {
+    val courses = state.consolidatedCourses()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -406,19 +417,86 @@ private fun CoursesScreen(state: VioraUiState, openMaterial: (app.viora.database
     ) {
         item {
             Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            Text("Attendance, assessments, grades, faculty and materials from the local cache.")
+            Text("Every course and material fetched from VTOP, in one place.")
         }
-        item { Text("Target: ${state.attendanceTarget}%"); Slider(value = state.attendanceTarget.toFloat(), onValueChange = { setAttendanceTarget(it.toInt()) }, valueRange = 50f..95f, steps = 8) }
-        item { Column { Text("Plan missing ${state.plannedMissedBlocks} future ${if (state.plannedMissedBlocks == 1) "block" else "blocks"}"); Row { TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks - 1) }) { Text("Fewer") }; TextButton(onClick = { setPlannedMissedBlocks(state.plannedMissedBlocks + 1) }) { Text("More") } } } }
-        items(state.attendance, key = AttendanceUi::id) { item -> Column(Modifier.clickable { showDetail("course", item.id) }) { AttendanceCard(item) } }
-        if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
-        if (state.grades.isNotEmpty()) item { Text("Grades", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        items(state.grades, key = GradeUi::courseCode) { grade -> SummaryCard("${grade.courseCode} · ${grade.courseTitle}", "Grade ${grade.grade}", listOfNotNull(grade.total?.let { "${it.cleanNumber()}/100" }, grade.credits?.let { "${it.cleanNumber()} credits" }).joinToString(" · ")) }
-        if (state.materials.isNotEmpty()) item { Text("Course materials", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        items(state.materials, key = { it.id }) { material -> Card(Modifier.fillMaxWidth().clickable { showDetail("material", material.id) }) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(material.courseCode, style = MaterialTheme.typography.titleMedium); Text(material.title.ifBlank { material.fileName })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { openMaterial(material, false) }) { Text("Open") }; TextButton(onClick = { openMaterial(material, true) }) { Text("Share") } }
-        } } }
+        if (state.materials.isNotEmpty()) item {
+            Button(onClick = { downloadMaterials(state.materials) }, enabled = state.downloads.values.none { it.status == "DOWNLOADING" }) {
+                Text("Download all materials")
+            }
+        }
+        items(courses, key = ConsolidatedCourseUi::code) { course ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(course.code, style = MaterialTheme.typography.titleLarge)
+                            if (course.title.isNotBlank() && course.title != course.code) Text(course.title, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { showDetail("course", course.code) }) { Text("View course") }
+                    }
+                    course.attendance?.let { Text("${"%.1f".format(it.percentage)}% attendance", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    if (course.faculty.isNotBlank()) Text(course.faculty, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    HorizontalDivider()
+                    Text("Materials (${course.materials.size})", style = MaterialTheme.typography.titleMedium)
+                    if (course.materials.isEmpty()) Text("No materials fetched for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else {
+                        TextButton(onClick = { downloadMaterials(course.materials) }) { Text("Download all for ${course.code}") }
+                        course.materials.forEach { material ->
+                            CourseMaterialActions(material, state, openMaterial, downloadMaterial)
+                        }
+                    }
+                }
+            }
+        }
+        if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
+    }
+}
+
+internal data class ConsolidatedCourseUi(
+    val code: String,
+    val title: String,
+    val faculty: String,
+    val attendance: AttendanceUi?,
+    val materials: List<app.viora.database.CourseMaterialEntity>,
+)
+
+internal fun VioraUiState.consolidatedCourses(): List<ConsolidatedCourseUi> {
+    val codes = linkedSetOf<String>()
+    slots.mapTo(codes) { it.code }
+    attendance.mapTo(codes) { it.courseCode }
+    assignments.mapTo(codes) { it.courseCode }
+    grades.mapTo(codes) { it.courseCode }
+    materials.mapTo(codes) { it.courseCode }
+    return codes.filter(String::isNotBlank).map { code ->
+        val attendanceItem = attendance.firstOrNull { sameCourseCode(it.courseCode, code) }
+        val slot = slots.firstOrNull { sameCourseCode(it.code, code) }
+        val grade = grades.firstOrNull { sameCourseCode(it.courseCode, code) }
+        ConsolidatedCourseUi(
+            code = code,
+            title = attendanceItem?.courseTitle?.takeIf(String::isNotBlank) ?: slot?.title?.takeIf(String::isNotBlank) ?: grade?.courseTitle.orEmpty(),
+            faculty = attendanceItem?.faculty?.takeIf(String::isNotBlank) ?: slot?.faculty.orEmpty(),
+            attendance = attendanceItem,
+            materials = materials.filter { sameCourseCode(it.courseCode, code) },
+        )
+    }.sortedBy { it.code }
+}
+
+@Composable
+private fun CourseMaterialActions(
+    material: app.viora.database.CourseMaterialEntity,
+    state: VioraUiState,
+    openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
+    downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit,
+) {
+    val download = state.downloads[material.id]
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(material.title.ifBlank { material.fileName }, style = MaterialTheme.typography.labelLarge)
+        download?.let { Text(if (it.status == "READY") "Downloaded · ${it.localBytes.readableBytes()}" else it.status.lowercase().replaceFirstChar(Char::uppercase), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { downloadMaterial(material) }, enabled = download?.status != "DOWNLOADING") { Text(if (download?.status == "READY") "Downloaded" else "Download") }
+            TextButton(onClick = { openMaterial(material, false) }, enabled = download?.status != "DOWNLOADING") { Text("Open") }
+            TextButton(onClick = { openMaterial(material, true) }, enabled = download?.status != "DOWNLOADING") { Text("Share") }
+        }
     }
 }
 
@@ -678,17 +756,22 @@ private fun AttendanceGuidance(attendance: AttendanceUi) {
 }
 
 @Composable
-internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit) {
+internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit, uploadAssignment: () -> Unit = {}) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (selection.kind) {
-            "course" -> state.attendance.firstOrNull { it.id == selection.id }?.let { attendance ->
-                item { Text(attendance.courseTitle.ifBlank { attendance.courseCode }, style = MaterialTheme.typography.headlineMedium) }
-                item { AttendanceCard(attendance) }
-                state.slots.filter { sameCourseCode(it.code, attendance.courseCode) || it.title == attendance.courseTitle }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
-                state.marks.filter { it.courseTitle == attendance.courseTitle }.forEach { mark -> item("mark:${mark.id}") { SummaryCard(mark.title, mark.scoredMark?.cleanNumber() ?: mark.status, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" } ?: "") } }
-                state.grades.filter { sameCourseCode(it.courseCode, attendance.courseCode) || it.courseTitle == attendance.courseTitle }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
-                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, attendance.courseCode) }
-                val materials = state.materials.filter { sameCourseCode(it.courseCode, attendance.courseCode) }
+            "course" -> {
+                val attendance = state.attendance.firstOrNull { it.id == selection.id || sameCourseCode(it.courseCode, selection.id) }
+                val code = attendance?.courseCode ?: selection.id
+                val title = attendance?.courseTitle?.takeIf(String::isNotBlank)
+                    ?: state.slots.firstOrNull { sameCourseCode(it.code, code) }?.title
+                    ?: code
+                item { Text(title, style = MaterialTheme.typography.headlineMedium) }
+                attendance?.let { item { AttendanceCard(it) } }
+                state.slots.filter { sameCourseCode(it.code, code) }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
+                state.marks.filter { it.courseTitle.equals(title, true) }.forEach { mark -> item("mark:${mark.id}") { SummaryCard(mark.title, mark.scoredMark?.cleanNumber() ?: mark.status, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" } ?: "") } }
+                state.grades.filter { sameCourseCode(it.courseCode, code) }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
+                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, code) }
+                val materials = state.materials.filter { sameCourseCode(it.courseCode, code) }
                 item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
                 if (assignments.isEmpty()) item { Text("No digital assignments are cached for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 assignments.forEach { assignment -> item("assignment:${assignment.id}") { AssignmentCard(assignment) } }
@@ -699,6 +782,7 @@ internal fun DetailScreen(state: VioraUiState, selection: DetailSelection, openM
             "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
                 item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
                 item { SummaryCard(assignment.courseCode, assignment.status.ifBlank { "Status unavailable" }, assignment.dueEpochMillis.asAcademicTime("Due time unavailable")) }
+                item { Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") } }
             }
             "exam" -> state.exams.firstOrNull { it.id == selection.id }?.let { exam -> item { ExamCard(exam) } }
             "material" -> state.materials.firstOrNull { it.id == selection.id }?.let { material -> item { MaterialDetailCard(material, state, openMaterial) } }

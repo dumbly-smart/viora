@@ -16,6 +16,7 @@ import app.viora.domain.AttendanceCalculator
 import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
+import app.viora.network.VtopWebSession
 import app.viora.sync.SyncOutcome
 import app.viora.sync.VioraSyncScheduler
 import app.viora.sync.SyncDiagnosticsSnapshot
@@ -41,6 +42,7 @@ data class VioraUiState(
     val loading: Boolean = false,
     val syncMessage: String? = null,
     val error: String? = null,
+    val assignmentUploadSession: VtopWebSession? = null,
     val semesters: List<SemesterOption> = emptyList(),
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
@@ -188,7 +190,11 @@ class VioraAppViewModel(
         it.copy(configured = false, loading = false, password = "", error = null)
     }
     fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
-    fun setDeadlineNotifications(enabled: Boolean) { graph.settings.edit().putBoolean("notify_deadlines", enabled).apply(); mutableState.update { it.copy(deadlineNotifications = enabled) } }
+    fun setDeadlineNotifications(enabled: Boolean) {
+        graph.settings.edit().putBoolean("notify_deadlines", enabled).apply()
+        mutableState.update { it.copy(deadlineNotifications = enabled) }
+        state.value.activeSemester?.let { semester -> viewModelScope.launch { graph.reminders.schedule(semester.id) } }
+    }
     fun setExamNotifications(enabled: Boolean) {
         graph.settings.edit().putBoolean("notify_exams", enabled).apply()
         mutableState.update { it.copy(examNotifications = enabled) }
@@ -198,6 +204,26 @@ class VioraAppViewModel(
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
+    fun beginAssignmentUpload() {
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            runCatching {
+                check(graph.sessions.ensureActive() == SessionResolution.Ready) { "Sign in again before uploading" }
+                graph.gateway.digitalAssignmentUploadSession()
+            }.onSuccess { session -> mutableState.update { it.copy(loading = false, assignmentUploadSession = session) } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.message ?: "Could not open VTOP assignment upload") } }
+        }
+    }
+    fun closeAssignmentUpload(cookieHeader: String?) {
+        mutableState.update { it.copy(assignmentUploadSession = null) }
+        viewModelScope.launch {
+            if (!cookieHeader.isNullOrBlank()) graph.gateway.importInteractiveSession(cookieHeader)
+            state.value.activeSemester?.let { semester ->
+                graph.assignments.refresh(semester.id)
+                graph.reminders.schedule(semester.id)
+            }
+        }
+    }
     fun setSyncHours(hours: Int) { val safe = hours.coerceIn(1, 24); graph.settings.edit().putInt("sync_hours", safe).apply(); scheduler.schedule(safe.toLong()); mutableState.update { it.copy(syncHours = safe) }; refreshDiagnostics() }
     fun refreshDiagnostics() { viewModelScope.launch { mutableState.update { it.copy(syncDiagnostics = graph.syncDiagnostics.snapshot()) } } }
     fun markClass(key: String, mark: ClassCheckIn?) {
@@ -229,6 +255,15 @@ class VioraAppViewModel(
     fun openMaterial(material: CourseMaterialEntity, share: Boolean = false) {
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch { graph.materialManager.open(material, share).onFailure { mutableState.update { state -> state.copy(error = "Could not download or open that material") } }; mutableState.update { it.copy(loading = false) } }
+    }
+    fun downloadMaterial(material: CourseMaterialEntity) {
+        viewModelScope.launch { graph.materialManager.download(material).onFailure { mutableState.update { state -> state.copy(error = "Could not download that material") } } }
+    }
+    fun downloadMaterials(materials: List<CourseMaterialEntity>) {
+        viewModelScope.launch {
+            val failures = materials.count { graph.materialManager.download(it).isFailure }
+            if (failures > 0) mutableState.update { it.copy(error = "$failures material download(s) failed") }
+        }
     }
     fun shareTimetableQr() {
         val snapshot = state.value

@@ -29,6 +29,8 @@ class VioraReminderScheduler(
         val plans = ReminderPlanner.create(
             slots = dao.timetableSnapshot(semesterId),
             exams = dao.examSnapshot(semesterId),
+            assignments = if (context.getSharedPreferences(VioraGraph.SETTINGS_NAME, Context.MODE_PRIVATE)
+                .getBoolean("notify_deadlines", true)) dao.assignmentSnapshot(semesterId) else emptyList(),
             calendar = dao.calendarSnapshot(semesterId),
             now = now,
             includeExamReminders = context.getSharedPreferences(VioraGraph.SETTINGS_NAME, Context.MODE_PRIVATE)

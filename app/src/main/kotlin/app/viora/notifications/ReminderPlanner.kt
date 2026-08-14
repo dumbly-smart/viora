@@ -2,6 +2,7 @@ package app.viora.notifications
 
 import app.viora.database.AcademicCalendarEntity
 import app.viora.database.ExamEntity
+import app.viora.database.DigitalAssignmentEntity
 import app.viora.database.SlotWithCourse
 import app.viora.domain.ExamWindow
 import app.viora.domain.isExamPeriodActive
@@ -26,6 +27,7 @@ object ReminderPlanner {
     fun create(
         slots: List<SlotWithCourse>,
         exams: List<ExamEntity>,
+        assignments: List<DigitalAssignmentEntity> = emptyList(),
         calendar: List<AcademicCalendarEntity>,
         now: ZonedDateTime,
         includeExamReminders: Boolean,
@@ -75,7 +77,32 @@ object ReminderPlanner {
                 )
             }
         }
-        return (classPlans + examPlans).sortedBy(ReminderPlan::triggerEpochMillis)
+        val assignmentPlans = assignments.flatMap { assignment ->
+            val due = assignment.dueEpochMillis?.toZoned(now) ?: return@flatMap emptyList()
+            val submitted = assignment.isSubmitted()
+            val times = if (submitted) {
+                listOf(due.toLocalDate().atTime(22, 0).atZone(now.zone) to "DA submitted")
+            } else {
+                listOf(
+                    due.toLocalDate().minusDays(2).atTime(9, 0).atZone(now.zone) to "DA due in 2 days",
+                    due.toLocalDate().atTime(9, 0).atZone(now.zone) to "DA due today",
+                    due.toLocalDate().atTime(22, 0).atZone(now.zone) to "DA due tonight",
+                )
+            }
+            times.mapNotNull { (at, title) ->
+                val trigger = at.toInstant().toEpochMilli()
+                if (trigger <= nowMillis) return@mapNotNull null
+                ReminderPlan(
+                    id = "assignment:${assignment.id}:${assignment.dueEpochMillis}:${if (submitted) "submitted" else title}",
+                    triggerEpochMillis = trigger,
+                    channel = VioraNotifications.DEADLINES,
+                    title = title,
+                    text = "${assignment.courseCode} · ${assignment.title}",
+                    destination = "tasks",
+                )
+            }
+        }
+        return (classPlans + examPlans + assignmentPlans).sortedBy(ReminderPlan::triggerEpochMillis)
     }
 
     private fun details(starts: ZonedDateTime, course: String, venue: String): String =
@@ -85,4 +112,10 @@ object ReminderPlanner {
 
     private fun Long.toZoned(reference: ZonedDateTime): ZonedDateTime =
         java.time.Instant.ofEpochMilli(this).atZone(reference.zone)
+}
+
+private fun DigitalAssignmentEntity.isSubmitted(): Boolean {
+    val value = "$status $lastUpload".lowercase(Locale.ENGLISH)
+    return !value.contains("not upload") && !value.contains("not submit") &&
+        (value.contains("upload") || value.contains("submit"))
 }

@@ -1,6 +1,7 @@
 package app.viora.notifications
 
 import app.viora.database.ExamEntity
+import app.viora.database.DigitalAssignmentEntity
 import app.viora.database.SlotWithCourse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -83,6 +84,27 @@ class ReminderPlannerTest {
         assertEquals(2, plans.count { it.channel == VioraNotifications.CLASSES })
     }
 
+    @Test fun `unsubmitted assignment gets three exact reminders`() {
+        val due = now.plusDays(3).withHour(23).withMinute(59)
+        val plans = ReminderPlanner.create(
+            slots = emptyList(), exams = emptyList(), assignments = listOf(assignment(due, "Not uploaded")),
+            calendar = emptyList(), now = now, includeExamReminders = true,
+        )
+
+        assertEquals(listOf("DA due in 2 days", "DA due today", "DA due tonight"), plans.map { it.title })
+        assertEquals(listOf(9, 9, 22), plans.map { java.time.Instant.ofEpochMilli(it.triggerEpochMillis).atZone(zone).hour })
+    }
+
+    @Test fun `submitted assignment gets only ten pm confirmation`() {
+        val plans = ReminderPlanner.create(
+            slots = emptyList(), exams = emptyList(), assignments = listOf(assignment(now.plusDays(1), "Uploaded")),
+            calendar = emptyList(), now = now, includeExamReminders = true,
+        )
+
+        assertEquals(listOf("DA submitted"), plans.map { it.title })
+        assertEquals(22, java.time.Instant.ofEpochMilli(plans.single().triggerEpochMillis).atZone(zone).hour)
+    }
+
     private fun slot(startMinute: Int) = SlotWithCourse(
         slotId = "slot",
         courseId = "course",
@@ -107,5 +129,9 @@ class ReminderPlannerTest {
         venue = "AB-101",
         seatNumber = "42",
         sourceEpochMillis = 0,
+    )
+
+    private fun assignment(due: ZonedDateTime, upload: String) = DigitalAssignmentEntity(
+        "semester", "assignment", "CSE1001", "DA 1", due.toInstant().toEpochMilli(), upload, "Open", 0,
     )
 }

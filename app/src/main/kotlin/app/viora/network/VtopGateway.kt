@@ -50,6 +50,8 @@ data class DigitalAssignmentRecord(
     val status: String,
 )
 
+data class VtopWebSession(val url: String, val cookies: List<String>)
+
 data class ExamRecord(
     val id: String,
     val courseCode: String,
@@ -68,6 +70,7 @@ interface VtopGateway {
     suspend fun timetable(semesterId: String): TimetableSnapshot
     suspend fun attendance(semesterId: String): AttendanceSnapshot
     suspend fun digitalAssignments(): List<DigitalAssignmentRecord>
+    suspend fun digitalAssignmentUploadSession(): VtopWebSession
     suspend fun exams(semesterId: String): List<ExamRecord>
     suspend fun marks(semesterId: String): List<MarkRecord>
     suspend fun grades(semesterId: String): GradeSnapshot

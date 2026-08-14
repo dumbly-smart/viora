@@ -35,18 +35,6 @@ class VioraNotifications(
     suspend fun publishUpcoming(semesterId: String) {
         if (!canNotify() || inQuietHours()) return
         val now = clock()
-        val horizon = now + Duration.ofHours(24).toMillis()
-        dao.assignmentsDueBetween(semesterId, now, horizon).forEach { assignment ->
-            if (!preferences.getBoolean("notify_deadlines", true)) return@forEach
-            val withinThreeHours = assignment.dueEpochMillis?.minus(now)?.let { it <= Duration.ofHours(3).toMillis() } == true
-            notifyOnce(
-                key = "da-${if (withinThreeHours) "3h" else "24h"}:$semesterId:${assignment.id}:${assignment.dueEpochMillis}",
-                channel = DEADLINES,
-                title = if (withinThreeHours) "Assignment due within 3 hours" else "Assignment due soon",
-                text = "${assignment.courseCode} · ${assignment.title}",
-                destination = "tasks",
-            )
-        }
         val target = preferences.getInt("attendance_target", 75)
         dao.attendanceSnapshot(semesterId).filter { it.held > 0 && it.attended * 100 < target * it.held }.forEach { attendance ->
             notifyOnce("attendance:$semesterId:${attendance.id}:${attendance.attended}:${attendance.held}:$target", DEADLINES, "Attendance below $target%", attendance.courseTitle.ifBlank { attendance.courseCode }, "courses")
@@ -81,7 +69,8 @@ class VioraNotifications(
 
     suspend fun deliverScheduled(key: String, channel: String, title: String, text: String, destination: String) {
         if (!canNotify()) return
-        if (channel !in setOf(CLASSES, EXAMS) || destination != "schedule") return
+        if (channel !in setOf(CLASSES, EXAMS, DEADLINES)) return
+        if ((channel == DEADLINES && destination != "tasks") || (channel != DEADLINES && destination != "schedule")) return
         notifyOnce("scheduled:$key", channel, title, text, destination)
     }
 
