@@ -71,7 +71,7 @@ fun VtopAssignmentUploadScreen(session: VtopWebSession, close: (String?) -> Unit
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.allowFileAccess = false
-                    settings.allowContentAccess = true
+                    settings.allowContentAccess = false
                     settings.allowFileAccessFromFileURLs = false
                     settings.allowUniversalAccessFromFileURLs = false
                     settings.javaScriptCanOpenWindowsAutomatically = false

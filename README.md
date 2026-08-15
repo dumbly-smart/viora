@@ -1,108 +1,54 @@
 # Viora
 
-> **A student-made project for students.** Viora is an unofficial app built to make VTOP easier to use. It is not connected to or endorsed by VIT or VTOP.
+Viora puts the useful parts of VTOP into a cleaner Android app, so you do not have to dig through the portal every time you want to check something.
 
-Viora is an Android app for keeping VTOP stuff in one place without opening ten different pages every time.
+Sign in with your VTOP account and the app pulls in your classes, attendance, assignments, exams, marks, grades and course materials. It keeps everything synced in the background and saves a local copy, so you can still check most things when VTOP or campus Wi-Fi is having a moment.
 
-Log in once during setup and Viora keeps your academic data synced whenever you open the app. Everything stays on your phone, so your cached timetable and other details are still there when campus Wi-Fi decides not to cooperate.
+## What you can do
 
-## What it has right now
+- See today's classes, upcoming exams and pending assignments from Home
+- Check the full timetable, class timings and rooms
+- Track attendance and see how many classes you can skip while staying at 75%
+- Get reminders before classes, exams and assignment deadlines
+- View marks, grades, GPA and CGPA
+- Plan the GPA needed to reach a target CGPA
+- Browse courses and download materials to `Downloads/Viora-VIT/<course>`
+- Open VTOP's assignment page and upload DAs from the app
+- Search through courses and academic info
+- Keep things updated with background sync or the manual sync button
 
-- Today’s classes and the next class coming up
-- Full weekly timetable
-- Shareable timetable QR image generated entirely on-device
-- Attendance for theory and lab separately
-- Skippable-class and recovery projections at the 75% target
-- Attendance what-if planning with adjustable targets and whole lab blocks
-- Digital assignments and due dates
-- Exam schedule, venue, and seat details
-- Assessment marks and weighted marks
-- Grades, GPA, CGPA, and credits
-- Academic calendar and holidays
-- Class messages
-- Consolidated course details
-- Course-material download, open, and share actions
-- Managed downloads with retry state, private-storage usage, and cleanup
-- Local reminders for assignments and exams
-- Change alerts, quiet hours, notification deep links, and fully local search
-- Dedicated course, assignment, exam, and material details
-- Semester rollover archives and responsive phone/tablet navigation
-- Accessibility-aware headings, live error announcements, and large-text layouts
-- Background sync with cached data when VTOP is unavailable
-- A seven-day timeline that accounts for holidays and instructional day orders
+## Privacy and security
 
-## Login and privacy
+Viora talks directly to VTOP. There is no Viora server collecting your account or academic data.
 
-Viora talks directly to VTOP and does not use a backend. Credentials, cookies, marks, attendance, and everything else are stored locally on the device.
+Your saved login and VTOP session are encrypted using Android's secure key storage. Timetables, attendance, marks and other synced details stay inside the app on your phone, and Android backups are turned off. Course files you choose to download are normal files in your Downloads folder, so you can open and share them easily.
 
-The app has its own encrypted VTOP session, separate from Chrome and other devices. Logging out of Viora only clears Viora’s local data, so it should not mess with another VTOP session you already have open.
+Logging out clears Viora's saved account and local academic data without logging you out of VTOP in your browser.
 
-If VTOP expires the session, Viora restores it using the encrypted login saved during setup. VTOP's six-character image CAPTCHA is solved locally with a bundled model; the image and answer never leave the phone. Interactive challenges such as reCAPTCHA still require normal user verification, and no CAPTCHA-solving service is involved.
+## Download the APK
 
-## Tech stuff
+Grab the newest APK from [GitHub Releases](https://github.com/dumbly-smart/viora/releases/latest), open it on your Android phone and tap **Install**.
 
-The app is built with:
+Android may ask you to allow installs from your browser or file manager since the APK is downloaded directly. You can turn that permission back off after installing. When there is a newer version, install it over the old one to keep your local data.
 
-- Kotlin and Jetpack Compose
-- Material 3
-- Room
-- ViewModel and StateFlow
-- OkHttp and Jsoup
-- WorkManager
-- Android Keystore
+Only download Viora from this repository's Releases page.
 
-The basic flow is pretty simple:
+## Build it yourself
 
-```text
-Compose UI → ViewModel → Repository → Room
-                         ↓
-                    VTOP gateway
-```
+Open the project in Android Studio with JDK 17, let Gradle sync and run the `app` configuration on an Android 8.0 or newer phone or emulator.
 
-Room is the source of truth for the UI. A sync updates the local database, and the screens automatically pick up the new data.
-
-## Running it
-
-Open the project in Android Studio with JDK 17 and let Gradle sync. Then run the `app` configuration on an Android 8.0 or newer device/emulator.
-
-From the command line:
+You can also build it from the terminal:
 
 ```bash
-gradle testDebugUnitTest lintDebug
-gradle assembleDebug
+gradle testDebugUnitTest assembleDebug lintDebug
 ```
-
-Device smoke runs can be captured with `scripts/device-smoke.sh --apk app/build/outputs/apk/debug/app-debug.apk`. See [the closed-test runbook](docs/CLOSED_TEST.md) for the release matrix and privacy rules.
-
-## Installing the APK
-
-Open the latest GitHub Release on your Android phone, download `Viora-<version>.apk`, and tap the download to install it. Android may ask you to allow installs from the browser or file manager because Viora is shared directly instead of through the Play Store. You can turn that permission off again after installing.
-
-Future versions can be installed over the current one without clearing Viora's local data. Download APKs only from this repository's Releases page so Android can verify that they use the same student-project signing key.
-
-## Sharing releases
-
-The **Signed APK release** GitHub Actions workflow runs tests and lint, builds an APK to share with friends, verifies zip alignment and the signing certificate, and publishes the APK with a SHA-256 checksum. Android requires the APK to be signed so later builds install as updates. The signature only lets Android recognize updates from the same project; it does not make Viora an official app. Configure these repository secrets before running it:
-
-- `VIORA_KEYSTORE_BASE64`
-- `VIORA_KEYSTORE_PASSWORD`
-- `VIORA_KEY_ALIAS`
-- `VIORA_KEY_PASSWORD`
-- `VIORA_CERT_SHA256` (the pinned release-certificate SHA-256 fingerprint)
-
-SemVer tags such as `v0.1.0` publish a GitHub release; manual runs require an explicit SemVer version name and positive, monotonically increasing Android version code, then produce a private workflow artifact. The workflow verifies that those versions reached the APK manifest. Signing material is provisioned only in the runner's temporary directory and is never committed.
-
-## Project notes
-
-- [Detailed tech stack](docs/TECH_STACK.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Features](docs/FEATURES.md)
-- [Sync and login](docs/SYNC_AND_AUTH.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Contributing](CONTRIBUTING.md)
 
 ## Contributing
 
-Issues and pull requests are welcome. Just don’t commit usernames, passwords, cookies, registration numbers, private VTOP HTML, or downloaded course files. Redacted parser fixtures are fine and very useful.
+Found a bug or have a fun idea? Open an issue or send a pull request. Small fixes are welcome too.
 
-That’s pretty much it. VTOP has the data; Viora just tries to make it nicer to use.
+Please keep personal VTOP stuff out of commits—no usernames, passwords, cookies, registration numbers, private page dumps or downloaded course files. Redacted test data is totally fine.
+
+More project details are in [`docs`](docs), and the contribution notes are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+That's Viora: less portal wrestling, more getting things done.

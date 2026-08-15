@@ -3,6 +3,7 @@ package app.viora.notifications
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -53,7 +54,9 @@ class VioraReminderScheduler(
     }
 
     private fun pendingIntent(id: String, plan: ReminderPlan?, mode: Int): PendingIntent? {
-        val intent = Intent(context, VioraReminderReceiver::class.java)
+        val intent = Intent()
+            .setComponent(ComponentName(context, VioraReminderReceiver::class.java))
+            .setPackage(context.packageName)
             .setAction(ACTION_REMINDER)
             .setData(Uri.parse("viora://reminder/$id"))
         if (plan != null) intent
