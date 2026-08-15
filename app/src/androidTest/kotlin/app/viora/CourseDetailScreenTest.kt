@@ -27,7 +27,11 @@ class CourseDetailScreenTest {
 
         compose.setContent {
             VioraTheme {
-                DetailScreen(state, DetailSelection("course", course.id)) { _, _ -> }
+                DetailScreen(
+                    state = state,
+                    selection = DetailSelection("course", course.id),
+                    openMaterial = { _, _ -> },
+                )
             }
         }
 
