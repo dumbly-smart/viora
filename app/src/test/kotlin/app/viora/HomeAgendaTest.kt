@@ -1,6 +1,7 @@
 package app.viora
 
 import app.viora.database.SlotWithCourse
+import app.viora.network.SemesterOption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +88,22 @@ class HomeAgendaTest {
         ))
 
         assertEquals(listOf("open"), state.homeDueAssignments(now).map(AssignmentUi::id))
+    }
+
+    @Test fun `cached agenda remains available while a refresh is loading`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val state = VioraUiState(
+            loading = true,
+            slots = listOf(slot("cached", 3, 10 * 60, 11 * 60)),
+        )
+
+        assertEquals(listOf("cached"), state.homeAgenda(now).items.map { it.slot?.slotId })
+    }
+
+    @Test fun `saved semester is ready before network discovery`() {
+        assertEquals(SemesterOption("semester-id", "Fall 2026"), savedSemesterOption("semester-id", "Fall 2026"))
+        assertEquals(SemesterOption("semester-id", "semester-id"), savedSemesterOption("semester-id", null))
+        assertEquals(null, savedSemesterOption(null, null))
     }
 
     private fun time(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =

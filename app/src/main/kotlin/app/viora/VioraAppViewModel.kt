@@ -139,7 +139,10 @@ class VioraAppViewModel(
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
         viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
         refreshDiagnostics()
-        if (state.value.configured) restoreSessionAndLoad()
+        if (state.value.configured) {
+            observeSavedSemester()
+            restoreSessionAndLoad()
+        }
     }
 
     fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null) }
@@ -314,6 +317,30 @@ class VioraAppViewModel(
                 SessionResolution.Unavailable -> useCachedDataAfterConnectionFailure()
             }
         }
+    }
+
+    /**
+     * Connect the UI to Room before making any VTOP request. This keeps the last
+     * successful snapshot visible while session restoration and refresh run.
+     */
+    private fun observeSavedSemester(): SemesterOption? {
+        val semester = savedSemesterOption(
+            graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null),
+            graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null),
+        ) ?: return null
+        mutableState.update { current ->
+            current.copy(
+                activeSemester = semester,
+                semesters = current.semesters.ifEmpty { listOf(semester) },
+            )
+        }
+        observeTimetable(semester.id)
+        observeAttendance(semester.id)
+        observeAssignments(semester.id)
+        observeExams(semester.id)
+        observeResults(semester.id)
+        observeExtras(semester.id)
+        return semester
     }
 
     private fun useCachedDataAfterConnectionFailure() {
@@ -587,6 +614,9 @@ class VioraAppViewModel(
         const val ATTENDANCE_TARGET = 75
     }
 }
+
+internal fun savedSemesterOption(id: String?, name: String?): SemesterOption? =
+    id?.takeIf(String::isNotBlank)?.let { SemesterOption(it, name?.takeIf(String::isNotBlank) ?: it) }
 
 private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<AttendanceUi> = map { item ->
     val held = item.sourceHeld + missedBlocks * item.blockSize
