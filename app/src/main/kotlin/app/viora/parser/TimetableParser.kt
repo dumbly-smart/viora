@@ -113,7 +113,11 @@ class TimetableParser {
                     start = start,
                     end = end,
                     venue = gridVenue.ifBlank { details[id]?.venue.orEmpty() },
-                    type = details[id]?.type?.takeUnless { it == ClassType.UNKNOWN } ?: type,
+                    // The weekly grid is the source of truth for whether this is a
+                    // theory or lab period. Course-detail rows may share one code,
+                    // so looking up by code can otherwise apply the last row's type
+                    // to every slot of an embedded course.
+                    type = type,
                 )
             }
         }

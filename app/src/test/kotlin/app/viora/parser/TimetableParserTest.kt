@@ -61,4 +61,27 @@ class TimetableParserTest {
         assertEquals(2, result.value.slots.size)
         assertEquals("15:40", result.value.slots.single { it.type == ClassType.LAB }.end.toString())
     }
+
+    @Test fun `weekly grid keeps theory and lab types separate when course code is shared`() {
+        val html = """
+            <table>
+              <tr><th>Course</th><th>Slot - Venue</th><th>Faculty</th></tr>
+              <tr><td>BEEE101 - Embedded Systems (Embedded Theory)</td><td>A1 - AB1-101</td><td>Faculty T</td></tr>
+              <tr><td>BEEE101 - Embedded Systems (Embedded Lab)</td><td>L1 - AB1-201</td><td>Faculty L</td></tr>
+            </table>
+            <table>
+              <tr><td>THEORY</td><td>Start</td><td>08:00</td></tr>
+              <tr><td>End</td><td>08:50</td></tr>
+              <tr><td>LAB</td><td>Start</td><td>14:00</td></tr>
+              <tr><td>End</td><td>14:50</td></tr>
+              <tr><td>MON</td><td>THEORY</td><td>A1-BEEE101-TH-AB1-101-ALL</td></tr>
+              <tr><td>LAB</td><td>L1-BEEE101-LO-AB1-201-ALL</td></tr>
+            </table>
+        """.trimIndent()
+
+        val slots = (parser.parse(html) as ParseResult.Success).value.slots
+
+        assertEquals(ClassType.THEORY, slots.single { it.start.toString() == "08:00" }.type)
+        assertEquals(ClassType.LAB, slots.single { it.start.toString() == "14:00" }.type)
+    }
 }
