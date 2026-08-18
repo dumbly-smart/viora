@@ -22,6 +22,7 @@ class DigitalAssignmentParserTest {
         val assignment = (parser.parseDetails(detailsHtml, subject) as ParseResult.Success).value.single()
 
         assertEquals("CSE3001", assignment.courseCode)
+        assertEquals("Operating Systems", assignment.courseTitle)
         assertEquals("DA One", assignment.title)
         assertEquals(LocalDateTime.of(2026, 8, 20, 23, 59), assignment.dueAt)
         assertEquals("File Not Uploaded", assignment.lastUpload)

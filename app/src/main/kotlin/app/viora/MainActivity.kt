@@ -439,8 +439,9 @@ private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?
 private fun CompactAssignmentCard(assignment: AssignmentUi) {
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = VioraAmber.copy(alpha = 0.08f)) {
         Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
-            Text(assignment.dueEpochMillis.asAcademicTime("Due time unavailable"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(assignment.title, style = MaterialTheme.typography.titleMedium)
+            Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Due ${assignment.dueEpochMillis.asAcademicTime("time unavailable")}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -689,12 +690,13 @@ private fun TasksScreen(state: VioraUiState, uploadAssignment: () -> Unit, showA
                 Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") }
             }
         }
-        items(state.assignments, key = AssignmentUi::id) { assignment ->
+        items(state.assignments.orderedByDueDate(), key = AssignmentUi::id) { assignment ->
             val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
             Card(Modifier.fillMaxWidth().clickable { showAssignment(assignment) }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${assignment.courseCode} · ${assignment.title}", style = MaterialTheme.typography.titleMedium)
-                    Text(assignment.dueEpochMillis.asAcademicTime("Due date unavailable"))
+                    Text(assignment.title, style = MaterialTheme.typography.titleMedium)
+                    Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Due ${assignment.dueEpochMillis.asAcademicTime("date unavailable")}")
                     Text(if (submitted) "Submitted" else "Not submitted", color = if (submitted) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
                     if (assignment.lastUpload.isNotBlank() && !assignment.lastUpload.equals("N/A", true)) Text("Last upload · ${assignment.lastUpload}")
                     if (assignment.status.isNotBlank()) Text(assignment.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -885,7 +887,7 @@ internal fun DetailScreen(
             }
             "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
                 item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
-                item { SummaryCard(assignment.courseCode, assignment.status.ifBlank { "Status unavailable" }, assignment.dueEpochMillis.asAcademicTime("Due time unavailable")) }
+                item { SummaryCard(assignment.courseLabel(), assignment.status.ifBlank { "Status unavailable" }, assignment.dueEpochMillis.asAcademicTime("Due time unavailable")) }
                 item { Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") } }
             }
             "exam" -> state.exams.firstOrNull { it.id == selection.id }?.let { exam -> item { ExamCard(exam) } }
@@ -897,6 +899,7 @@ internal fun DetailScreen(
 @Composable private fun AssignmentCard(assignment: AssignmentUi) {
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(assignment.title, style = MaterialTheme.typography.titleMedium)
+        Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Due ${assignment.dueEpochMillis.asAcademicTime("time unavailable")}")
         if (assignment.status.isNotBlank()) Text(assignment.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } }
@@ -993,7 +996,7 @@ private fun ResultsScreen(state: VioraUiState) {
             val q = state.searchQuery.trim()
             val results = buildList {
                 state.slots.distinctBy { it.courseId }.filter { listOf(it.code, it.title, it.faculty).any { value -> value.contains(q, true) } }.forEach { add("Course" to "${it.code} · ${it.title}") }
-                state.assignments.filter { "${it.courseCode} ${it.title} ${it.status}".contains(q, true) }.forEach { add("Assignment" to "${it.courseCode} · ${it.title}") }
+                state.assignments.filter { "${it.courseCode} ${it.courseTitle} ${it.title} ${it.status}".contains(q, true) }.forEach { add("Assignment" to "${it.courseLabel()} · ${it.title}") }
                 state.exams.filter { "${it.courseCode} ${it.courseTitle} ${it.examType} ${it.venue}".contains(q, true) }.forEach { add("Exam" to "${it.examType} · ${it.courseCode}") }
                 state.messages.filter { "${it.courseCode} ${it.subject} ${it.body}".contains(q, true) }.forEach { add("Message" to it.subject.ifBlank { it.body.take(80) }) }
                 state.materials.filter { "${it.courseCode} ${it.title} ${it.fileName}".contains(q, true) }.forEach { add("Material" to "${it.courseCode} · ${it.title}") }
@@ -1255,5 +1258,16 @@ internal fun VioraUiState.homeDueAssignments(nowEpochMillis: Long, lookAheadDays
     return assignments.filter { assignment ->
         val due = assignment.dueEpochMillis ?: return@filter false
         due in (nowEpochMillis + 1)..horizon && !isAssignmentSubmitted(assignment.status, assignment.lastUpload)
-    }.sortedBy { it.dueEpochMillis }
+    }.orderedByDueDate()
 }
+
+internal fun List<AssignmentUi>.orderedByDueDate(): List<AssignmentUi> =
+    sortedWith(
+        compareBy<AssignmentUi> { it.dueEpochMillis == null }
+            .thenBy { it.dueEpochMillis ?: Long.MAX_VALUE }
+            .thenBy { it.courseTitle.ifBlank { it.courseCode }.lowercase(Locale.ENGLISH) }
+            .thenBy { it.title.lowercase(Locale.ENGLISH) },
+    )
+
+private fun AssignmentUi.courseLabel(): String =
+    courseTitle.trim().takeIf(String::isNotBlank)?.let { "$courseCode · $it" } ?: courseCode

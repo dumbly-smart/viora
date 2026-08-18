@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CourseMaterialEntity::class,
         AcademicChangeEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class VioraDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ abstract class VioraDatabase : RoomDatabase() {
                 context.applicationContext,
                 VioraDatabase::class.java,
                 "viora.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { instance = it }
         }
 
         fun closeAndForget() = synchronized(this) {
@@ -114,6 +114,9 @@ abstract class VioraDatabase : RoomDatabase() {
         } }
         val MIGRATION_6_7 = object : Migration(6, 7) { override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `exams` ADD COLUMN `endsEpochMillis` INTEGER")
+        } }
+        val MIGRATION_7_8 = object : Migration(7, 8) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `digital_assignments` ADD COLUMN `courseTitle` TEXT NOT NULL DEFAULT ''")
         } }
     }
 }

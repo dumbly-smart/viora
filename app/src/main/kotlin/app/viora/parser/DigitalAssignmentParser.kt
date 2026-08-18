@@ -72,6 +72,7 @@ class DigitalAssignmentParser {
         return DigitalAssignmentRecord(
             id = stableId("${subject.classId}-$assignmentCode-$title-${dueText.orEmpty()}"),
             courseCode = subject.courseCode,
+            courseTitle = subject.courseTitle,
             title = title,
             dueAt = due,
             lastUpload = lastUpload,

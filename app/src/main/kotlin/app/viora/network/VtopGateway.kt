@@ -44,6 +44,7 @@ data class AttendanceSnapshot(val records: List<AttendanceRecord>)
 data class DigitalAssignmentRecord(
     val id: String,
     val courseCode: String,
+    val courseTitle: String,
     val title: String,
     val dueAt: LocalDateTime?,
     val lastUpload: String,

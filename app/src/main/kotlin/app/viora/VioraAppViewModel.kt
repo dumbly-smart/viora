@@ -104,6 +104,7 @@ data class AssignmentUi(
     val dueEpochMillis: Long?,
     val status: String,
     val lastUpload: String = "",
+    val courseTitle: String = "",
 )
 
 data class ExamUi(
@@ -513,7 +514,7 @@ class VioraAppViewModel(
                     mutableState.update { state ->
                         state.copy(
                             assignments = records.map {
-                                AssignmentUi(it.id, it.courseCode, it.title, it.dueEpochMillis, it.status, it.lastUpload)
+                                AssignmentUi(it.id, it.courseCode, it.title, it.dueEpochMillis, it.status, it.lastUpload, it.courseTitle)
                             },
                         )
                     }

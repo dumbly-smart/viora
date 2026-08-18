@@ -11,6 +11,14 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 class HomeAgendaTest {
+    @Test fun `orders assignments by due date with unknown deadlines last`() {
+        val later = AssignmentUi("later", "CSE1002", "DA 2", 2_000, "Open", courseTitle = "Course Two")
+        val unknown = AssignmentUi("unknown", "CSE1003", "DA 3", null, "Open", courseTitle = "Course Three")
+        val sooner = AssignmentUi("sooner", "CSE1001", "DA 1", 1_000, "Open", courseTitle = "Course One")
+
+        assertEquals(listOf("sooner", "later", "unknown"), listOf(later, unknown, sooner).orderedByDueDate().map(AssignmentUi::id))
+    }
+
     private val zone = ZoneId.of("Asia/Kolkata")
 
     @Test fun `normal home merges upcoming classes and exams chronologically`() {
