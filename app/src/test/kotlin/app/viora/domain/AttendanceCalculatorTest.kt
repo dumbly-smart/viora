@@ -40,4 +40,11 @@ class AttendanceCalculatorTest {
         assertEquals(2, result.skippableBlocks)
         assertEquals(0, result.blocksToRecover)
     }
+
+    @Test fun `does not claim a whole lab can be skipped from one spare period`() {
+        val result = AttendanceCalculator.calculate(attended = 16, held = 20, blockSize = 2)
+
+        assertEquals(1, result.skippableClasses)
+        assertEquals(0, result.skippableBlocks)
+    }
 }
