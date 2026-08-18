@@ -87,4 +87,20 @@ class AttendanceParserTest {
         assertEquals(18, result.value.records.single().attended)
         assertEquals(20, result.value.records.single().held)
     }
+
+    @Test fun `current class detail does not replace embedded theory and lab types`() {
+        val html = """
+            <table id="getStudentDetails">
+              <tr><th>Course Detail</th><th>Class Detail</th><th>Faculty Detail</th><th>Attended Classes</th><th>Total Classes</th></tr>
+              <tr><td>BACSE202 - Database Systems - Embedded Theory</td><td>VL0001 - E1+TE1 - ROOM1</td><td>Faculty A</td><td>18</td><td>20</td></tr>
+              <tr><td>BACSE202 - Database Systems - Embedded Lab</td><td>VL0002 - L33+L34 - ROOM2</td><td>Faculty A</td><td>10</td><td>10</td></tr>
+            </table>
+        """.trimIndent()
+
+        val records = (parser.parse(html) as ParseResult.Success).value.records
+
+        assertEquals(listOf("Embedded Theory", "Embedded Lab"), records.map { it.courseType })
+        assertEquals(listOf(20, 10), records.map { it.held })
+        assertEquals(listOf(18, 10), records.map { it.attended })
+    }
 }

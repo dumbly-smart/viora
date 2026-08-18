@@ -39,7 +39,12 @@ class AttendanceParser {
                 ?: values.find("total classes", "classes conducted", "conducted", "held")?.firstInt()
                 ?: cellWhere { "total" in it && ("class" in it || "hour" in it) }?.firstInt()
             if (attended == null || held == null || attended < 0 || held < attended) return@mapNotNull null
-            val type = values.find("type", "course type", "class detail").orEmpty().trim()
+            val classDetail = values.find("class detail").orEmpty().trim()
+            val type = values.find("type", "course type").orEmpty().trim()
+                .ifBlank { knownCourseType(courseDetail) }
+                .ifBlank { knownCourseType(title) }
+                .ifBlank { knownCourseType(classDetail) }
+                .ifBlank { classTypeFromSlotDetail(classDetail) }
             val faculty = values.find("faculty name", "faculty", "faculty detail").orEmpty().trim()
             AttendanceRecord(
                 id = stableId("$code-$title-$type-$faculty"),
@@ -71,8 +76,24 @@ class AttendanceParser {
         first.filter(Char::isLetterOrDigit).equals(second.filter(Char::isLetterOrDigit), true)
     private fun String.firstInt(): Int? = Regex("\\d+").find(this)?.value?.toIntOrNull()
     private fun stableId(value: String) = value.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+    private fun knownCourseType(value: String): String = COURSE_TYPE.find(value)?.value.orEmpty().trim()
+    private fun classTypeFromSlotDetail(value: String): String {
+        val slot = value.split(Regex("\\s+-\\s+")).getOrNull(1).orEmpty()
+        val parts = slot.split('+').map(String::trim).filter(String::isNotBlank)
+        return when {
+            parts.isNotEmpty() && parts.all { LAB_SLOT.matches(it) } -> "Lab"
+            parts.any { THEORY_SLOT.matches(it) } -> "Theory"
+            else -> ""
+        }
+    }
 
     private companion object {
         val COURSE_CODE = Regex("[A-Z]{2,8}\\s*[-_]?\\s*\\d{3,5}[A-Z]?", RegexOption.IGNORE_CASE)
+        val COURSE_TYPE = Regex(
+            "(?:embedded\\s+(?:theory|lab|project)|theory\\s+only|lab\\s+only|project\\s+only|soft\\s+skill)",
+            RegexOption.IGNORE_CASE,
+        )
+        val LAB_SLOT = Regex("L\\d+[A-Z]?", RegexOption.IGNORE_CASE)
+        val THEORY_SLOT = Regex("T?[A-Z]\\d+[A-Z]?", RegexOption.IGNORE_CASE)
     }
 }
