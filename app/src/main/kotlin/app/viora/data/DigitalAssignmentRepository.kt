@@ -26,6 +26,7 @@ class DigitalAssignmentRepository(
                 semesterId = semesterId,
                 id = it.id,
                 courseCode = it.courseCode,
+                courseTitle = it.courseTitle,
                 title = it.title,
                 dueEpochMillis = it.dueAt?.atZone(VTOP_ZONE)?.toInstant()?.toEpochMilli(),
                 lastUpload = it.lastUpload,

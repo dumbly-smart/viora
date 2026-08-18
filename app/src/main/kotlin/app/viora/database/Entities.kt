@@ -89,6 +89,7 @@ data class DigitalAssignmentEntity(
     val semesterId: String,
     val id: String,
     val courseCode: String,
+    val courseTitle: String,
     val title: String,
     val dueEpochMillis: Long?,
     val lastUpload: String,

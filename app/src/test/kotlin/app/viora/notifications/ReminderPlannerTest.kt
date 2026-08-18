@@ -132,6 +132,6 @@ class ReminderPlannerTest {
     )
 
     private fun assignment(due: ZonedDateTime, upload: String) = DigitalAssignmentEntity(
-        "semester", "assignment", "CSE1001", "DA 1", due.toInstant().toEpochMilli(), upload, "Open", 0,
+        "semester", "assignment", "CSE1001", "Course", "DA 1", due.toInstant().toEpochMilli(), upload, "Open", 0,
     )
 }
