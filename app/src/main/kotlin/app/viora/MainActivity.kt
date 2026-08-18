@@ -555,7 +555,8 @@ private fun CourseMaterialActions(
 
 @Composable
 private fun AttendanceCard(item: AttendanceUi) {
-    val healthy = item.recovery == 0 && item.skippable > 0
+    val skippableMeetings = if (item.blockSize > 1) item.skippableBlocks else item.skippable
+    val healthy = item.recovery == 0 && skippableMeetings > 0
     Surface(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -578,9 +579,9 @@ private fun AttendanceCard(item: AttendanceUi) {
                     color = VioraCoral,
                     style = MaterialTheme.typography.labelLarge,
                 )
-                item.skippable == 0 -> Text("At the target · don’t skip the next class", color = VioraAmber, style = MaterialTheme.typography.labelLarge)
+                skippableMeetings == 0 -> Text("At the target · don’t skip the next class", color = VioraAmber, style = MaterialTheme.typography.labelLarge)
                 else -> Text(
-                    if (item.blockSize > 1) "Safe to skip ${item.skippableBlocks} lab ${if (item.skippableBlocks == 1) "block" else "blocks"}" else "Safe to skip ${item.skippable} ${if (item.skippable == 1) "class" else "classes"}",
+                    if (item.blockSize > 1) "Safe to skip $skippableMeetings lab ${if (skippableMeetings == 1) "class" else "classes"}" else "Safe to skip $skippableMeetings ${if (skippableMeetings == 1) "class" else "classes"}",
                     color = VioraSuccess,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -805,17 +806,17 @@ private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
 @Composable
 private fun AttendanceGuidance(attendance: AttendanceUi) {
     val projection = AttendanceCalculator.calculate(attendance.attended, attendance.held, 75, attendance.blockSize)
+    val skippableMeetings = if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses
     val (text, color) = when {
         projection.classesToRecover > 0 -> "Attend next ${if (attendance.blockSize > 1) projection.blocksToRecover else projection.classesToRecover} to reach 75%" to VioraCoral
-        projection.skippableClasses > 0 -> {
-            val amount = if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses
+        skippableMeetings > 0 -> {
             val unit = when {
-                attendance.blockSize > 1 && amount == 1 -> "lab block"
-                attendance.blockSize > 1 -> "lab blocks"
-                amount == 1 -> "class"
+                attendance.blockSize > 1 && skippableMeetings == 1 -> "lab class"
+                attendance.blockSize > 1 -> "lab classes"
+                skippableMeetings == 1 -> "class"
                 else -> "classes"
             }
-            "Can skip $amount $unit safely" to VioraSuccess
+            "Can skip $skippableMeetings $unit safely" to VioraSuccess
         }
         else -> "At 75% limit · attend this one" to VioraAmber
     }
