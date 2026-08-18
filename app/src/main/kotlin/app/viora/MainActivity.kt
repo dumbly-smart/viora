@@ -1153,10 +1153,37 @@ internal data class HomeAgendaItem(
 
 internal data class HomeAgenda(val examDates: Boolean, val items: List<HomeAgendaItem>)
 
-private fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? = attendance.firstOrNull {
-    sameCourseCode(it.courseCode, slot.code) ||
-        (it.courseTitle.isNotBlank() && slot.title.isNotBlank() && it.courseTitle.equals(slot.title, true))
+internal fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? {
+    val codeMatches = attendance.filter { sameCourseCode(it.courseCode, slot.code) }
+    val candidates = codeMatches.ifEmpty {
+        attendance.filter {
+            it.courseTitle.isNotBlank() && slot.title.isNotBlank() &&
+                it.courseTitle.equals(slot.title, ignoreCase = true)
+        }
+    }
+    if (candidates.isEmpty()) return null
+
+    val slotKind = attendanceKind(slot.type)
+    if (slotKind == AttendanceKind.UNKNOWN) return candidates.first()
+    val compatible = candidates.filter { attendanceKind(it.courseType) == slotKind }
+        .ifEmpty { candidates.filter { attendanceKind(it.courseType) == AttendanceKind.UNKNOWN } }
+    if (compatible.isEmpty()) return null
+
+    val slotFaculty = slot.faculty.facultyKey()
+    return compatible.firstOrNull { slotFaculty.isNotEmpty() && it.faculty.facultyKey() == slotFaculty }
+        ?: compatible.first()
 }
+
+internal enum class AttendanceKind { THEORY, LAB, PROJECT, UNKNOWN }
+
+internal fun attendanceKind(value: String): AttendanceKind = when {
+    value.contains("lab", ignoreCase = true) -> AttendanceKind.LAB
+    value.contains("project", ignoreCase = true) -> AttendanceKind.PROJECT
+    value.contains("theory", ignoreCase = true) || value.contains("lecture", ignoreCase = true) -> AttendanceKind.THEORY
+    else -> AttendanceKind.UNKNOWN
+}
+
+private fun String.facultyKey(): String = lowercase().filter(Char::isLetterOrDigit)
 
 private fun VioraUiState.courseNameFor(slot: SlotWithCourse): String {
     val candidates = listOfNotNull(
