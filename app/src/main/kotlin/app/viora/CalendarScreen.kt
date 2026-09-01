@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -34,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,7 @@ internal fun CalendarScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(horizontal = CALENDAR_HORIZONTAL_PADDING, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
@@ -100,6 +102,7 @@ internal fun CalendarScreen(
                 onSelectDate = { selectedDate = it },
             )
         }
+        item { CalendarMarkerLegend() }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("Selected day", style = MaterialTheme.typography.titleLarge)
@@ -136,12 +139,12 @@ private fun CalendarMonthGrid(
             }
         }
         repeat(rowCount) { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(Modifier.fillMaxWidth()) {
                 repeat(DAYS_IN_WEEK) { column ->
                     val index = row * DAYS_IN_WEEK + column
                     val day = index - firstCell + 1
                     if (day !in 1..month.lengthOfMonth()) {
-                        Spacer(Modifier.weight(1f).height(CALENDAR_DAY_HEIGHT))
+                        Spacer(Modifier.weight(1f).widthIn(min = MINIMUM_DAY_WIDTH).height(CALENDAR_DAY_HEIGHT))
                     } else {
                         val date = month.atDay(day)
                         CalendarDayCell(
@@ -149,7 +152,7 @@ private fun CalendarMonthGrid(
                             markers = markers[date].orEmpty(),
                             selected = date == selectedDate,
                             onSelectDate = onSelectDate,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).widthIn(min = MINIMUM_DAY_WIDTH),
                         )
                     }
                 }
@@ -177,6 +180,7 @@ private fun CalendarDayCell(
             .semantics {
                 contentDescription = description
                 role = Role.Button
+                this.selected = selected
             },
         shape = RoundedCornerShape(10.dp),
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
@@ -191,9 +195,40 @@ private fun CalendarDayCell(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                markers.sortedBy(AcademicCalendarMarker::ordinal).take(MAX_MARKERS_PER_DAY).forEach { marker ->
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(marker.color()))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                markers.sortedBy(AcademicCalendarMarker::ordinal).chunked(MARKERS_PER_ROW).forEach { markerRow ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        markerRow.forEach { marker ->
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(marker.color())
+                                    .semantics { contentDescription = "Calendar marker: ${marker.displayName()}" },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarMarkerLegend() {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("MARKERS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AcademicCalendarMarker.entries.chunked(MARKERS_PER_ROW).forEach { markerRow ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                markerRow.forEach { marker ->
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(marker.color()))
+                        Text(marker.displayName(), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
@@ -243,5 +278,7 @@ private fun AcademicCalendarMarker.color(): Color = when (this) {
 }
 
 private const val DAYS_IN_WEEK = 7
-private const val MAX_MARKERS_PER_DAY = 4
+private const val MARKERS_PER_ROW = 3
+private val CALENDAR_HORIZONTAL_PADDING = 12.dp
+private val MINIMUM_DAY_WIDTH = 48.dp
 private val CALENDAR_DAY_HEIGHT = 58.dp
