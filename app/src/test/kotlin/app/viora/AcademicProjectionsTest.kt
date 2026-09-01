@@ -1,7 +1,12 @@
 package app.viora
 
+import app.viora.database.AcademicCalendarEntity
+import app.viora.database.SlotWithCourse
+import app.viora.domain.AttendanceMilestone
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneId
 
 class AcademicProjectionsTest {
     @Test
@@ -48,6 +53,56 @@ class AcademicProjectionsTest {
         assertEquals(null, result.weightageMark)
     }
 
+    @Test
+    fun `holiday leaves no matching course occurrence before CAT one`() {
+        val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
+        val holiday = LocalDate.of(2026, 9, 7)
+        val state = VioraUiState(
+            attendance = listOf(attendance()),
+            slots = listOf(slot(dayOfWeek = 1)),
+            exams = listOf(exam("CAT-I", LocalDate.of(2026, 9, 11))),
+            calendar = listOf(AcademicCalendarEntity("semester", "holiday", holiday.toEpochDay(), "Holiday", "", 0)),
+        )
+
+        val milestone = state.attendanceMilestones(now)
+            .single { it.milestone == AttendanceMilestone.CAT_1 }
+
+        assertEquals(MilestoneState.NO_CLASSES, milestone.state)
+        assertEquals(0, milestone.occurrenceCount)
+    }
+
+    @Test
+    fun `lab allowance counts a whole session before its milestone`() {
+        val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
+        val state = VioraUiState(
+            attendance = listOf(attendance(courseType = "Lab", blockSize = 2)),
+            slots = listOf(slot(dayOfWeek = 1, type = "Lab")),
+            exams = listOf(exam("CAT 1", LocalDate.of(2026, 9, 11))),
+        )
+
+        val milestone = state.attendanceMilestones(now)
+            .single { it.milestone == AttendanceMilestone.CAT_1 }
+
+        assertEquals(MilestoneState.SCHEDULED, milestone.state)
+        assertEquals(1, milestone.occurrenceCount)
+        assertEquals(1, milestone.skippableOccurrences)
+    }
+
+    @Test
+    fun `same title does not match an exam for a different course code`() {
+        val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
+        val state = VioraUiState(
+            attendance = listOf(attendance()),
+            slots = listOf(slot(dayOfWeek = 1)),
+            exams = listOf(exam("CAT 1", LocalDate.of(2026, 9, 11), courseCode = "CSE102")),
+        )
+
+        val milestone = state.attendanceMilestones(now)
+            .single { it.milestone == AttendanceMilestone.CAT_1 }
+
+        assertEquals(MilestoneState.NOT_SCHEDULED, milestone.state)
+    }
+
     private fun mark(
         title: String,
         courseCode: String = "CSE101",
@@ -67,4 +122,46 @@ class AcademicProjectionsTest {
         scoredMark = scoredMark,
         weightageMark = weightageMark,
     )
+
+    private fun attendance(
+        courseType: String = "Theory",
+        blockSize: Int = 1,
+    ) = AttendanceUi(
+        id = "attendance",
+        courseCode = "CSE101",
+        courseTitle = "Algorithms",
+        courseType = courseType,
+        faculty = "Faculty",
+        attended = 18,
+        sourceHeld = 20,
+        held = 20,
+        percentage = 90.0,
+        skippable = 0,
+        recovery = 0,
+        blockSize = blockSize,
+        skippableBlocks = 0,
+        recoveryBlocks = 0,
+    )
+
+    private fun slot(dayOfWeek: Int, type: String = "Theory") = SlotWithCourse(
+        slotId = "slot",
+        courseId = "course",
+        code = "CSE101",
+        title = "Algorithms",
+        faculty = "Faculty",
+        dayOfWeek = dayOfWeek,
+        startMinute = 8 * 60,
+        endMinute = 9 * 60,
+        venue = "Room",
+        type = type,
+    )
+
+    private fun exam(examType: String, date: LocalDate, courseCode: String = "CSE101"): ExamUi {
+        val starts = date.atStartOfDay(academicZone).plusHours(10).toInstant().toEpochMilli()
+        return ExamUi("exam-$examType", courseCode, "Algorithms", examType, starts, null, "Room", "1")
+    }
+
+    private companion object {
+        val academicZone: ZoneId = ZoneId.of("Asia/Kolkata")
+    }
 }
