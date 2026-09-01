@@ -26,6 +26,7 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 ### Schedule
 
 - Day/week timetable, academic calendar, holidays, and exam schedule.
+- Calendar view showing cached classes, deadlines, exams, holidays, and day-order exceptions; it is local-only and does not add a separate calendar service.
 - Filters by semester and exam type.
 - Calendar export using Android’s calendar intent/provider only after user confirmation.
 
@@ -33,6 +34,8 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 
 - Consolidated course page: faculty, slots, attendance, marks, grade, messages, and materials.
 - Course materials list with explicit download/open/share actions.
+- Marks screen with cached VTOP assessment marks grouped by course, including raw and weighted scores.
+- Attendance screen with cached attendance rows and CAT 1, CAT 2, and FAT skip-allowance milestones.
 - Marks and grade history; CGPA summary where available.
 
 ### Tasks
