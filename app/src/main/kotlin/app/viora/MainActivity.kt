@@ -1216,10 +1216,13 @@ private fun VioraUiState.courseNameFor(slot: SlotWithCourse): String {
 }
 
 internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
-    val exception = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
-    val description = listOfNotNull(exception?.title, exception?.dayType).joinToString(" ")
-    if (description.contains("holiday", true)) return emptyList()
-    val order = DayOfWeek.entries.firstOrNull { description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
+    val descriptions = calendar
+        .filter { it.dateEpochDay == date.toEpochDay() }
+        .map { "${it.title} ${it.dayType}" }
+    if (descriptions.any { it.contains("holiday", true) }) return emptyList()
+    val order = DayOfWeek.entries.firstOrNull { day ->
+        descriptions.any { it.contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
+    }
     val examsToday = examsForDate(date)
     return slots.filter { slot ->
         slot.dayOfWeek == (order ?: date.dayOfWeek).value && examsToday.none { exam ->

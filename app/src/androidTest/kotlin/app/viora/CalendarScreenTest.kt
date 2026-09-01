@@ -4,6 +4,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -52,12 +55,19 @@ class CalendarScreenTest {
             }
         }
 
-        val selectedDay = compose.onNodeWithContentDescription(
-            "Thursday, 20 August 2026, Holiday, Exam, Assignment, Class, Day order, Calendar",
-        )
+        val selectedDay = compose.onAllNodesWithContentDescription(
+            "Thursday, 20 August 2026, Exam, Assignment, Class, Calendar",
+        ).assertCountEquals(1)[0]
         selectedDay.performClick()
         selectedDay.assertIsSelected()
         compose.onNodeWithText("Exam · CSE1001").assertExists()
+
+        val holiday = compose.onAllNodesWithContentDescription(
+            "Friday, 21 August 2026, Holiday",
+        ).assertCountEquals(1)[0]
+        holiday.performClick()
+        holiday.assertIsSelected()
+        compose.onAllNodesWithText("Class").assertCountEquals(1)
     }
 
     @Test
@@ -70,19 +80,24 @@ class CalendarScreenTest {
         }
 
         listOf("Holiday", "Exam", "Assignment", "Class", "Day order", "Calendar").forEach { label ->
-            compose.onNodeWithText(label).assertExists()
-            compose.onNodeWithContentDescription("Calendar marker: $label", useUnmergedTree = true).assertIsDisplayed()
+            compose.onAllNodesWithText(label)[0].assertIsDisplayed()
+            compose.onAllNodesWithContentDescription("Calendar marker: $label", useUnmergedTree = true)[0].assertIsDisplayed()
         }
     }
 
     private fun markerState(date: LocalDate): VioraUiState {
+        val holidayDate = date.plusDays(1)
+        val dayOrderDate = date.plusDays(2)
         val starts = date.atTime(9, 0).atZone(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
         return VioraUiState(
-            slots = listOf(SlotWithCourse("slot", "course", "CSE1001", "Synthetic Course", "Faculty", date.dayOfWeek.value, 8 * 60, 9 * 60, "AB1", "Theory")),
+            slots = listOf(
+                SlotWithCourse("slot", "course", "CSE1001", "Synthetic Course", "Faculty", date.dayOfWeek.value, 8 * 60, 9 * 60, "AB1", "Theory"),
+                SlotWithCourse("holiday-slot", "course", "CSE1001", "Synthetic Course", "Faculty", holidayDate.dayOfWeek.value, 8 * 60, 9 * 60, "AB1", "Theory"),
+            ),
             calendar = listOf(
-                AcademicCalendarEntity("semester", "holiday", date.toEpochDay(), "Holiday", "Holiday", 0),
-                AcademicCalendarEntity("semester", "day-order", date.toEpochDay(), "Monday order", "", 0),
                 AcademicCalendarEntity("semester", "calendar", date.toEpochDay(), "Academic event", "Event", 0),
+                AcademicCalendarEntity("semester", "holiday", holidayDate.toEpochDay(), "Holiday", "Holiday", 0),
+                AcademicCalendarEntity("semester", "day-order", dayOrderDate.toEpochDay(), "${date.dayOfWeek.name.lowercase().replaceFirstChar(Char::titlecase)} order", "", 0),
             ),
             exams = listOf(ExamUi("exam", "CSE1001", "Synthetic Course", "Exam", starts, null, "AB1", "")),
             assignments = listOf(AssignmentUi("assignment", "CSE1001", "Synthetic assignment", starts, "Open")),

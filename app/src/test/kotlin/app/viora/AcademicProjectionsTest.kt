@@ -91,6 +91,44 @@ class AcademicProjectionsTest {
     }
 
     @Test
+    fun `milestone counts only slots strictly between now and exam start on the same date`() {
+        val date = LocalDate.of(2026, 9, 7)
+        val now = at(date, 8)
+        val state = VioraUiState(
+            attendance = listOf(attendance()),
+            slots = listOf(
+                slot(dayOfWeek = 1, id = "at-now", startMinute = 8 * 60),
+                slot(dayOfWeek = 1, id = "before-exam", startMinute = 9 * 60),
+                slot(dayOfWeek = 1, id = "at-exam", startMinute = 10 * 60),
+                slot(dayOfWeek = 1, id = "after-exam", startMinute = 11 * 60),
+            ),
+            exams = listOf(exam("CAT 1", date)),
+        )
+
+        val milestone = state.attendanceMilestones(now)
+            .single { it.milestone == AttendanceMilestone.CAT_1 }
+
+        assertEquals(MilestoneState.SCHEDULED, milestone.state)
+        assertEquals(1, milestone.occurrenceCount)
+    }
+
+    @Test
+    fun `milestone allowance uses cached held count instead of what-if projection`() {
+        val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
+        val state = VioraUiState(
+            attendance = listOf(attendance(sourceHeld = 20, held = 24)),
+            slots = listOf(slot(dayOfWeek = 1)),
+            exams = listOf(exam("CAT 1", LocalDate.of(2026, 9, 15))),
+        )
+
+        val milestone = state.attendanceMilestones(now)
+            .single { it.milestone == AttendanceMilestone.CAT_1 }
+
+        assertEquals(2, milestone.occurrenceCount)
+        assertEquals(2, milestone.skippableOccurrences)
+    }
+
+    @Test
     fun `same title does not match an exam for a different course code`() {
         val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
         val state = VioraUiState(
@@ -162,6 +200,35 @@ class AcademicProjectionsTest {
     }
 
     @Test
+    fun `later holiday row suppresses classes for the date`() {
+        val date = LocalDate.of(2026, 8, 10)
+        val state = VioraUiState(
+            slots = listOf(slot(dayOfWeek = 1)),
+            calendar = listOf(
+                AcademicCalendarEntity("semester", "order", date.toEpochDay(), "Monday order", "Instruction", 0),
+                AcademicCalendarEntity("semester", "holiday", date.toEpochDay(), "Holiday", "Holiday", 0),
+            ),
+        )
+
+        assertEquals(emptyList<SlotWithCourse>(), state.slotsForDate(date))
+    }
+
+    @Test
+    fun `later day order row determines classes for the date`() {
+        val date = LocalDate.of(2026, 8, 13)
+        val mondaySlot = slot(dayOfWeek = 1)
+        val state = VioraUiState(
+            slots = listOf(mondaySlot),
+            calendar = listOf(
+                AcademicCalendarEntity("semester", "event", date.toEpochDay(), "Academic event", "Event", 0),
+                AcademicCalendarEntity("semester", "order", date.toEpochDay(), "Monday order", "Instruction", 0),
+            ),
+        )
+
+        assertEquals(listOf(mondaySlot), state.slotsForDate(date))
+    }
+
+    @Test
     fun `calendar retains normal instructional and exam day rows`() {
         val normalDate = LocalDate.of(2026, 8, 14)
         val instructionalDate = LocalDate.of(2026, 8, 15)
@@ -209,6 +276,8 @@ class AcademicProjectionsTest {
     private fun attendance(
         courseType: String = "Theory",
         blockSize: Int = 1,
+        sourceHeld: Int = 20,
+        held: Int = sourceHeld,
     ) = AttendanceUi(
         id = "attendance",
         courseCode = "CSE101",
@@ -216,8 +285,8 @@ class AcademicProjectionsTest {
         courseType = courseType,
         faculty = "Faculty",
         attended = 18,
-        sourceHeld = 20,
-        held = 20,
+        sourceHeld = sourceHeld,
+        held = held,
         percentage = 90.0,
         skippable = 0,
         recovery = 0,
@@ -226,15 +295,20 @@ class AcademicProjectionsTest {
         recoveryBlocks = 0,
     )
 
-    private fun slot(dayOfWeek: Int, type: String = "Theory") = SlotWithCourse(
-        slotId = "slot",
+    private fun slot(
+        dayOfWeek: Int,
+        type: String = "Theory",
+        id: String = "slot",
+        startMinute: Int = 8 * 60,
+    ) = SlotWithCourse(
+        slotId = id,
         courseId = "course",
         code = "CSE101",
         title = "Algorithms",
         faculty = "Faculty",
         dayOfWeek = dayOfWeek,
-        startMinute = 8 * 60,
-        endMinute = 9 * 60,
+        startMinute = startMinute,
+        endMinute = startMinute + 60,
         venue = "Room",
         type = type,
     )

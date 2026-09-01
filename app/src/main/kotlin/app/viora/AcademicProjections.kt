@@ -199,7 +199,7 @@ private fun VioraUiState.attendanceMilestone(
         occurrenceCount = occurrenceUnits.size,
         skippableOccurrences = maximumSkippableOccurrences(
             attended = attendance.attended,
-            held = attendance.held,
+            held = attendance.sourceHeld,
             targetPercent = attendanceTarget,
             occurrenceUnits = occurrenceUnits,
         ),
@@ -211,11 +211,18 @@ private fun VioraUiState.occurrenceUnitsBefore(
     examStartsEpochMillis: Long,
     nowEpochMillis: Long,
 ): List<Int> {
-    var date = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate().plusDays(1)
+    var date = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
     val examDate = Instant.ofEpochMilli(examStartsEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
     val occurrenceUnits = mutableListOf<Int>()
-    while (date < examDate) {
+    while (date <= examDate) {
         slotsForDate(date)
+            .filter { slot ->
+                val slotStartsEpochMillis = date.atStartOfDay(attendanceMilestoneZone)
+                    .plusMinutes(slot.startMinute.toLong())
+                    .toInstant()
+                    .toEpochMilli()
+                slotStartsEpochMillis > nowEpochMillis && slotStartsEpochMillis < examStartsEpochMillis
+            }
             .filter { slot -> attendanceFor(slot)?.id == attendance.id }
             .forEach { occurrenceUnits += attendance.blockSize }
         date = date.plusDays(1)
