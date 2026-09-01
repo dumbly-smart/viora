@@ -4,6 +4,7 @@ build/
 **/build/
 local.properties
 captures/
+.worktrees/
 fixtures/private/
 downloads/
 *.apk
