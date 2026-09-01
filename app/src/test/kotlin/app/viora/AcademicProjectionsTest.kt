@@ -4,9 +4,11 @@ import app.viora.database.AcademicCalendarEntity
 import app.viora.database.SlotWithCourse
 import app.viora.domain.AttendanceMilestone
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.YearMonth
 
 class AcademicProjectionsTest {
     @Test
@@ -103,6 +105,62 @@ class AcademicProjectionsTest {
         assertEquals(MilestoneState.NOT_SCHEDULED, milestone.state)
     }
 
+    @Test
+    fun `calendar marks holiday exam assignment class and weekday order on their dates`() {
+        val holidayDate = LocalDate.of(2026, 8, 10)
+        val examDate = LocalDate.of(2026, 8, 11)
+        val dueDate = LocalDate.of(2026, 8, 12)
+        val weekdayOrderDate = LocalDate.of(2026, 8, 13)
+        val state = VioraUiState(
+            slots = listOf(slot(dayOfWeek = 1)),
+            calendar = listOf(
+                AcademicCalendarEntity("semester", "holiday", holidayDate.toEpochDay(), "Independence holiday", "Holiday", 0),
+                AcademicCalendarEntity("semester", "order", weekdayOrderDate.toEpochDay(), "Monday order", "Instruction", 0),
+            ),
+            exams = listOf(exam("CAT 1", examDate)),
+            assignments = listOf(AssignmentUi("assignment", "CSE101", "DA 1", at(dueDate, 20), "Open")),
+        )
+
+        val markers = state.calendarMarkers(YearMonth.of(2026, 8))
+
+        assertTrue(AcademicCalendarMarker.HOLIDAY in markers[holidayDate].orEmpty())
+        assertTrue(AcademicCalendarMarker.EXAM in markers[examDate].orEmpty())
+        assertTrue(AcademicCalendarMarker.ASSIGNMENT in markers[dueDate].orEmpty())
+        assertTrue(AcademicCalendarMarker.CLASS in markers[weekdayOrderDate].orEmpty())
+        assertTrue(AcademicCalendarMarker.DAY_ORDER in markers[weekdayOrderDate].orEmpty())
+    }
+
+    @Test
+    fun `selected day returns ordered calendar exam assignment and class events`() {
+        val date = LocalDate.of(2026, 8, 13)
+        val state = VioraUiState(
+            slots = listOf(slot(dayOfWeek = 1)),
+            calendar = listOf(AcademicCalendarEntity("semester", "order", date.toEpochDay(), "Monday order", "Instruction", 0)),
+            exams = listOf(ExamUi("exam", "CSE101", "Algorithms", "CAT 1", at(date, 10), at(date, 11, 30), "AB-101", "42")),
+            assignments = listOf(AssignmentUi("assignment", "CSE101", "DA 1", at(date, 20), "Open", courseTitle = "Algorithms")),
+        )
+
+        val events = state.eventsForDate(date)
+
+        assertEquals(listOf("class:20678:slot", "exam:exam", "assignment:assignment", "calendar:semester:order"), events.map(AcademicDayEvent::id))
+        assertEquals("DA 1", events.single { it.marker == AcademicCalendarMarker.ASSIGNMENT }.title)
+        assertEquals("10:00 AM · Algorithms · Room AB-101 · Seat 42", events.single { it.marker == AcademicCalendarMarker.EXAM }.detail)
+        assertEquals("Monday order", events.single { it.marker == AcademicCalendarMarker.DAY_ORDER }.title)
+    }
+
+    @Test
+    fun `holiday selected day excludes class events through slots projection`() {
+        val holidayDate = LocalDate.of(2026, 8, 10)
+        val state = VioraUiState(
+            slots = listOf(slot(dayOfWeek = 1)),
+            calendar = listOf(AcademicCalendarEntity("semester", "holiday", holidayDate.toEpochDay(), "Holiday", "Holiday", 0)),
+        )
+
+        val events = state.eventsForDate(holidayDate)
+
+        assertEquals(listOf(AcademicCalendarMarker.HOLIDAY), events.map(AcademicDayEvent::marker))
+    }
+
     private fun mark(
         title: String,
         courseCode: String = "CSE101",
@@ -160,6 +218,9 @@ class AcademicProjectionsTest {
         val starts = date.atStartOfDay(academicZone).plusHours(10).toInstant().toEpochMilli()
         return ExamUi("exam-$examType", courseCode, "Algorithms", examType, starts, null, "Room", "1")
     }
+
+    private fun at(date: LocalDate, hour: Int, minute: Int = 0): Long =
+        date.atStartOfDay(academicZone).plusHours(hour.toLong()).plusMinutes(minute.toLong()).toInstant().toEpochMilli()
 
     private companion object {
         val academicZone: ZoneId = ZoneId.of("Asia/Kolkata")

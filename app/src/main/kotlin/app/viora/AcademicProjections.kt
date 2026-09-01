@@ -4,7 +4,10 @@ import app.viora.domain.AttendanceMilestone
 import app.viora.domain.maximumSkippableOccurrences
 import app.viora.domain.sameCourseCode
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 data class MarkSectionUi(
@@ -12,6 +15,121 @@ data class MarkSectionUi(
     val courseTitle: String,
     val marks: List<MarkUi>,
 )
+
+enum class AcademicCalendarMarker { HOLIDAY, EXAM, ASSIGNMENT, CLASS, DAY_ORDER }
+
+data class AcademicDayEvent(
+    val id: String,
+    val marker: AcademicCalendarMarker,
+    val at: Long?,
+    val title: String,
+    val detail: String,
+)
+
+internal fun VioraUiState.calendarMarkers(month: YearMonth): Map<LocalDate, Set<AcademicCalendarMarker>> {
+    val markers = mutableMapOf<LocalDate, MutableSet<AcademicCalendarMarker>>()
+    fun mark(date: LocalDate, marker: AcademicCalendarMarker) {
+        if (YearMonth.from(date) == month) markers.getOrPut(date) { linkedSetOf() } += marker
+    }
+
+    calendar.forEach { row -> row.calendarMarker()?.let { marker -> mark(LocalDate.ofEpochDay(row.dateEpochDay), marker) } }
+    exams.forEach { exam -> mark(exam.startsEpochMillis.academicDate(), AcademicCalendarMarker.EXAM) }
+    assignments.forEach { assignment -> assignment.dueEpochMillis?.let { due -> mark(due.academicDate(), AcademicCalendarMarker.ASSIGNMENT) } }
+    for (day in 1..month.lengthOfMonth()) {
+        val date = month.atDay(day)
+        if (slotsForDate(date).isNotEmpty()) mark(date, AcademicCalendarMarker.CLASS)
+    }
+    return markers.toSortedMap().mapValues { (_, value) -> value.toSet() }
+}
+
+internal fun VioraUiState.eventsForDate(date: LocalDate): List<AcademicDayEvent> = (
+    calendar.asSequence()
+        .filter { it.dateEpochDay == date.toEpochDay() }
+        .mapNotNull { row ->
+            row.calendarMarker()?.let { marker ->
+                AcademicDayEvent(
+                    id = "calendar:${row.semesterId}:${row.id}",
+                    marker = marker,
+                    at = null,
+                    title = row.title.ifBlank { row.dayType },
+                    detail = row.dayType,
+                )
+            }
+        }
+        .toList() +
+        exams.asSequence()
+            .filter { it.startsEpochMillis.academicDate() == date }
+            .map { exam ->
+                AcademicDayEvent(
+                    id = "exam:${exam.id}",
+                    marker = AcademicCalendarMarker.EXAM,
+                    at = exam.startsEpochMillis,
+                    title = listOf(exam.examType, exam.courseCode).filter(String::isNotBlank).joinToString(" · "),
+                    detail = listOfNotNull(
+                        exam.startsEpochMillis.asAcademicTime(),
+                        exam.courseTitle.takeIf(String::isNotBlank),
+                        exam.venue.takeIf(String::isNotBlank)?.let { "Room $it" },
+                        exam.seatNumber.takeIf(String::isNotBlank)?.let { "Seat $it" },
+                    ).joinToString(" · "),
+                )
+            }
+            .toList() +
+        assignments.asSequence()
+            .filter { it.dueEpochMillis?.academicDate() == date }
+            .map { assignment ->
+                AcademicDayEvent(
+                    id = "assignment:${assignment.id}",
+                    marker = AcademicCalendarMarker.ASSIGNMENT,
+                    at = assignment.dueEpochMillis,
+                    title = assignment.title,
+                    detail = listOfNotNull(
+                        assignment.dueEpochMillis?.asAcademicTime()?.let { "Due $it" },
+                        assignment.courseCode.takeIf(String::isNotBlank),
+                        assignment.courseTitle.takeIf(String::isNotBlank),
+                        assignment.status.takeIf(String::isNotBlank),
+                    ).joinToString(" · "),
+                )
+            }
+            .toList() +
+        slotsForDate(date).map { slot ->
+            val at = date.atStartOfDay(academicCalendarZone).plusMinutes(slot.startMinute.toLong()).toInstant().toEpochMilli()
+            AcademicDayEvent(
+                id = "class:${date.toEpochDay()}:${slot.slotId}",
+                marker = AcademicCalendarMarker.CLASS,
+                at = at,
+                title = listOf(slot.code, slot.title).filter(String::isNotBlank).joinToString(" · "),
+                detail = listOfNotNull(
+                    at.asAcademicTime(),
+                    slot.venue.takeIf(String::isNotBlank)?.let { "Room $it" },
+                    slot.type.takeIf(String::isNotBlank),
+                ).joinToString(" · "),
+            )
+        }
+    ).sortedWith(
+    compareBy<AcademicDayEvent> { it.at == null }
+        .thenBy { it.at }
+        .thenBy { it.marker }
+        .thenBy { it.title }
+        .thenBy { it.id },
+)
+
+private fun app.viora.database.AcademicCalendarEntity.calendarMarker(): AcademicCalendarMarker? {
+    val description = "$title $dayType"
+    return when {
+        description.hasWeekdayOrder() -> AcademicCalendarMarker.DAY_ORDER
+        description.contains("holiday", ignoreCase = true) -> AcademicCalendarMarker.HOLIDAY
+        else -> null
+    }
+}
+
+private fun String.hasWeekdayOrder(): Boolean = java.time.DayOfWeek.entries.any { day ->
+    contains("${day.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)} order", ignoreCase = true)
+}
+
+private fun Long.academicDate(): LocalDate = Instant.ofEpochMilli(this).atZone(academicCalendarZone).toLocalDate()
+
+private fun Long.asAcademicTime(): String =
+    Instant.ofEpochMilli(this).atZone(academicCalendarZone).format(academicCalendarTime)
 
 internal fun List<MarkUi>.markSections(): List<MarkSectionUi> =
     groupBy { mark ->
@@ -132,3 +250,5 @@ private fun assessmentRank(title: String): Int = when (title.trim().lowercase(Lo
 }
 
 private val attendanceMilestoneZone: ZoneId = ZoneId.of("Asia/Kolkata")
+private val academicCalendarZone: ZoneId = ZoneId.of("Asia/Kolkata")
+private val academicCalendarTime: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
