@@ -86,6 +86,9 @@ private fun MarksScreen(state: VioraUiState) {
                     section.marks.forEach { mark ->
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(mark.title, style = MaterialTheme.typography.titleMedium)
+                            if (mark.courseType.isNotBlank()) {
+                                Text("VTOP type: ${mark.courseType}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                             Text("Raw score: ${mark.scoredMark.displayMark()} / ${mark.maxMarks.displayMark()}")
                             Text("Weighted score: ${mark.weightageMark.displayMark()}")
                             Text("Percentage weight: ${mark.weightagePercent.displayMark()}%")
