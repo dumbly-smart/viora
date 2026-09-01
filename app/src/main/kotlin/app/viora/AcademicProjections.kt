@@ -16,7 +16,7 @@ data class MarkSectionUi(
     val marks: List<MarkUi>,
 )
 
-enum class AcademicCalendarMarker { HOLIDAY, EXAM, ASSIGNMENT, CLASS, DAY_ORDER }
+enum class AcademicCalendarMarker { HOLIDAY, EXAM, ASSIGNMENT, CLASS, DAY_ORDER, CALENDAR }
 
 data class AcademicDayEvent(
     val id: String,
@@ -118,7 +118,7 @@ private fun app.viora.database.AcademicCalendarEntity.calendarMarker(): Academic
     return when {
         description.hasWeekdayOrder() -> AcademicCalendarMarker.DAY_ORDER
         description.contains("holiday", ignoreCase = true) -> AcademicCalendarMarker.HOLIDAY
-        else -> null
+        else -> AcademicCalendarMarker.CALENDAR
     }
 }
 

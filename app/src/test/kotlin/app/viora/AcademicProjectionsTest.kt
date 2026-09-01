@@ -161,6 +161,31 @@ class AcademicProjectionsTest {
         assertEquals(listOf(AcademicCalendarMarker.HOLIDAY), events.map(AcademicDayEvent::marker))
     }
 
+    @Test
+    fun `calendar retains normal instructional and exam day rows`() {
+        val normalDate = LocalDate.of(2026, 8, 14)
+        val instructionalDate = LocalDate.of(2026, 8, 15)
+        val examDayDate = LocalDate.of(2026, 8, 16)
+        val state = VioraUiState(
+            calendar = listOf(
+                AcademicCalendarEntity("semester", "normal", normalDate.toEpochDay(), "Faculty meeting", "Event", 0),
+                AcademicCalendarEntity("semester", "instruction", instructionalDate.toEpochDay(), "Instructional day", "Instruction", 0),
+                AcademicCalendarEntity("semester", "exam-day", examDayDate.toEpochDay(), "CAT exam day", "Exam day", 0),
+            ),
+        )
+
+        val markers = state.calendarMarkers(YearMonth.of(2026, 8))
+        val events = state.eventsForDate(examDayDate)
+
+        assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[normalDate])
+        assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[instructionalDate])
+        assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[examDayDate])
+        assertEquals(
+            AcademicDayEvent("calendar:semester:exam-day", AcademicCalendarMarker.CALENDAR, null, "CAT exam day", "Exam day"),
+            events.single(),
+        )
+    }
+
     private fun mark(
         title: String,
         courseCode: String = "CSE101",
