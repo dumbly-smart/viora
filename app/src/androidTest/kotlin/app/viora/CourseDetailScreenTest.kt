@@ -3,6 +3,7 @@ package app.viora
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import app.viora.database.CourseMaterialEntity
 import app.viora.ui.VioraTheme
@@ -41,5 +42,20 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("11:59", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Course materials").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Synthetic notes").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun academicsTabsShowCoursesMarksAndAttendance() {
+        compose.setContent {
+            VioraTheme {
+                AcademicsScreen(VioraUiState()) { _, _ -> }
+            }
+        }
+
+        compose.onNodeWithText("Courses").performClick()
+        compose.onNodeWithText("Marks").performClick()
+        compose.onNodeWithText("Assessment marks").assertExists()
+        compose.onNodeWithText("Attendance").performClick()
+        compose.onNodeWithText("Skip allowance").assertExists()
     }
 }

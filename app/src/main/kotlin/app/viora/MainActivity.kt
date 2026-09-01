@@ -290,7 +290,7 @@ private fun Dashboard(
                 if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, downloadMaterial, downloadMaterials, uploadAssignment) else when (destination) {
                     0 -> HomeScreen(state, PaddingValues())
                     1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
-                    2 -> CoursesScreen(state) { kind, id -> detail = DetailSelection(kind, id) }
+                    2 -> AcademicsScreen(state) { kind, id -> detail = DetailSelection(kind, id) }
                     3 -> TasksScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
                     else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
                 }
@@ -461,7 +461,7 @@ private fun greeting(hour: Int): String = when (hour) {
 }
 
 @Composable
-private fun CoursesScreen(
+internal fun CoursesScreen(
     state: VioraUiState,
     showDetail: (String, String) -> Unit,
 ) {
@@ -555,7 +555,7 @@ private fun CourseMaterialActions(
 }
 
 @Composable
-private fun AttendanceCard(item: AttendanceUi) {
+internal fun AttendanceCard(item: AttendanceUi) {
     val skippableMeetings = if (item.blockSize > 1) item.skippableBlocks else item.skippable
     val healthy = item.recovery == 0 && skippableMeetings > 0
     Surface(
