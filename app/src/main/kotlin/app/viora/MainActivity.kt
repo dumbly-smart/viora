@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,6 +79,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -592,13 +595,23 @@ internal fun AttendanceCard(item: AttendanceUi) {
 }
 
 @Composable
-private fun ScheduleScreen(
+internal fun ScheduleScreen(
     state: VioraUiState,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
     shareTimetableQr: () -> Unit,
     markClass: (String, ClassCheckIn?) -> Unit,
     showExam: (ExamUi) -> Unit,
 ) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = selectedTab) {
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Timetable") })
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Calendar") })
+        }
+        if (selectedTab == 1) {
+            Box(Modifier.weight(1f)) { CalendarScreen(state) }
+            return@Column
+        }
     val today = LocalDate.now()
     val now = LocalTime.now()
     val nowMinute = now.hour * 60 + now.minute
@@ -607,7 +620,7 @@ private fun ScheduleScreen(
     val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
     val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis()) }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -670,6 +683,7 @@ private fun ScheduleScreen(
             item { SectionLabel("EXAMINATIONS") }
             items(visibleExams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         }
+    }
     }
 }
 
@@ -920,7 +934,7 @@ private val classTime = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 private fun Int.asTime(): String = LocalTime.of(this / 60, this % 60).format(classTime)
 
 private val academicDateTime = DateTimeFormatter.ofPattern("EEE, dd MMM · h:mm a")
-private val academicZone = ZoneId.of("Asia/Kolkata")
+internal val academicZone = ZoneId.of("Asia/Kolkata")
 
 private fun Long?.asAcademicTime(fallback: String = "Time unavailable"): String =
     this?.let { academicDateTime.format(Instant.ofEpochMilli(it).atZone(academicZone)) } ?: fallback
