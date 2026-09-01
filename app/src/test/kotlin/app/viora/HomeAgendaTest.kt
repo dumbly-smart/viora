@@ -93,6 +93,7 @@ class HomeAgendaTest {
         val state = VioraUiState(assignments = listOf(
             AssignmentUi("open", "CSE1001", "DA 1", due, "Not uploaded"),
             AssignmentUi("done", "CSE1002", "DA 2", due, "Open", "12-Aug-2026 10:00 PM"),
+            AssignmentUi("stale", "CSE1003", "DA 3", due, "Submitted", "File Not Uploaded"),
         ))
 
         assertEquals(listOf("open"), state.homeDueAssignments(now).map(AssignmentUi::id))
