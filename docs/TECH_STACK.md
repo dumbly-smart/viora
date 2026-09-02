@@ -58,6 +58,8 @@ Compose is also used for:
 
 - Current and next class cards
 - A calendar-aware seven-day academic timeline
+- Cached assessment Marks and Attendance screens, including CAT 1, CAT 2, and FAT milestone allowances
+- A local-only academic calendar view built from cached academic records
 - Attendance projections and what-if controls
 - Consolidated course, assignment, exam, and material detail views
 - Search over the local cache
@@ -151,6 +153,8 @@ The comparison uses integer multiplication, avoiding floating-point boundary err
 Lab projections use a block size. If a lab contributes two attendance hours as one session, Viora converts unit-level results into conservative whole blocks; it does not claim that half a lab session is skippable.
 
 The academic timeline materializes weekly slots into dated occurrences for the next seven days. Calendar entries can suppress classes on holidays/exam days or substitute another weekday through labels such as `Monday order`. Classes, assignments, exams, calendar events, and messages are merged and sorted by time.
+
+Attendance milestone allowances use only cached exam dates, cached timetable occurrences, and cached calendar exceptions when deciding which classes can be skipped before CAT 1, CAT 2, or FAT. The calendar view is a local projection of cached records; opening it does not request a separate calendar service or publish events externally.
 
 ## 10. Repositories, synchronization, and change detection
 
