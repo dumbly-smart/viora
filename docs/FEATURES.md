@@ -57,8 +57,6 @@ Android background execution is inexact, so reminders are best effort. For exact
 - Attendance what-if planner and semester trend charts.
 - Offline full-text search over downloaded material metadata.
 - ICS import/export and shareable redacted timetable.
-- Multiple VIT campus adapters if endpoint behavior differs.
-- Optional app lock using device biometrics.
 - Accessibility, dynamic color, tablet/foldable layouts, and localization.
 
 ## Explicit non-goals
