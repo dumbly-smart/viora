@@ -8,11 +8,14 @@ Sign in with your VTOP account and the app pulls in your classes, attendance, as
 
 - See today's classes, upcoming exams and pending assignments from Home
 - Check the full timetable, class timings and rooms
-- Track attendance and see how many classes you can skip while staying at 75%
+- Export/share the active timetable as ICS, add it to a Viora-managed device
+  calendar, or import an ICS timetable into Schedule
+- Track attendance and see threshold projections, with the cached 9-point CGPA
+  rule applied at 9.00 and above
 - Get reminders before classes, exams and assignment deadlines
 - View marks, grades, GPA and CGPA
 - Plan the GPA needed to reach a target CGPA
-- Browse courses and download materials to `Downloads/Viora-VIT/<course>`
+- Browse courses and keep downloaded materials organized privately by course
 - Open VTOP's assignment page and upload DAs from the app
 - Search through courses and academic info
 - Keep things updated with background sync or the manual sync button
@@ -21,7 +24,7 @@ Sign in with your VTOP account and the app pulls in your classes, attendance, as
 
 Viora talks directly to VTOP. There is no Viora server collecting your account or academic data.
 
-Your saved login and VTOP session are encrypted using Android's secure key storage. Timetables, attendance, marks and other synced details stay inside the app on your phone, and Android backups are turned off. Course files you choose to download are normal files in your Downloads folder, so you can open and share them easily.
+Your saved login and VTOP session are encrypted using Android's secure key storage. Timetables, attendance, marks and other synced details stay inside the app on your phone, and Android backups are turned off. Course files are organized under Viora's private `Viora/materials/<course>` folder and are exposed to another app only when you explicitly open or share them.
 
 Logging out clears Viora's saved account and local academic data without logging you out of VTOP in your browser.
 

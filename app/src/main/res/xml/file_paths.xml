@@ -1,2 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android"><files-path name="shared_timetables" path="shared/" /><external-path name="legacy_viora_downloads" path="Download/Viora-VIT/" /></paths>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="viora_files" path="Viora/" />
+    <files-path name="legacy_shared_timetables" path="shared/" />
+    <external-path name="legacy_viora_downloads" path="Download/Viora-VIT/" />
+</paths>

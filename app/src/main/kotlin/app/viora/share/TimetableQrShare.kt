@@ -6,17 +6,19 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.core.content.FileProvider
 import app.viora.database.SlotWithCourse
+import app.viora.storage.VioraFileStore
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.FileOutputStream
 import java.time.DayOfWeek
 
 class TimetableQrShare(private val context: Context) {
+    private val fileStore = VioraFileStore(context.filesDir)
+
     suspend fun share(semesterName: String, slots: List<SlotWithCourse>): Result<Unit> = runCatching {
         require(slots.isNotEmpty()) { "No timetable is cached" }
         val payload = TimetableQrPayload.encode(semesterName, slots)
@@ -30,8 +32,7 @@ class TimetableQrShare(private val context: Context) {
             )
             val bitmap = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)
             for (y in 0 until matrix.height) for (x in 0 until matrix.width) bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
-            val directory = File(context.filesDir, "shared").apply { mkdirs() }
-            File(directory, "viora-timetable-qr.png").also { output -> FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle() }
+            fileStore.sharedFile("viora-timetable-qr.png").also { output -> FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle() }
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val intent = Intent(Intent.ACTION_SEND).apply {

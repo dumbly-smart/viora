@@ -28,7 +28,8 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 - Day/week timetable, academic calendar, holidays, and exam schedule.
 - Calendar view showing cached classes, deadlines, exams, holidays, and day-order exceptions; it is local-only and does not add a separate calendar service.
 - Filters by semester and exam type.
-- Calendar export using Android’s calendar intent/provider only after user confirmation.
+- User-initiated export to a dedicated Viora Android calendar, full-detail ICS
+  export/share, and transactional ICS timetable import labelled in Schedule.
 
 ### Courses
 
@@ -51,6 +52,8 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 - Attendance: threshold crossing and a configurable weekly summary—not a notification after every class.
 - Timetable/messages: changed class slot, cancellation/holiday impact, new class message.
 - Quiet hours, per-category switches, deduplication, and “why did I get this?” details.
+- Attendance changes are combined into one replaceable notification that opens
+  Attendance; cached CGPA of 9.00 or higher disables 75% warning criteria.
 
 Android background execution is inexact, so reminders are best effort. For exact alarms, ask only if a proven user need justifies the special permission; otherwise schedule WorkManager checks and local notifications.
 
@@ -59,9 +62,6 @@ Android background execution is inexact, so reminders are best effort. For exact
 - Home-screen widget for next class and urgent deadline.
 - Attendance what-if planner and semester trend charts.
 - Offline full-text search over downloaded material metadata.
-- ICS import/export and shareable redacted timetable.
-- Multiple VIT campus adapters if endpoint behavior differs.
-- Optional app lock using device biometrics.
 - Accessibility, dynamic color, tablet/foldable layouts, and localization.
 
 ## Explicit non-goals

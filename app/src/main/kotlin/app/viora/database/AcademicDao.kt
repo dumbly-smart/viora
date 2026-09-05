@@ -74,6 +74,10 @@ interface AcademicDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertNotificationLedger(record: NotificationLedgerEntity): Long
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertNotificationLedgers(records: List<NotificationLedgerEntity>): List<Long>
+    @Query("SELECT `key` FROM notification_ledger")
+    suspend fun notificationLedgerKeys(): List<String>
 
     @Query("DELETE FROM class_slots WHERE courseId IN (SELECT id FROM courses WHERE semesterId = :semesterId)")
     suspend fun deleteSlotsForSemester(semesterId: String)
@@ -118,6 +122,7 @@ interface AcademicDao {
     @Query("SELECT * FROM grades WHERE semesterId = :semesterId ORDER BY courseCode") fun observeGrades(semesterId: String): Flow<List<GradeEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertAcademicSummary(summary: AcademicSummaryEntity)
     @Query("SELECT * FROM academic_summaries WHERE id = 'current'") fun observeAcademicSummary(): Flow<AcademicSummaryEntity?>
+    @Query("SELECT * FROM academic_summaries WHERE id = 'current'") suspend fun academicSummarySnapshot(): AcademicSummaryEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCalendar(rows: List<AcademicCalendarEntity>)
     @Query("DELETE FROM academic_calendar WHERE semesterId = :semesterId") suspend fun deleteCalendar(semesterId: String)
     @Query("SELECT * FROM academic_calendar WHERE semesterId = :semesterId ORDER BY dateEpochDay") fun observeCalendar(semesterId: String): Flow<List<AcademicCalendarEntity>>
@@ -142,6 +147,11 @@ interface AcademicDao {
     @Query("SELECT * FROM marks WHERE semesterId = :semesterId") suspend fun markSnapshot(semesterId: String): List<MarkEntity>
     @Query("SELECT * FROM grades WHERE semesterId = :semesterId") suspend fun gradeSnapshot(semesterId: String): List<GradeEntity>
     @Query("SELECT * FROM digital_assignments WHERE semesterId = :semesterId") suspend fun assignmentSnapshot(semesterId: String): List<DigitalAssignmentEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertImportedCalendarEvents(rows: List<ImportedCalendarEventEntity>)
+    @Query("DELETE FROM imported_calendar_events") suspend fun deleteImportedCalendarEvents()
+    @Query("SELECT * FROM imported_calendar_events ORDER BY startsEpochMillis, id") fun observeImportedCalendarEvents(): Flow<List<ImportedCalendarEventEntity>>
+    @Query("SELECT * FROM imported_calendar_events ORDER BY startsEpochMillis, id") suspend fun importedCalendarEventSnapshot(): List<ImportedCalendarEventEntity>
+    @Transaction suspend fun replaceImportedCalendarEvents(rows: List<ImportedCalendarEventEntity>) { deleteImportedCalendarEvents(); upsertImportedCalendarEvents(rows) }
 
     @Transaction suspend fun replaceMarks(semesterId: String, records: List<MarkEntity>, sync: SyncResourceEntity) { deleteMarks(semesterId); upsertMarks(records); upsertSyncResource(sync) }
     @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertSyncResource(sync) }

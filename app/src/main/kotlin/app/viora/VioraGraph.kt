@@ -24,6 +24,8 @@ import app.viora.notifications.VioraNotifications
 import app.viora.notifications.VioraReminderScheduler
 import app.viora.auth.LocalAccountManager
 import app.viora.share.TimetableQrShare
+import app.viora.calendar.AndroidCalendarInterchange
+import app.viora.calendar.DaoImportedCalendarStore
 
 class VioraGraph(context: Context) {
     private val appContext = context.applicationContext
@@ -49,6 +51,7 @@ class VioraGraph(context: Context) {
     val extras = AcademicExtrasRepository(database.academicDao(), gateway)
     val materialManager = CourseMaterialManager(appContext, gateway)
     val timetableQr = TimetableQrShare(appContext)
+    val calendarInterchange = AndroidCalendarInterchange(appContext, DaoImportedCalendarStore(database.academicDao()))
     val notifications = VioraNotifications(appContext, database.academicDao())
     val reminders = VioraReminderScheduler(appContext, database.academicDao())
     val sessions = SessionManager(gateway, credentials)

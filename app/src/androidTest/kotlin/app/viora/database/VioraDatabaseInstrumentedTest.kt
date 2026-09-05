@@ -60,4 +60,46 @@ class VioraDatabaseInstrumentedTest {
         assertTrue(cursor.isNull(1))
         cursor.close(); helper.close(); context.deleteDatabase(name)
     }
+
+    @Test fun migration_8_9_adds_imported_calendar_events_without_erasing_semesters() {
+        val name = "migration-8-9.db"
+        context.deleteDatabase(name)
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context).name(name).callback(object : SupportSQLiteOpenHelper.Callback(8) {
+                override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    db.execSQL("CREATE TABLE semesters (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, active INTEGER NOT NULL)")
+                    db.execSQL("INSERT INTO semesters VALUES ('semester', 'Synthetic semester', 1)")
+                }
+                override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            }).build(),
+        )
+        val db = helper.writableDatabase
+
+        VioraDatabase.MIGRATION_8_9.migrate(db)
+
+        val table = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='imported_calendar_events'")
+        assertTrue(table.moveToFirst())
+        table.close()
+        val semester = db.query("SELECT name FROM semesters WHERE id='semester'")
+        assertTrue(semester.moveToFirst())
+        assertEquals("Synthetic semester", semester.getString(0))
+        semester.close(); helper.close(); context.deleteDatabase(name)
+    }
+
+    @Test fun imported_calendar_replacement_removes_the_previous_set() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, VioraDatabase::class.java).allowMainThreadQueries().build()
+        db.academicDao().replaceImportedCalendarEvents(
+            listOf(
+                ImportedCalendarEventEntity("old-1", "Old one", "", "", 1_000, 2_000),
+                ImportedCalendarEventEntity("old-2", "Old two", "", "", 3_000, 4_000),
+            ),
+        )
+
+        db.academicDao().replaceImportedCalendarEvents(
+            listOf(ImportedCalendarEventEntity("new", "New", "Details", "Room", 5_000, 6_000)),
+        )
+
+        assertEquals(listOf("new"), db.academicDao().observeImportedCalendarEvents().first().map { it.id })
+        db.close()
+    }
 }

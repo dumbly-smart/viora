@@ -80,7 +80,7 @@ Blocking work such as clearing the database or writing files is moved to `Dispat
 
 ## 5. Local database: Room and SQLite
 
-Room 2.8.4 is the app's source of truth. KSP generates DAO implementations and validates SQL queries at build time. The database is currently schema version 6.
+Room 2.8.4 is the app's source of truth. KSP generates DAO implementations and validates SQL queries at build time. The database is currently schema version 9.
 
 Important tables include:
 
@@ -97,10 +97,11 @@ Important tables include:
 - `sync_resources`: last attempt, success, status, and safe error per resource
 - `academic_changes`: durable change events used by the UI and notifications
 - `notification_ledger`: deduplication keys for already-published notifications
+- `imported_calendar_events`: one transactionally replaced set of user-imported ICS events
 
 Timetable tables use foreign keys and cascade deletion within a semester. Remote records receive deterministic IDs so repeated syncs are idempotent. Repositories generally replace one resource for one semester inside a Room transaction; unrelated semesters and unrelated resources remain intact.
 
-Schema migrations preserve installed-user data. The migration chain currently covers versions 1 through 6. Instrumentation tests include an offline in-memory database check and a direct v5-to-v6 migration assertion. CI compiles the Android instrumentation APK even when no emulator is attached.
+Schema migrations preserve installed-user data. The migration chain currently covers versions 1 through 9. Instrumentation tests include offline Room behavior and direct migration assertions, including the v8-to-v9 imported-calendar table. CI compiles the Android instrumentation APK even when no emulator is attached.
 
 Semester rollover is based on remote semester ordering plus locally known semester IDs. When a genuinely new first semester appears, Viora selects it, marks older semester rows inactive, and preserves their cached records as archives.
 
@@ -154,6 +155,11 @@ Lab projections use a block size. If a lab contributes two attendance hours as o
 
 The academic timeline materializes weekly slots into dated occurrences for the next seven days. Calendar entries can suppress classes on holidays/exam days or substitute another weekday through labels such as `Monday order`. Classes, assignments, exams, calendar events, and messages are merged and sorted by time.
 
+Calendar interchange reuses those date rules for a 180-day export projection.
+A pure ICS codec reads and writes full-detail timed events in `Asia/Kolkata`;
+Android integrations use the Storage Access Framework, FileProvider, and a
+dedicated local `Viora timetable` calendar only after an explicit user action.
+
 Attendance milestone allowances use only cached exam dates, cached timetable occurrences, and cached calendar exceptions when deciding which classes can be skipped before CAT 1, CAT 2, or FAT. The calendar view is a local projection of cached records; opening it does not request a separate calendar service or publish events externally.
 
 ## 10. Repositories, synchronization, and change detection
@@ -172,16 +178,21 @@ Android notification channels separate deadlines, examinations, and general acad
 
 - assignment reminders within 24 hours or three hours;
 - exam reminders;
-- attendance-below-target warnings;
+- one consolidated attendance update/warning summary rather than one alert per course;
 - detected schedule, mark, grade, message, or material changes.
 
 The notification ledger prevents the same semantic event from being emitted repeatedly. Pending intents carry a destination so tapping a notification opens Schedule, Courses, Tasks, or More. Quiet hours default to 10 PM–7 AM, and assignment/exam categories can be disabled locally.
 
+The attendance summary opens Courses directly on its Attendance tab and uses a
+stable Android notification ID, so later updates replace rather than stack.
+When cached CGPA is at least 9.00, Viora omits 75-percent attendance warnings;
+raw values and ordinary change updates remain visible.
+
 ## 12. Course material files
 
-Material metadata syncs in the background, but file bodies download only after an explicit user action. Downloads are restricted to VTOP, capped at 50 MB, sanitized to safe filenames, and written to `files/course-materials` inside Viora's private storage.
+Material metadata syncs in the background, but file bodies download only after an explicit user action. Downloads are restricted to VTOP, capped at 50 MB, sanitized to safe filenames, and organized under `files/Viora/materials/<course>` inside Viora's private storage. Tracked files from the older public `Downloads/Viora-VIT` layout migrate into a `Legacy materials` folder only after the private copy is verified; the public copy is then removed.
 
-The download manager exposes `StateFlow` states such as `DOWNLOADING`, `READY`, and `ERROR`, retries failures up to three times, reports storage usage, and supports cleanup. Open/share actions use Android `FileProvider`, granting temporary read access without exposing Viora's private directory as a filesystem path.
+The download manager exposes `StateFlow` states such as `DOWNLOADING`, `READY`, and `ERROR`, retries failures up to three times, reports storage usage, and supports cleanup. Generated share artifacts live under `files/Viora/shared`. Open/share actions use Android `FileProvider`, granting temporary read access without exposing Viora's private directory as a filesystem path.
 
 ## 13. Search
 
