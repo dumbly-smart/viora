@@ -13,23 +13,66 @@ class MarksParser {
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
         val records = mutableListOf<MarkRecord>()
         document.select("table").forEachIndexed { tableIndex, table ->
-            val headers = table.select("thead th").map { norm(it.text()) }
-            if (headers.none { it == "max marks" } || headers.none { it.contains("weightage") }) return@forEachIndexed
+            val allRows = table.select("tr")
+            val headerRow = allRows.firstOrNull { row ->
+                val cells = row.select("th,td").map { norm(it.text()) }
+                cells.any { it in componentHeaders } && cells.any { it in scoreHeaders || it in maximumHeaders }
+            } ?: return@forEachIndexed
+            val headers = headerRow.select("th,td").map { norm(it.text()) }
             val heading = table.previousElementSiblings().firstOrNull { it.text().isNotBlank() }?.text().orEmpty()
-            table.select("tbody tr").forEachIndexed { rowIndex, row ->
-                val values = headers.zip(row.select("td").map(Element::text)).toMap()
-                val title = values.find("title", "assessment")?.trim().orEmpty()
-                if (title.isNotBlank()) records += MarkRecord(
-                    id = stable("$tableIndex-$heading-$rowIndex-$title"), courseCode = values.find("course code").orEmpty(),
-                    courseTitle = values.find("course title", "course name").orEmpty().ifBlank { heading },
-                    courseType = values.find("course type", "type").orEmpty(), title = title,
-                    maxMarks = values.find("max marks")?.number(), weightagePercent = values.find("weightage %", "weightage percentage")?.number(),
-                    status = values.find("status").orEmpty(), scoredMark = values.find("scored mark", "marks scored")?.number(),
-                    weightageMark = values.find("weightage mark", "weighted mark")?.number(),
+            var context = (allRows.takeWhile { it != headerRow }.lastOrNull { it.select("td[colspan],th[colspan]").isNotEmpty() }?.text() ?: heading)
+                .courseContext()
+            allRows.dropWhile { it != headerRow }.drop(1).forEachIndexed { rowIndex, row ->
+                val cells = row.select("td")
+                if (cells.isEmpty()) return@forEachIndexed
+                if (cells.size == 1 && cells.single().hasAttr("colspan")) {
+                    context = cells.single().text().courseContext(context)
+                    return@forEachIndexed
+                }
+                val values = headers.zip(cells.map(Element::text)).toMap()
+                val title = values.find(*componentHeaders.toTypedArray())?.trim().orEmpty()
+                if (title.isBlank()) return@forEachIndexed
+                val courseCode = values.find("course code", "subject code")?.trim().orEmpty().ifBlank { context.courseCode }
+                val courseTitle = values.find("course title", "course name", "subject title", "subject name")
+                    ?.trim().orEmpty().ifBlank { context.courseTitle.ifBlank { heading } }
+                val courseType = values.find("course type", "type", "subject type")?.trim().orEmpty().ifBlank { context.courseType }
+                records += MarkRecord(
+                    id = stable("$tableIndex-$heading-$rowIndex-$title"),
+                    courseCode = courseCode,
+                    courseTitle = courseTitle,
+                    courseType = courseType,
+                    title = title,
+                    maxMarks = values.find(*maximumHeaders.toTypedArray())?.number(),
+                    weightagePercent = values.find("weightage %", "weightage percentage", "weightage")?.number(),
+                    status = values.find("status", "publication status", "result status").orEmpty(),
+                    scoredMark = values.find(*scoreHeaders.toTypedArray())?.number(),
+                    weightageMark = values.find("weightage mark", "weighted mark", "weighted score")?.number(),
                 )
             }
         }
         return if (records.isEmpty()) ParseResult.InvalidDocument("No assessment marks were found") else ParseResult.Success(records)
+    }
+
+    private data class CourseContext(val courseCode: String = "", val courseTitle: String = "", val courseType: String = "")
+
+    private fun String.courseContext(fallback: CourseContext = CourseContext()): CourseContext {
+        val text = trim()
+        val code = Regex("[A-Z]{2,8}\\s*[-_]?\\s*\\d{3,5}[A-Z]?", RegexOption.IGNORE_CASE)
+            .find(text)?.value?.replace(Regex("\\s+"), "").orEmpty().ifBlank { fallback.courseCode }
+        val parts = text.split(Regex("\\s+-\\s+")).map(String::trim).filter(String::isNotBlank)
+        val type = parts.lastOrNull()?.takeIf { candidate ->
+            Regex("theory|lab|embedded|project|practical", RegexOption.IGNORE_CASE).containsMatchIn(candidate)
+        }.orEmpty().ifBlank { fallback.courseType }
+        val titleParts = parts.drop(if (parts.firstOrNull()?.contains(code, ignoreCase = true) == true) 1 else 0)
+            .dropLast(if (type.isNotBlank() && parts.lastOrNull().equals(type, true)) 1 else 0)
+        val title = titleParts.joinToString(" - ").ifBlank { fallback.courseTitle }
+        return CourseContext(code, title, type)
+    }
+
+    private companion object {
+        val componentHeaders = setOf("title", "assessment", "assessment title", "component", "mark component")
+        val maximumHeaders = setOf("max marks", "max mark", "maximum marks", "maximum mark")
+        val scoreHeaders = setOf("scored mark", "marks scored", "score", "marks obtained", "mark obtained")
     }
 }
 
