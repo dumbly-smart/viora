@@ -64,6 +64,10 @@ picker and confirms that the incoming timetable replaces existing imported
 events. Imported events appear in Schedule with an `Imported` label and have
 clear empty and invalid-file states.
 
+Calendar import/export working files are organized under Viora's private
+`files/Viora/calendar` tree. Only the final document explicitly created or
+shared by the user leaves the app-private sandbox.
+
 ## Verification
 
 Unit tests cover ICS escaping, stable IDs, `Asia/Kolkata` timestamps, weekly

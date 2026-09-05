@@ -1,5 +1,6 @@
 package app.viora
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -11,6 +12,8 @@ import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
 import app.viora.database.AcademicChangeEntity
 import app.viora.database.SemesterEntity
+import app.viora.database.ImportedCalendarEventEntity
+import app.viora.calendar.CalendarExportProjector
 import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
 import app.viora.domain.SemesterRollover
@@ -33,6 +36,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.net.UnknownHostException
 import java.net.SocketTimeoutException
+import java.time.LocalDate
+import java.time.ZoneId
 
 data class VioraUiState(
     val configured: Boolean = false,
@@ -75,6 +80,8 @@ data class VioraUiState(
     val rolloverDetected: Boolean = false,
     val syncDiagnostics: SyncDiagnosticsSnapshot? = null,
     val classCheckIns: Map<String, ClassCheckIn> = emptyMap(),
+    val importedCalendarEvents: List<ImportedCalendarEventEntity> = emptyList(),
+    val calendarInterchangeMessage: String? = null,
 )
 enum class ClassCheckIn { ATTENDED, MISSED }
 data class MarkUi(
@@ -146,10 +153,19 @@ class VioraAppViewModel(
 
     init {
         graph.settings.edit().putInt("attendance_target", ATTENDANCE_TARGET).apply()
+        viewModelScope.launch {
+            graph.materialManager.organizeLegacyDownloads()
+            mutableState.update { it.copy(downloadStorageBytes = graph.materialManager.storageBytes()) }
+        }
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
         viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
+        viewModelScope.launch {
+            graph.database.academicDao().observeImportedCalendarEvents()
+                .catch { mutableState.update { state -> state.copy(error = "Could not read imported calendar events") } }
+                .collect { rows -> mutableState.update { it.copy(importedCalendarEvents = rows) } }
+        }
         refreshDiagnostics()
         if (state.value.configured) {
             observeSavedSemester()
@@ -209,7 +225,7 @@ class VioraAppViewModel(
     fun beginReauthentication() = mutableState.update {
         it.copy(configured = false, loading = false, password = "", error = null)
     }
-    fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
+    fun logout() { viewModelScope.launch { graph.materialManager.clearDownloads(); graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) {
         graph.settings.edit().putBoolean("notify_deadlines", enabled).apply()
         mutableState.update { it.copy(deadlineNotifications = enabled) }
@@ -306,6 +322,64 @@ class VioraAppViewModel(
             mutableState.update { it.copy(loading = false) }
         }
     }
+
+    fun exportCalendarIcs(uri: Uri) {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.writeTo(uri, calendarName(snapshot), calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Exported $count calendar events") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not export the calendar")) } }
+        }
+    }
+
+    fun importCalendarIcs(uri: Uri) {
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.importFrom(uri) }
+                .onSuccess { summary ->
+                    val skipped = if (summary.skipped == 0) "" else "; skipped ${summary.skipped} unsupported event(s)"
+                    mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Imported ${summary.imported} event(s)$skipped") }
+                }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not import that ICS calendar")) } }
+        }
+    }
+
+    fun shareCalendarIcs() {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.share(calendarName(snapshot), calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Prepared $count events to share") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not share the calendar")) } }
+        }
+    }
+
+    fun exportToDeviceCalendar() {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.exportToDevice(calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Updated Viora timetable with $count events") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not update the device calendar")) } }
+        }
+    }
+
+    fun calendarPermissionDenied() = mutableState.update {
+        it.copy(loading = false, error = "Calendar permission was denied; Viora data was not changed")
+    }
+
+    private fun calendarEvents(snapshot: VioraUiState) = CalendarExportProjector.project(
+        semesterId = snapshot.activeSemester?.id ?: "active",
+        fromDate = LocalDate.now(ZoneId.of("Asia/Kolkata")),
+        slots = snapshot.slots,
+        calendar = snapshot.calendar,
+        exams = snapshot.exams,
+        assignments = snapshot.assignments,
+    )
+
+    private fun calendarName(snapshot: VioraUiState): String =
+        listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
 
     fun selectSemester(semester: SemesterOption) {
         saveSemester(semester)
@@ -635,3 +709,10 @@ private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<A
     val projection = AttendanceCalculator.calculate(item.attended, held, target, item.blockSize)
     item.copy(held = held, percentage = projection.percentage, skippable = projection.skippableClasses, recovery = projection.classesToRecover, skippableBlocks = projection.skippableBlocks, recoveryBlocks = projection.blocksToRecover)
 }
+
+private fun Throwable.safeCalendarMessage(fallback: String): String = message
+    ?.takeIf { value ->
+        listOf("Calendar", "calendar", "No cached academic events", "VEVENT", "VCALENDAR").any(value::contains)
+    }
+    ?.take(180)
+    ?: fallback

@@ -1,15 +1,12 @@
 package app.viora.data
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import app.viora.database.CourseMaterialEntity
 import app.viora.network.VtopGateway
+import app.viora.storage.VioraFileStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +22,7 @@ class CourseMaterialManager(private val context: Context, private val gateway: V
     private val mutableStates = MutableStateFlow<Map<String, MaterialDownloadState>>(emptyMap())
     val states: StateFlow<Map<String, MaterialDownloadState>> = mutableStates.asStateFlow()
     private val downloads = context.getSharedPreferences("viora_material_downloads", Context.MODE_PRIVATE)
+    private val fileStore = VioraFileStore(context.filesDir)
 
     suspend fun open(material: CourseMaterialEntity, courseName: String, share: Boolean): Result<Unit> = runCatching {
         val downloaded = downloadInternal(material, courseName).getOrThrow()
@@ -41,11 +39,11 @@ class CourseMaterialManager(private val context: Context, private val gateway: V
 
     private suspend fun downloadInternal(material: CourseMaterialEntity, courseName: String): Result<DownloadedMaterial> = runCatching {
         withContext(Dispatchers.IO) {
-            existing(material.id)?.let {
+            val safeCourse = safeName(courseName, material.courseCode.ifBlank { "Course" }, 80)
+            existing(material.id, safeCourse)?.let {
                 update(MaterialDownloadState(material.id, "READY", localBytes = it.bytes))
                 return@withContext it
             }
-            val safeCourse = safeName(courseName, material.courseCode.ifBlank { "Course" }, 80)
             var last: Throwable? = null
             repeat(3) { attempt ->
                 update(MaterialDownloadState(material.id, "DOWNLOADING", attempt + 1))
@@ -67,65 +65,48 @@ class CourseMaterialManager(private val context: Context, private val gateway: V
     }
 
     private fun save(materialId: String, course: String, fileName: String, bytes: ByteArray): DownloadedMaterial {
-        return if (Build.VERSION.SDK_INT >= 29) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE, mime(fileName))
-                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$ROOT/$course")
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
-            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)) {
-                "Android could not create Downloads/$ROOT/$course"
-            }
-            try {
-                context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
-                    ?: error("Android could not open the downloaded file")
-                context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-                remember(materialId, uri.toString(), fileName, bytes.size.toLong())
-                DownloadedMaterial(uri, fileName, bytes.size.toLong())
-            } catch (error: Throwable) {
-                context.contentResolver.delete(uri, null, null)
-                throw error
-            }
-        } else {
-            val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "$ROOT/$course")
-            check(directory.exists() || directory.mkdirs()) { "Android could not create Downloads/$ROOT/$course" }
-            val target = uniqueFile(directory, fileName)
-            target.writeBytes(bytes)
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", target)
-            remember(materialId, "file:${target.absolutePath}", target.name, target.length())
-            DownloadedMaterial(uri, target.name, target.length())
-        }
+        val saved = fileStore.writeMaterial(course, fileName, bytes)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", saved.file)
+        remember(materialId, "file:${saved.file.absolutePath}", saved.file.name, saved.bytes, course)
+        return DownloadedMaterial(uri, saved.file.name, saved.bytes)
     }
 
-    private fun existing(materialId: String): DownloadedMaterial? {
+    private fun existing(materialId: String, course: String): DownloadedMaterial? {
         val stored = downloads.getString("$materialId.uri", null) ?: return null
         val name = downloads.getString("$materialId.name", null) ?: return null
         return if (stored.startsWith("file:")) {
             val file = File(stored.removePrefix("file:"))
-            if (!file.isFile) null else DownloadedMaterial(
-                FileProvider.getUriForFile(context, "${context.packageName}.files", file),
-                file.name,
-                file.length(),
-            )
+            if (!file.isFile) null
+            else if (file.canonicalPath.startsWith(fileStore.root.canonicalPath + File.separator)) downloaded(file)
+            else fileStore.migrateLegacyMaterial(file, course, name).getOrNull()?.also { migrated ->
+                remember(materialId, "file:${migrated.file.absolutePath}", migrated.file.name, migrated.bytes, course)
+            }?.let { downloaded(it.file) } ?: downloaded(file)
         } else {
             val uri = Uri.parse(stored)
-            val size = runCatching { context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } }.getOrNull()
-                ?.takeIf { it >= 0 } ?: return null
-            DownloadedMaterial(uri, name, size)
+            val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                ?: return null
+            fileStore.migrateLegacyMaterial(bytes, course, name) {
+                context.contentResolver.delete(uri, null, null) > 0
+            }.getOrNull()?.also { migrated ->
+                remember(materialId, "file:${migrated.file.absolutePath}", migrated.file.name, migrated.bytes, course)
+            }?.let { downloaded(it.file) } ?: DownloadedMaterial(uri, name, bytes.size.toLong())
+        }
+    }
+
+    suspend fun organizeLegacyDownloads() = withContext(Dispatchers.IO) {
+        materialIds().forEach { id ->
+            existing(id, downloads.getString("$id.course", null).orEmpty().ifBlank { LEGACY_COURSE })
         }
     }
 
     suspend fun clearDownloads(): Long = withContext(Dispatchers.IO) {
-        val ids = downloads.all.keys.filter { it.endsWith(".uri") }.map { it.substringBeforeLast('.') }.distinct()
+        val ids = materialIds()
         var removed = 0L
         ids.forEach { id ->
-            existing(id)?.let { item ->
-                removed += item.bytes
-                val stored = downloads.getString("$id.uri", null).orEmpty()
-                if (stored.startsWith("file:")) File(stored.removePrefix("file:")).delete()
-                else context.contentResolver.delete(item.uri, null, null)
-            }
+            removed += downloads.getLong("$id.bytes", 0L)
+            val stored = downloads.getString("$id.uri", null).orEmpty()
+            if (stored.startsWith("file:")) File(stored.removePrefix("file:")).delete()
+            else if (stored.isNotBlank()) context.contentResolver.delete(Uri.parse(stored), null, null)
         }
         downloads.edit().clear().apply()
         mutableStates.value = emptyMap()
@@ -136,19 +117,26 @@ class CourseMaterialManager(private val context: Context, private val gateway: V
         .filter { it.endsWith(".bytes") }
         .sumOf { downloads.getLong(it, 0L) }
 
-    private fun remember(id: String, uri: String, name: String, bytes: Long) {
-        downloads.edit().putString("$id.uri", uri).putString("$id.name", name).putLong("$id.bytes", bytes).apply()
+    private fun remember(id: String, uri: String, name: String, bytes: Long, course: String) {
+        downloads.edit()
+            .putString("$id.uri", uri)
+            .putString("$id.name", name)
+            .putLong("$id.bytes", bytes)
+            .putString("$id.course", course)
+            .apply()
     }
+    private fun downloaded(file: File) = DownloadedMaterial(
+        FileProvider.getUriForFile(context, "${context.packageName}.files", file),
+        file.name,
+        file.length(),
+    )
+    private fun materialIds(): List<String> = downloads.all.keys
+        .filter { it.endsWith(".uri") }
+        .map { it.substringBeforeLast('.') }
+        .distinct()
     private fun update(state: MaterialDownloadState) { mutableStates.value = mutableStates.value + (state.materialId to state) }
     private fun safeName(value: String, fallback: String, limit: Int): String = value
         .replace(Regex("[\\x00-\\x1f\\x7f/\\\\:*?\"<>|]"), "_").trim().trim('.').take(limit).ifBlank { fallback }
-    private fun uniqueFile(directory: File, requested: String): File {
-        val initial = File(directory, requested)
-        if (!initial.exists()) return initial
-        val extension = requested.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
-        val stem = requested.removeSuffix(extension)
-        return generateSequence(2) { it + 1 }.map { File(directory, "$stem ($it)$extension") }.first { !it.exists() }
-    }
     private fun mime(name: String) = when (name.substringAfterLast('.', "").lowercase()) {
         "pdf" -> "application/pdf"
         "ppt", "pptx" -> "application/vnd.ms-powerpoint"
@@ -172,7 +160,7 @@ class CourseMaterialManager(private val context: Context, private val gateway: V
     }
 
     private companion object {
-        const val ROOT = "Viora-VIT"
+        const val LEGACY_COURSE = "Legacy materials"
         val KNOWN_EXTENSIONS = setOf("pdf", "ppt", "pptx", "doc", "docx", "xls", "xlsx", "zip", "jpg", "jpeg", "png", "mp4")
     }
 }

@@ -25,13 +25,15 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.viora.domain.AttendanceMilestone
+import app.viora.notifications.AttendanceNotificationPolicy
 
 @Composable
 internal fun AcademicsScreen(
     state: VioraUiState,
+    initialTab: Int = 0,
     showCourseDetail: (String, String) -> Unit,
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     val tabs = listOf("Courses", "Marks", "Attendance")
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -104,6 +106,7 @@ private fun MarksScreen(state: VioraUiState) {
 
 @Composable
 private fun AttendanceScreen(state: VioraUiState) {
+    val ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)
     val milestones = state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -112,12 +115,13 @@ private fun AttendanceScreen(state: VioraUiState) {
     ) {
         item {
             Text(
-                "Skip allowance",
+                if (ninePointRule) "Attendance overview" else "Skip allowance",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                "Skip allowance is calculated against the active ${state.attendanceTarget}% attendance target.",
+                if (ninePointRule) "The 9-point attendance rule applies based on the cached VTOP CGPA. Raw attendance remains visible."
+                else "Skip allowance is calculated against the active ${state.attendanceTarget}% attendance target.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -127,10 +131,12 @@ private fun AttendanceScreen(state: VioraUiState) {
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    AttendanceCard(attendance)
-                    val milestonesForCourse = milestones[attendance.id].orEmpty().associateBy { it.milestone }
-                    AttendanceMilestone.entries.forEach { milestone ->
-                        AttendanceMilestoneRow(milestone, milestonesForCourse[milestone])
+                    AttendanceCard(attendance, ninePointRule)
+                    if (!ninePointRule) {
+                        val milestonesForCourse = milestones[attendance.id].orEmpty().associateBy { it.milestone }
+                        AttendanceMilestone.entries.forEach { milestone ->
+                            AttendanceMilestoneRow(milestone, milestonesForCourse[milestone])
+                        }
                     }
                 }
             }

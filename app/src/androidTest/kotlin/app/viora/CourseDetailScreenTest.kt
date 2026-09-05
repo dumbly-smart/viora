@@ -89,4 +89,25 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("active 80%", substring = true).assertExists()
         compose.onNodeWithText("Not scheduled").assertExists()
     }
+
+    @Test
+    fun ninePointCgpaOpensAttendanceWithoutThresholdWarnings() {
+        val attendance = AttendanceUi(
+            "attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty",
+            7, 10, 10, 70.0, 0, 1, 1, 0, 1,
+        )
+        val state = VioraUiState(attendance = listOf(attendance), cgpa = 9.0)
+
+        compose.setContent {
+            VioraTheme {
+                AcademicsScreen(state, initialTab = 2) { _, _ -> }
+            }
+        }
+
+        compose.onNodeWithText("Attendance overview").assertIsDisplayed()
+        compose.onNodeWithText("7/10 classes").assertIsDisplayed()
+        compose.onNodeWithText("9-point attendance rule", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Attend next", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Safe to skip", substring = true).assertDoesNotExist()
+    }
 }

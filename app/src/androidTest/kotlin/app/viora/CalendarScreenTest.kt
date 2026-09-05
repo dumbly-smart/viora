@@ -10,7 +10,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import app.viora.database.AcademicCalendarEntity
+import app.viora.database.ImportedCalendarEventEntity
 import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
@@ -41,7 +43,7 @@ class CalendarScreenTest {
         compose.onNodeWithText(today.month.name.lowercase().replaceFirstChar(Char::titlecase), substring = true).assertExists()
         compose.onNodeWithText("Exam · CSE1001").assertExists()
         compose.onNodeWithText("Timetable").performClick()
-        compose.onNodeWithContentDescription("Share timetable").assertIsEnabled()
+        compose.onNodeWithContentDescription("Share timetable QR").assertIsEnabled()
     }
 
     @Test
@@ -83,6 +85,31 @@ class CalendarScreenTest {
             compose.onAllNodesWithText(label)[0].assertIsDisplayed()
             compose.onAllNodesWithContentDescription("Calendar marker: $label", useUnmergedTree = true)[0].assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun scheduleOffersCalendarInterchangeAndLabelsImportedEvents() {
+        val today = LocalDate.now(ZoneId.of("Asia/Kolkata"))
+        val start = today.atTime(14, 0).atZone(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
+        val state = markerState(today).copy(
+            importedCalendarEvents = listOf(
+                ImportedCalendarEventEntity("imported", "Imported class", "Details", "Room 1", start, start + 3_600_000),
+            ),
+            calendarInterchangeMessage = "Imported 1 event",
+        )
+
+        compose.setContent {
+            VioraTheme {
+                ScheduleScreen(state, {}, {}, { _, _ -> }, {})
+            }
+        }
+
+        listOf("Export to Viora calendar", "Export ICS", "Import ICS", "Share timetable").forEach {
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithText("Imported class").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Imported").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Imported 1 event").performScrollTo().assertIsDisplayed()
     }
 
     private fun markerState(date: LocalDate): VioraUiState {

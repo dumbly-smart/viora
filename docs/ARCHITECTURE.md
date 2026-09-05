@@ -54,11 +54,12 @@ actions only; they do not access DAOs or VTOP gateways directly.
 - `Exam` (type, course, date, session, venue, seat number)
 - `CourseMaterial` (metadata locally; file only after explicit download)
 - `AcademicCalendarDay`, `ClassMessage`
+- `ImportedCalendarEvent` (one local replacement set from user-selected ICS)
 - `SyncRun`, `SyncResourceState`, `NotificationLedger`
 
 Remote identities are scoped by account + semester. Parsed records get deterministic fingerprints so a repeated sync is idempotent and change notifications can show exactly what changed.
 
-The Room database is currently version 8. A schema change needs a forward
+The Room database is currently version 9. A schema change needs a forward
 migration, registration in `VioraDatabase`, an updated exported schema, and
 migration instrumentation coverage.
 
@@ -84,6 +85,10 @@ values are planning aids, not institutional attendance rulings.
   identity even when display names match.
 - Schedule provides timetable and local calendar views for cached classes,
   holidays, exams, instructional day orders, and other academic events.
+- Calendar interchange projects 180 days of cached classes with the same
+  holiday/day-order rules, adds exams and assignment deadlines, and supports
+  explicit Android-calendar export, ICS export/share, and transactional ICS
+  import. Imported rows are local, visibly labelled, and never synced to VTOP.
 
 ## Testing and validation
 

@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +56,8 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -127,6 +130,7 @@ import app.viora.domain.isExamPeriodActive
 import app.viora.domain.isAssignmentSubmitted
 import app.viora.domain.overlapsExam
 import app.viora.domain.shouldShowExamInSchedule
+import app.viora.notifications.AttendanceNotificationPolicy
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -139,6 +143,7 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val notificationDestination = androidx.compose.runtime.mutableStateOf<String?>(null)
+    private var notificationSequence = 0
     private val graph by lazy { VioraGraph(applicationContext) }
     private val model by viewModels<VioraAppViewModel> {
         VioraAppViewModel.Factory(graph, VioraSyncScheduler(applicationContext))
@@ -146,12 +151,27 @@ class MainActivity : ComponentActivity() {
     private val runtimePermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { if (model.state.value.configured) requestPreciseReminderAccess() }
+    private val calendarPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants[Manifest.permission.READ_CALENDAR] == true && grants[Manifest.permission.WRITE_CALENDAR] == true) {
+            model.exportToDeviceCalendar()
+        } else {
+            model.calendarPermissionDenied()
+        }
+    }
+    private val createIcsDocument = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/calendar"),
+    ) { uri -> uri?.let(model::exportCalendarIcs) }
+    private val openIcsDocument = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(model::importCalendarIcs) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_Viora)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        notificationDestination.value = intent.getStringExtra("viora_destination")
+        notificationDestination.value = intent.getStringExtra("viora_destination")?.let { "$it#${notificationSequence++}" }
         setContent {
             VioraTheme {
                 val state by model.state.collectAsState()
@@ -173,7 +193,7 @@ class MainActivity : ComponentActivity() {
                 } else if (state.assignmentUploadSession != null) {
                     VtopAssignmentUploadScreen(requireNotNull(state.assignmentUploadSession), model::closeAssignmentUpload)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, model::beginAssignmentUpload, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, model::beginAssignmentUpload, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -196,7 +216,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); notificationDestination.value = intent.getStringExtra("viora_destination") }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); notificationDestination.value = intent.getStringExtra("viora_destination")?.let { "$it#${notificationSequence++}" } }
 
     private fun requestPreciseReminderAccess() {
         if (Build.VERSION.SDK_INT < 31) return
@@ -207,6 +227,15 @@ class MainActivity : ComponentActivity() {
         preferences.edit().putBoolean("asked_precise_reminders", true).apply()
         runCatching {
             startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+        }
+    }
+
+    private fun requestDeviceCalendarExport() {
+        val permissions = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+        if (permissions.all { ContextCompat.checkSelfPermission(this, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+            model.exportToDeviceCalendar()
+        } else {
+            calendarPermissions.launch(permissions)
         }
     }
 }
@@ -244,9 +273,14 @@ private fun Dashboard(
     clearAcademicCache: () -> Unit,
     shareTimetableQr: () -> Unit,
     markClass: (String, ClassCheckIn?) -> Unit,
+    exportToDeviceCalendar: () -> Unit,
+    exportIcs: () -> Unit,
+    importIcs: () -> Unit,
+    shareCalendarIcs: () -> Unit,
     initialDestination: String?,
 ) {
-    var selected by remember(initialDestination) { mutableIntStateOf(when (initialDestination) { "schedule" -> 1; "courses" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
+    val initialRoute = initialDestination?.substringBefore('#')
+    var selected by remember(initialDestination) { mutableIntStateOf(when (initialRoute) { "schedule" -> 1; "courses", "attendance" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
     BoxWithConstraints {
     val expanded = maxWidth >= 840.dp
@@ -292,8 +326,18 @@ private fun Dashboard(
             AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
                 if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, downloadMaterial, downloadMaterials, uploadAssignment) else when (destination) {
                     0 -> HomeScreen(state, PaddingValues())
-                    1 -> ScheduleScreen(state, selectSemester, shareTimetableQr, markClass) { detail = DetailSelection("exam", it.id) }
-                    2 -> AcademicsScreen(state) { kind, id -> detail = DetailSelection(kind, id) }
+                    1 -> ScheduleScreen(
+                        state = state,
+                        selectSemester = selectSemester,
+                        shareTimetableQr = shareTimetableQr,
+                        markClass = markClass,
+                        showExam = { detail = DetailSelection("exam", it.id) },
+                        exportToDeviceCalendar = exportToDeviceCalendar,
+                        exportIcs = exportIcs,
+                        importIcs = importIcs,
+                        shareCalendarIcs = shareCalendarIcs,
+                    )
+                    2 -> AcademicsScreen(state, initialTab = if (initialRoute == "attendance") 2 else 0) { kind, id -> detail = DetailSelection(kind, id) }
                     3 -> TasksScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
                     else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
                 }
@@ -396,6 +440,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
                         attendance = state.attendanceFor(slot),
                         courseName = state.courseNameFor(slot),
                         date = starts.toLocalDate(),
+                        ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa),
                     )
                 }
             }
@@ -404,7 +449,7 @@ private fun HomeScreen(state: VioraUiState, padding: PaddingValues) {
 }
 
 @Composable
-private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?, courseName: String, date: LocalDate) {
+private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?, courseName: String, date: LocalDate, ninePointRule: Boolean) {
     val accent = VioraBlue
     Surface(
         Modifier.fillMaxWidth().animateContentSize(),
@@ -432,7 +477,7 @@ private fun CompactHomeClassCard(slot: SlotWithCourse, attendance: AttendanceUi?
                     listOf(slot.code, slot.venue.ifBlank { "Room unavailable" }).filter(String::isNotBlank).joinToString("  ·  "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                attendance?.let { AttendanceGuidance(it) }
+                attendance?.let { AttendanceGuidance(it, ninePointRule) }
             }
         }
     }
@@ -558,9 +603,9 @@ private fun CourseMaterialActions(
 }
 
 @Composable
-internal fun AttendanceCard(item: AttendanceUi) {
+internal fun AttendanceCard(item: AttendanceUi, ninePointRule: Boolean = false) {
     val skippableMeetings = if (item.blockSize > 1) item.skippableBlocks else item.skippable
-    val healthy = item.recovery == 0 && skippableMeetings > 0
+    val healthy = ninePointRule || (item.recovery == 0 && skippableMeetings > 0)
     Surface(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -578,6 +623,7 @@ internal fun AttendanceCard(item: AttendanceUi) {
             }
             listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             when {
+                ninePointRule -> Text("9-point attendance rule applies", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 item.recovery > 0 -> Text(
                     "Attend next ${if (item.blockSize > 1) item.recoveryBlocks else item.recovery} ${if (item.blockSize > 1) "lab blocks" else "classes"} to recover",
                     color = VioraCoral,
@@ -601,8 +647,24 @@ internal fun ScheduleScreen(
     shareTimetableQr: () -> Unit,
     markClass: (String, ClassCheckIn?) -> Unit,
     showExam: (ExamUi) -> Unit,
+    exportToDeviceCalendar: () -> Unit = {},
+    exportIcs: () -> Unit = {},
+    importIcs: () -> Unit = {},
+    shareCalendarIcs: () -> Unit = {},
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var confirmImport by remember { mutableStateOf(false) }
+    if (confirmImport) {
+        AlertDialog(
+            onDismissRequest = { confirmImport = false },
+            title = { Text("Replace imported timetable?") },
+            text = { Text("A valid ICS file will replace the timetable events previously imported into Viora. VTOP data is not changed.") },
+            confirmButton = {
+                TextButton(onClick = { confirmImport = false; importIcs() }) { Text("Choose ICS") }
+            },
+            dismissButton = { TextButton(onClick = { confirmImport = false }) { Text("Cancel") } },
+        )
+    }
     Column(Modifier.fillMaxSize()) {
         PrimaryTabRow(selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Timetable") })
@@ -618,6 +680,14 @@ internal fun ScheduleScreen(
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
     val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
+    val importedForDay = state.importedCalendarEvents
+        .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).dayOfWeek.value == selectedDay }
+        .distinctBy { event ->
+            val start = Instant.ofEpochMilli(event.startsEpochMillis).atZone(academicZone).toLocalTime()
+            val end = Instant.ofEpochMilli(event.endsEpochMillis).atZone(academicZone).toLocalTime()
+            listOf(event.title, event.location, start.toString(), end.toString())
+        }
+        .sortedBy { it.startsEpochMillis }
     val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis()) }
     LazyColumn(
         modifier = Modifier.weight(1f),
@@ -630,7 +700,19 @@ internal fun ScheduleScreen(
                     Text("Timetable", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
                     Text("Your complete weekly timetable", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable") }
+                IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable QR") }
+            }
+        }
+        item {
+            val canExport = !state.loading && (state.slots.isNotEmpty() || state.exams.isNotEmpty() || state.assignments.any { it.dueEpochMillis != null })
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = exportToDeviceCalendar, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export to Viora calendar") }
+                OutlinedButton(onClick = exportIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export ICS") }
+                OutlinedButton(onClick = { confirmImport = true }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) { Text("Import ICS") }
+                OutlinedButton(onClick = shareCalendarIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Share timetable") }
+                state.calendarInterchangeMessage?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+                }
             }
         }
         if (state.semesters.size > 1) {
@@ -645,7 +727,9 @@ internal fun ScheduleScreen(
         item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (1..7).forEach { day ->
-                    val hasClasses = state.slots.any { it.dayOfWeek == day }
+                    val hasClasses = state.slots.any { it.dayOfWeek == day } || state.importedCalendarEvents.any {
+                        Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).dayOfWeek.value == day
+                    }
                     FilterChip(
                         selected = selectedDay == day,
                         onClick = { selectedDay = day },
@@ -659,11 +743,12 @@ internal fun ScheduleScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
                     SectionLabel(DayOfWeek.of(selectedDay).getDisplayName(TextStyle.FULL, Locale.getDefault()).uppercase())
-                    Text("${daySlots.size} ${if (daySlots.size == 1) "class" else "classes"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                    val entryCount = daySlots.size + importedForDay.size
+                    Text("$entryCount ${if (entryCount == 1) "entry" else "entries"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
-        if (daySlots.isEmpty()) {
+        if (daySlots.isEmpty() && importedForDay.isEmpty()) {
             item {
                 EmptyStateCard("No classes", "This day has no cached timetable entries.")
             }
@@ -672,7 +757,21 @@ internal fun ScheduleScreen(
                 val isToday = selectedDay == today.dayOfWeek.value
                 val phase = if (isToday) classPhase(slot.startMinute, slot.endMinute, nowMinute) else ClassPhase.UPCOMING
                 val key = classCheckInKey(selectedDate, slot.slotId)
-                ClassCard(slot, state.attendanceFor(slot), phase, state.classCheckIns[key], if (selectedDate <= today && phase != ClassPhase.UPCOMING) key else null, markClass)
+                ClassCard(slot, state.attendanceFor(slot), phase, state.classCheckIns[key], if (selectedDate <= today && phase != ClassPhase.UPCOMING) key else null, markClass, ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa))
+            }
+        }
+        if (importedForDay.isNotEmpty()) {
+            item { SectionLabel("IMPORTED TIMETABLE") }
+            items(importedForDay, key = { "imported:${it.id}" }) { event ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Imported", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                        Text(event.title, style = MaterialTheme.typography.titleMedium)
+                        val time = Instant.ofEpochMilli(event.startsEpochMillis).atZone(academicZone).format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
+                        Text(listOf(time, event.location).filter(String::isNotBlank).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (event.details.isNotBlank()) Text(event.details)
+                    }
+                }
             }
         }
         if (state.calendar.isNotEmpty()) {
@@ -756,6 +855,7 @@ private fun ClassCard(
     checkIn: ClassCheckIn? = null,
     checkInKey: String? = null,
     markClass: (String, ClassCheckIn?) -> Unit = { _, _ -> },
+    ninePointRule: Boolean = false,
     whenText: String? = null,
 ) {
     val accent = when (checkIn) {
@@ -780,7 +880,7 @@ private fun ClassCard(
                 if (slot.title.isNotBlank() && slot.title != slot.code) Text(slot.title, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val metadata = listOf(slot.venue, slot.faculty).filter(String::isNotBlank).joinToString("  ·  ")
                 if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                attendance?.let { AttendanceGuidance(it) }
+                attendance?.let { AttendanceGuidance(it, ninePointRule) }
                 if (checkInKey != null) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -820,7 +920,14 @@ private fun ClassStatusBadge(phase: ClassPhase, checkIn: ClassCheckIn?) {
 }
 
 @Composable
-private fun AttendanceGuidance(attendance: AttendanceUi) {
+private fun AttendanceGuidance(attendance: AttendanceUi, ninePointRule: Boolean = false) {
+    if (ninePointRule) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Spacer(Modifier.size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+            Text("${"%.0f".format(attendance.percentage)}% · 9-point attendance rule applies", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+        }
+        return
+    }
     val projection = AttendanceCalculator.calculate(attendance.attended, attendance.held, 75, attendance.blockSize)
     val skippableMeetings = if (attendance.blockSize > 1) projection.skippableBlocks else projection.skippableClasses
     val (text, color) = when {
@@ -861,7 +968,7 @@ internal fun DetailScreen(
                     ?: state.slots.firstOrNull { sameCourseCode(it.code, code) }?.title
                     ?: code
                 item { Text(title, style = MaterialTheme.typography.headlineMedium) }
-                attendance?.let { item { AttendanceCard(it) } }
+                attendance?.let { item { AttendanceCard(it, AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)) } }
                 val assignments = state.assignments.filter { sameCourseCode(it.courseCode, code) }
                 val materials = state.materials.filter { sameCourseCode(it.courseCode, code) }
                 val visibleMaterials = materials.filter {
@@ -1044,7 +1151,7 @@ private fun ResultsScreen(state: VioraUiState) {
             item { SummaryCard("Last profiled sync", diagnostics.lastOutcome?.replaceFirstChar(Char::uppercase) ?: "No run recorded", listOfNotNull(diagnostics.lastSource, diagnostics.lastDurationMillis?.let { "${it} ms" }, diagnostics.lastRunEpochMillis?.asAcademicTime()).joinToString(" · ")) }
         }
         item { TextButton(onClick = refreshDiagnostics) { Text("Refresh diagnostics") } }
-        item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored in Downloads/Viora-VIT/<course name>") }
+        item { SummaryCard("Downloaded materials", state.downloadStorageBytes.readableBytes(), "Stored privately in Viora/materials/<course name>") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(onClick = clearDownloads) { Text("Clear downloads") }; TextButton(onClick = clearAcademicCache) { Text("Clear academic cache") } } }
         item { Text("Privacy and account", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
         item { Text("Viora is a student-made, unofficial project and is not connected to or endorsed by VIT or VTOP.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
