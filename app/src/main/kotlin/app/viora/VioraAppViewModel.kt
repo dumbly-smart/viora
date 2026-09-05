@@ -77,7 +77,18 @@ data class VioraUiState(
     val classCheckIns: Map<String, ClassCheckIn> = emptyMap(),
 )
 enum class ClassCheckIn { ATTENDED, MISSED }
-data class MarkUi(val id: String, val courseTitle: String, val title: String, val scoredMark: Double?, val maxMarks: Double?, val weightageMark: Double?, val status: String)
+data class MarkUi(
+    val id: String,
+    val courseCode: String,
+    val courseTitle: String,
+    val courseType: String,
+    val title: String,
+    val maxMarks: Double?,
+    val weightagePercent: Double?,
+    val status: String,
+    val scoredMark: Double?,
+    val weightageMark: Double?,
+)
 data class GradeUi(val courseCode: String, val courseTitle: String, val credits: Double?, val total: Double?, val grade: String)
 
 data class AttendanceUi(
@@ -545,7 +556,7 @@ class VioraAppViewModel(
     private fun observeResults(semesterId: String) {
         resultsObservation?.cancel()
         resultsObservation = viewModelScope.launch {
-            launch { graph.results.observeMarks(semesterId).collect { rows -> mutableState.update { state -> state.copy(marks = rows.map { MarkUi(it.id, it.courseTitle, it.title, it.scoredMark, it.maxMarks, it.weightageMark, it.status) }) } } }
+            launch { graph.results.observeMarks(semesterId).collect { rows -> mutableState.update { state -> state.copy(marks = rows.map { MarkUi(it.id, it.courseCode, it.courseTitle, it.courseType, it.title, it.maxMarks, it.weightagePercent, it.status, it.scoredMark, it.weightageMark) }) } } }
             launch { graph.results.observeGrades(semesterId).collect { rows -> mutableState.update { state -> state.copy(grades = rows.map { GradeUi(it.courseCode, it.courseTitle, it.credits, it.total, it.grade) }) } } }
             launch { graph.results.observeSummary().collect { summary -> mutableState.update { it.copy(gpa = summary?.gpa, cgpa = summary?.cgpa, registeredCredits = summary?.registeredCredits, earnedCredits = summary?.earnedCredits) } } }
         }
