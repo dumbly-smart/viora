@@ -112,7 +112,6 @@ import app.viora.setup.SetupAction
 import app.viora.setup.SetupScreen
 import app.viora.setup.SetupState
 import app.viora.setup.VtopVerificationScreen
-import app.viora.assignment.VtopAssignmentUploadScreen
 import app.viora.sync.VioraSyncScheduler
 import app.viora.ui.VioraTheme
 import app.viora.ui.VioraAmber
@@ -166,6 +165,14 @@ class MainActivity : ComponentActivity() {
     private val openIcsDocument = registerForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(model::importCalendarIcs) }
+    private var pendingAssignmentUploadId: String? = null
+    private val assignmentDocument = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val assignmentId = pendingAssignmentUploadId
+        pendingAssignmentUploadId = null
+        if (uri != null && assignmentId != null) model.uploadAssignment(assignmentId, uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_Viora)
@@ -190,10 +197,8 @@ class MainActivity : ComponentActivity() {
                 }
                 if (state.interactiveVerification) {
                     VtopVerificationScreen(state.loading, state.error, model::completeInteractiveVerification, model::interactiveVerificationError, model::cancelInteractiveVerification)
-                } else if (state.assignmentUploadSession != null) {
-                    VtopAssignmentUploadScreen(requireNotNull(state.assignmentUploadSession), model::closeAssignmentUpload)
                 } else if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, model::beginAssignmentUpload, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, { assignment -> pendingAssignmentUploadId = assignment.id; assignmentDocument.launch(arrayOf("*/*")) }, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -247,7 +252,7 @@ private val destinations = listOf(
     Destination("Home", Icons.Outlined.Home),
     Destination("Schedule", Icons.Outlined.CalendarMonth),
     Destination("Courses", Icons.AutoMirrored.Outlined.MenuBook),
-    Destination("Tasks", Icons.Outlined.Checklist),
+    Destination("Assessments", Icons.Outlined.Checklist),
     Destination("More", Icons.Outlined.MoreHoriz),
 )
 
@@ -264,7 +269,7 @@ private fun Dashboard(
     openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
     downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit,
     downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit,
-    uploadAssignment: () -> Unit,
+    uploadAssignment: (AssignmentUi) -> Unit,
     setSearchQuery: (String) -> Unit,
     setQuietHours: (Boolean) -> Unit,
     setSyncHours: (Int) -> Unit,
@@ -338,7 +343,7 @@ private fun Dashboard(
                         shareCalendarIcs = shareCalendarIcs,
                     )
                     2 -> AcademicsScreen(state, initialTab = if (initialRoute == "attendance") 2 else 0) { kind, id -> detail = DetailSelection(kind, id) }
-                    3 -> TasksScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("exam", it.id) })
+                    3 -> AssessmentsScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("assessments-course", it) })
                     else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
                 }
             }
@@ -787,47 +792,50 @@ internal fun ScheduleScreen(
 }
 
 @Composable
-private fun TasksScreen(state: VioraUiState, uploadAssignment: () -> Unit, showAssignment: (AssignmentUi) -> Unit, showExam: (ExamUi) -> Unit) {
-    val visibleExams = state.exams.filter {
-        shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis())
-    }
+internal fun AssessmentsScreen(
+    state: VioraUiState,
+    uploadAssignment: (AssignmentUi) -> Unit,
+    showAssignment: (AssignmentUi) -> Unit,
+    showCourse: (String) -> Unit,
+    nowEpochMillis: Long = System.currentTimeMillis(),
+) {
+    val dueThisWeek = state.assessmentsDueThisWeek(nowEpochMillis)
+    val courseGroups = state.assessmentCourseGroups()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { Text("Tasks", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Digital assignments", style = MaterialTheme.typography.titleLarge)
-                Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") }
-            }
+        item { Text("Assessments", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
+        item { Text("Due this week", style = MaterialTheme.typography.titleLarge) }
+        items(dueThisWeek, key = { "due:${it.id}" }) { assignment ->
+            AssessmentCard(assignment, Modifier.clickable { showAssignment(assignment) })
         }
-        items(state.assignments.orderedByDueDate(), key = AssignmentUi::id) { assignment ->
-            val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
-            Card(Modifier.fillMaxWidth().clickable { showAssignment(assignment) }) {
+        if (dueThisWeek.isEmpty()) item { Text("No assessments are due in the next seven days.") }
+        item { Text("By course", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
+        items(courseGroups, key = AssessmentCourseGroup::courseCode) { group ->
+            Card(Modifier.fillMaxWidth().clickable { showCourse(group.courseCode) }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(assignment.title, style = MaterialTheme.typography.titleMedium)
-                    Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Due ${assignment.dueEpochMillis.asAcademicTime("date unavailable")}")
-                    Text(if (submitted) "Submitted" else "Not submitted", color = if (submitted) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
-                    if (assignment.lastUpload.isNotBlank() && !assignment.lastUpload.equals("N/A", true)) Text("Last upload · ${assignment.lastUpload}")
-                    if (assignment.status.isNotBlank()) Text(assignment.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(group.courseTitle.ifBlank { group.courseCode }, style = MaterialTheme.typography.titleMedium)
+                    Text("${group.courseCode} · ${group.assignments.size} ${if (group.assignments.size == 1) "assessment" else "assessments"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-        if (state.assignments.isEmpty()) item { Text("No digital assignments are cached.") }
-        item { Text("Assessment marks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
-        items(state.marks, key = MarkUi::id) { mark ->
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
-                Text(mark.title, style = MaterialTheme.typography.titleMedium)
-                Text(mark.courseTitle)
-                Text(listOfNotNull(mark.scoredMark?.let { "${it.cleanNumber()}/${mark.maxMarks?.cleanNumber() ?: "—"}" }, mark.weightageMark?.let { "Weighted ${it.cleanNumber()}" }, mark.status.takeIf(String::isNotBlank)).joinToString(" · "))
-            } }
+        if (courseGroups.isEmpty()) item { Text("No digital assignments are cached.") }
+    }
+}
+
+@Composable
+private fun AssessmentCard(assignment: AssignmentUi, modifier: Modifier = Modifier) {
+    val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
+    Card(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(assignment.title, style = MaterialTheme.typography.titleMedium)
+            Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Due ${assignment.dueEpochMillis.asAcademicTime("date unavailable")}")
+            Text(if (submitted) "Submitted" else "Pending", color = if (submitted) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
+            if (assignment.lastUpload.isNotBlank() && !assignment.lastUpload.equals("N/A", true)) Text("Last upload · ${assignment.lastUpload}")
         }
-        item { Text("Examinations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp)) }
-        items(visibleExams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
-        if (visibleExams.isEmpty()) item { Text("No upcoming examinations.") }
     }
 }
 
@@ -956,7 +964,7 @@ internal fun DetailScreen(
     openMaterial: (app.viora.database.CourseMaterialEntity, Boolean) -> Unit,
     downloadMaterial: (app.viora.database.CourseMaterialEntity) -> Unit = {},
     downloadMaterials: (List<app.viora.database.CourseMaterialEntity>) -> Unit = {},
-    uploadAssignment: () -> Unit = {},
+    uploadAssignment: (AssignmentUi) -> Unit = {},
 ) {
     var materialQuery by remember(selection.kind, selection.id) { mutableStateOf("") }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1009,11 +1017,42 @@ internal fun DetailScreen(
             "assignment" -> state.assignments.firstOrNull { it.id == selection.id }?.let { assignment ->
                 item { Text(assignment.title, style = MaterialTheme.typography.headlineMedium) }
                 item { SummaryCard(assignment.courseLabel(), assignment.status.ifBlank { "Status unavailable" }, assignment.dueEpochMillis.asAcademicTime("Due time unavailable")) }
-                item { Button(onClick = uploadAssignment, enabled = !state.loading) { Text("Upload on VTOP") } }
+                val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
+                val beforeDeadline = assignment.dueEpochMillis?.let { it > System.currentTimeMillis() } == true
+                if (beforeDeadline) item { AssignmentUploadAction(assignment, submitted, state, uploadAssignment) }
+            }
+            "assessments-course" -> {
+                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, selection.id) }.orderedByDueDate()
+                val title = assignments.firstOrNull()?.courseTitle?.takeIf(String::isNotBlank) ?: selection.id
+                item { Text(title, style = MaterialTheme.typography.headlineMedium) }
+                item { Text("Assessments", style = MaterialTheme.typography.titleLarge) }
+                assignments.forEach { assignment ->
+                    item("assessment-course:${assignment.id}") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            AssessmentCard(assignment)
+                            val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
+                            if (assignment.dueEpochMillis?.let { it > System.currentTimeMillis() } == true) {
+                                AssignmentUploadAction(assignment, submitted, state, uploadAssignment)
+                            }
+                        }
+                    }
+                }
             }
             "exam" -> state.exams.firstOrNull { it.id == selection.id }?.let { exam -> item { ExamCard(exam) } }
             "material" -> state.materials.firstOrNull { it.id == selection.id }?.let { material -> item { MaterialDetailCard(material, state, openMaterial) } }
         }
+    }
+}
+
+@Composable
+private fun AssignmentUploadAction(
+    assignment: AssignmentUi,
+    submitted: Boolean,
+    state: VioraUiState,
+    uploadAssignment: (AssignmentUi) -> Unit,
+) {
+    Button(onClick = { uploadAssignment(assignment) }, enabled = state.uploadingAssignmentId == null) {
+        Text(if (state.uploadingAssignmentId == assignment.id) "Uploading…" else if (submitted) "Replace submission" else "Submit file")
     }
 }
 
@@ -1383,6 +1422,31 @@ internal fun VioraUiState.homeDueAssignments(nowEpochMillis: Long, lookAheadDays
         val due = assignment.dueEpochMillis ?: return@filter false
         due in (nowEpochMillis + 1)..horizon && !isAssignmentSubmitted(assignment.status, assignment.lastUpload)
     }.orderedByDueDate()
+}
+
+internal fun VioraUiState.assessmentsDueThisWeek(nowEpochMillis: Long, lookAheadDays: Long = 7): List<AssignmentUi> {
+    val horizon = nowEpochMillis + lookAheadDays * 24 * 60 * 60 * 1000
+    return assignments.filter { assignment ->
+        assignment.dueEpochMillis?.let { it in (nowEpochMillis + 1)..horizon } == true
+    }.orderedByDueDate()
+}
+
+internal data class AssessmentCourseGroup(
+    val courseCode: String,
+    val courseTitle: String,
+    val assignments: List<AssignmentUi>,
+)
+
+internal fun VioraUiState.assessmentCourseGroups(): List<AssessmentCourseGroup> {
+    val groups = mutableListOf<MutableList<AssignmentUi>>()
+    assignments.orderedByDueDate().forEach { assignment ->
+        groups.firstOrNull { sameCourseCode(it.first().courseCode, assignment.courseCode) }?.add(assignment)
+            ?: groups.add(mutableListOf(assignment))
+    }
+    return groups.map { rows ->
+        val first = rows.first()
+        AssessmentCourseGroup(first.courseCode.filter(Char::isLetterOrDigit), first.courseTitle, rows.toList())
+    }.sortedBy { it.courseTitle.ifBlank { it.courseCode }.lowercase(Locale.ENGLISH) }
 }
 
 internal fun List<AssignmentUi>.orderedByDueDate(): List<AssignmentUi> =

@@ -19,7 +19,6 @@ import app.viora.domain.AttendanceCalculator
 import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
-import app.viora.network.VtopWebSession
 import app.viora.network.AuthenticationException
 import app.viora.sync.SyncOutcome
 import app.viora.sync.VioraSyncScheduler
@@ -48,7 +47,7 @@ data class VioraUiState(
     val loading: Boolean = false,
     val syncMessage: String? = null,
     val error: String? = null,
-    val assignmentUploadSession: VtopWebSession? = null,
+    val uploadingAssignmentId: String? = null,
     val semesters: List<SemesterOption> = emptyList(),
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
@@ -240,24 +239,27 @@ class VioraAppViewModel(
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
-    fun beginAssignmentUpload() {
-        mutableState.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
-            runCatching {
-                check(graph.sessions.ensureActive() == SessionResolution.Ready) { "Sign in again before uploading" }
-                val semester = requireNotNull(state.value.activeSemester) { "Select a semester before uploading" }
-                graph.gateway.digitalAssignmentUploadSession(semester.id)
-            }.onSuccess { session -> mutableState.update { it.copy(loading = false, assignmentUploadSession = session) } }
-                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.message ?: "Could not open VTOP assignment upload") } }
+    fun uploadAssignment(assignmentId: String, uri: Uri) {
+        val assignment = state.value.assignments.firstOrNull { it.id == assignmentId }
+        if (assignment?.dueEpochMillis == null || assignment.dueEpochMillis <= System.currentTimeMillis()) {
+            mutableState.update { it.copy(error = "This assessment is no longer open for submission") }
+            return
         }
-    }
-    fun closeAssignmentUpload(cookieHeader: String?) {
-        mutableState.update { it.copy(assignmentUploadSession = null) }
+        mutableState.update { it.copy(uploadingAssignmentId = assignmentId, error = null) }
         viewModelScope.launch {
-            if (!cookieHeader.isNullOrBlank()) graph.gateway.importInteractiveSession(cookieHeader)
-            state.value.activeSemester?.let { semester ->
-                graph.assignments.refresh(semester.id)
-                graph.reminders.schedule(semester.id)
+            val semester = state.value.activeSemester
+            val result = if (semester == null || graph.sessions.ensureActive() != SessionResolution.Ready) {
+                Result.failure(IllegalStateException("session unavailable"))
+            } else {
+                graph.assignmentUploads.upload(semester.id, assignmentId, uri)
+            }
+            if (result.isSuccess && semester != null) graph.reminders.schedule(semester.id)
+            mutableState.update {
+                it.copy(
+                    uploadingAssignmentId = null,
+                    syncMessage = if (result.isSuccess) "Assessment uploaded and refreshed" else it.syncMessage,
+                    error = if (result.isFailure) "Could not upload the assessment. Cached assignments were not changed." else null,
+                )
             }
         }
     }

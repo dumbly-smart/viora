@@ -162,20 +162,6 @@ class HttpVtopGateway(
         if (VtopDocument.isAuthenticationPage(Jsoup.parse(html))) throw AuthenticationException()
     }
 
-    override suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession = withContext(Dispatchers.IO) {
-        val token = currentToken()
-        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val url = DA_PAGE.toHttpUrl()
-        val body = academicBody(token, id, semesterId)
-        val encoded = (0 until body.size).joinToString("&") { "${body.encodedName(it)}=${body.encodedValue(it)}" }
-        VtopWebSession(
-            url = DA_PAGE,
-            cookies = cookieJar.loadForRequest(url).map { "${it.name}=${it.value}; Path=/vtop; Secure" },
-            postBody = encoded,
-            shellUrl = VTOP_SHELL,
-        )
-    }
-
     override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
         val token = ensureAuthenticatedPage(EXAM_PAGE)
         val html = academicPost(EXAM_PROCESS, token, semesterId)
@@ -416,7 +402,6 @@ class HttpVtopGateway(
         .trim()
 
     companion object {
-        private const val VTOP_SHELL = "https://vtop.vit.ac.in/vtop/init/page"
         private const val SITE_ROOT = "https://vtop.vit.ac.in/"
         private const val VTOP_ROOT = "https://vtop.vit.ac.in/vtop/"
         private const val BASE = "https://vtop.vit.ac.in/vtop"

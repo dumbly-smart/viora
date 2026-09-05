@@ -99,6 +99,31 @@ class HomeAgendaTest {
         assertEquals(listOf("open"), state.homeDueAssignments(now).map(AssignmentUi::id))
     }
 
+    @Test fun `assessments due this week includes pending and submitted work`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val state = VioraUiState(assignments = listOf(
+            AssignmentUi("pending", "CSE1001", "DA 1", now + 86_400_000, "Pending"),
+            AssignmentUi("submitted", "CSE1002", "DA 2", now + 2 * 86_400_000, "Open", "answer.pdf"),
+            AssignmentUi("later", "CSE1003", "DA 3", now + 8 * 86_400_000, "Pending"),
+        ))
+
+        assertEquals(listOf("pending", "submitted"), state.assessmentsDueThisWeek(now).map(AssignmentUi::id))
+    }
+
+    @Test fun `assessment course groups preserve every assignment`() {
+        val state = VioraUiState(assignments = listOf(
+            AssignmentUi("one", "CSE1001", "DA 1", null, "Pending", courseTitle = "Synthetic Course"),
+            AssignmentUi("two", "CSE 1001 (Theory)", "DA 2", null, "Submitted", courseTitle = "Synthetic Course"),
+            AssignmentUi("three", "MAT1001", "Quiz", null, "Pending", courseTitle = "Mathematics"),
+        ))
+
+        val groups = state.assessmentCourseGroups()
+
+        assertEquals(2, groups.size)
+        assertEquals(listOf("one", "two"), groups.first { it.courseCode == "CSE1001" }.assignments.map(AssignmentUi::id))
+        assertEquals(listOf("three"), groups.first { it.courseCode == "MAT1001" }.assignments.map(AssignmentUi::id))
+    }
+
     @Test fun `cached agenda remains available while a refresh is loading`() {
         val now = time(2026, 8, 12, 8, 0)
         val state = VioraUiState(

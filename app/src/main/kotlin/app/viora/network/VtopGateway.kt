@@ -90,13 +90,6 @@ fun AssignmentUploadLocator.accepts(mimeType: String, fileName: String): Boolean
     }
 }
 
-data class VtopWebSession(
-    val url: String,
-    val cookies: List<String>,
-    val postBody: String? = null,
-    val shellUrl: String? = null,
-)
-
 data class ExamRecord(
     val id: String,
     val courseCode: String,
@@ -115,7 +108,6 @@ interface VtopGateway {
     suspend fun timetable(semesterId: String): TimetableSnapshot
     suspend fun attendance(semesterId: String): AttendanceSnapshot
     suspend fun digitalAssignments(semesterId: String): List<DigitalAssignmentRecord>
-    suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession
     suspend fun uploadDigitalAssignment(semesterId: String, assignmentId: String, fileName: String, mimeType: String, bytes: ByteArray)
     suspend fun exams(semesterId: String): List<ExamRecord>
     suspend fun marks(semesterId: String): List<MarkRecord>

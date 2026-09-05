@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import org.junit.Assert.assertEquals
 import app.viora.database.CourseMaterialEntity
 import app.viora.ui.VioraTheme
 import org.junit.Rule
@@ -109,5 +110,65 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("9-point attendance rule", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Attend next", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Safe to skip", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun assessmentsShowWeeklyStatusesAndCourseDrillDown() {
+        val now = System.currentTimeMillis()
+        val state = VioraUiState(assignments = listOf(
+            AssignmentUi("pending", "CSE1001", "Pending DA", now + 86_400_000, "Pending", courseTitle = "Synthetic Course"),
+            AssignmentUi("submitted", "CSE1001", "Submitted DA", now + 2 * 86_400_000, "Open", "answer.pdf", "Synthetic Course"),
+        ))
+        var openedCourse = ""
+        compose.setContent {
+            VioraTheme {
+                AssessmentsScreen(state, uploadAssignment = {}, showAssignment = {}, showCourse = { openedCourse = it })
+            }
+        }
+
+        compose.onNodeWithText("Due this week").assertExists()
+        compose.onNodeWithText("Pending").assertExists()
+        compose.onNodeWithText("Submitted").assertExists()
+        compose.onNodeWithText("Synthetic Course", substring = true).performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("CSE1001", openedCourse) }
+
+        compose.setContent {
+            VioraTheme {
+                DetailScreen(state, DetailSelection("assessments-course", "CSE1001"), openMaterial = { _, _ -> })
+            }
+        }
+        compose.onNodeWithText("Pending DA").assertExists()
+        compose.onNodeWithText("Submitted DA").assertExists()
+        compose.onNodeWithText("Submit file").assertExists()
+        compose.onNodeWithText("Replace submission").assertExists()
+    }
+
+    @Test
+    fun assessmentDetailOffersSubmitOrReplacementOnlyBeforeDeadline() {
+        val now = System.currentTimeMillis()
+        var uploaded = ""
+        fun render(assignment: AssignmentUi) {
+            compose.setContent {
+                VioraTheme {
+                    DetailScreen(
+                        VioraUiState(assignments = listOf(assignment)),
+                        DetailSelection("assignment", assignment.id),
+                        openMaterial = { _, _ -> },
+                        uploadAssignment = { uploaded = it.id },
+                    )
+                }
+            }
+        }
+
+        render(AssignmentUi("pending", "CSE1001", "Pending DA", now + 86_400_000, "Pending"))
+        compose.onNodeWithText("Submit file").performClick()
+        compose.runOnIdle { assertEquals("pending", uploaded) }
+
+        render(AssignmentUi("submitted", "CSE1001", "Submitted DA", now + 86_400_000, "Submitted"))
+        compose.onNodeWithText("Replace submission").assertExists()
+
+        render(AssignmentUi("closed", "CSE1001", "Closed DA", now - 1, "Pending"))
+        compose.onNodeWithText("Submit file").assertDoesNotExist()
+        compose.onNodeWithText("Replace submission").assertDoesNotExist()
     }
 }
