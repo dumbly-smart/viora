@@ -42,6 +42,14 @@ make attendance milestone allowances forward-looking, and simplify Schedule.
   each CAT-1, CAT-2, or FAT start in `Asia/Kolkata`.
 - Apply academic-calendar holidays, weekday/day-order substitutions, exam-day
   suppression, course/type matching, and whole lab-block sizes.
+- Exam suppression is global for each CAT/FAT series, not course-specific.
+  Prefer an explicit VIT academic-calendar exam-period end. If VIT does not
+  expose the complete all-slot window, suppress through the latest cached exam
+  in that series and conservatively resume on the next valid instructional
+  Monday or explicit day-order date. Present this fallback as an estimate.
+- Reuse this global exam window in Home, Schedule, calendar export, and
+  attendance projections so students whose own slots finish early are not
+  projected as attending classes while other slot exams are still running.
 - Let `A` be attended units, `H` held units, and `F` all projected units before
   the milestone. Choose the greatest number of whole occurrences whose skipped
   units `S` satisfy:
