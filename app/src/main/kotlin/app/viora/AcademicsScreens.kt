@@ -69,11 +69,11 @@ private fun MarksScreen(state: VioraUiState) {
     ) {
         item {
             Text(
-                "Assessment marks",
+                "Marks",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.semantics { heading() },
             )
-            Text("Cached VTOP assessment marks by course.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Every cached VTOP mark component, grouped by course.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(sections, key = MarkSectionUi::courseCode) { section ->
             Card(Modifier.fillMaxWidth()) {
@@ -91,16 +91,27 @@ private fun MarksScreen(state: VioraUiState) {
                             if (mark.courseType.isNotBlank()) {
                                 Text("VTOP type: ${mark.courseType}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text("Raw score: ${mark.scoredMark.displayMark()} / ${mark.maxMarks.displayMark()}")
-                            Text("Weighted score: ${mark.weightageMark.displayMark()}")
-                            Text("Percentage weight: ${mark.weightagePercent.displayMark()}%")
-                            Text(mark.status.ifBlank { "—" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            when {
+                                mark.scoredMark != null && mark.maxMarks != null -> Text("Raw score: ${mark.scoredMark.displayMark()} / ${mark.maxMarks.displayMark()}")
+                                mark.scoredMark != null -> Text("Raw score: ${mark.scoredMark.displayMark()}")
+                                mark.maxMarks != null -> Text("Maximum score: ${mark.maxMarks.displayMark()}")
+                                else -> Text("Raw score unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (mark.weightageMark != null) Text("Weighted score: ${mark.weightageMark.displayMark()}")
+                            if (mark.weightagePercent != null) Text("Percentage weight: ${mark.weightagePercent.displayMark()}%")
+                            if (mark.weightageMark == null && mark.weightagePercent == null) {
+                                Text("Weightage unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                mark.status.takeIf(String::isNotBlank)?.let { "Publication: $it" } ?: "Publication status unavailable",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
             }
         }
-        if (sections.isEmpty()) item { Text("No assessment marks have been cached yet.") }
+        if (sections.isEmpty()) item { Text("No marks have been cached yet.") }
     }
 }
 

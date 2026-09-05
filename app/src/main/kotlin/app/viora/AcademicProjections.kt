@@ -131,19 +131,24 @@ private fun Long.academicDate(): LocalDate = Instant.ofEpochMilli(this).atZone(a
 private fun Long.asAcademicTime(): String =
     Instant.ofEpochMilli(this).atZone(academicCalendarZone).format(academicCalendarTime)
 
-internal fun List<MarkUi>.markSections(): List<MarkSectionUi> =
-    groupBy { mark ->
-        mark.courseCode.trim().takeIf(String::isNotEmpty)?.uppercase(Locale.ROOT)
-            ?: mark.courseTitle.trim()
+internal fun List<MarkUi>.markSections(): List<MarkSectionUi> {
+    val groups = mutableListOf<MutableList<MarkUi>>()
+    forEach { mark ->
+        groups.firstOrNull { rows ->
+            val first = rows.first()
+            sameCourseCode(first.courseCode, mark.courseCode) ||
+                (first.courseCode.isBlank() && mark.courseCode.isBlank() && first.courseTitle.equals(mark.courseTitle, true))
+        }?.add(mark) ?: groups.add(mutableListOf(mark))
     }
-        .map { (key, rows) ->
-            MarkSectionUi(
-                courseCode = key,
-                courseTitle = rows.first().courseTitle,
-                marks = rows.sortedWith(compareBy<MarkUi> { assessmentRank(it.title) }.thenBy { it.title.lowercase(Locale.ROOT) }),
-            )
-        }
-        .sortedBy { it.courseCode.lowercase(Locale.ROOT) }
+    return groups.map { rows ->
+        val first = rows.first()
+        MarkSectionUi(
+            courseCode = first.courseCode.trim().uppercase(Locale.ROOT).ifBlank { first.courseTitle.trim() },
+            courseTitle = first.courseTitle,
+            marks = rows.sortedWith(compareBy<MarkUi> { assessmentRank(it.title) }.thenBy { it.title.lowercase(Locale.ROOT) }),
+        )
+    }.sortedBy { it.courseCode.lowercase(Locale.ROOT) }
+}
 
 enum class MilestoneState { SCHEDULED, PASSED, NOT_SCHEDULED, NO_CLASSES }
 

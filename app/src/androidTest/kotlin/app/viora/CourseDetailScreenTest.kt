@@ -3,6 +3,8 @@ package app.viora
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
@@ -68,7 +70,10 @@ class CourseDetailScreenTest {
             attendanceTarget = 80,
             marks = listOf(
                 MarkUi("theory", "CSE1001", "Synthetic Course", "Theory", "CAT 1", 20.0, 10.0, "Published", 18.0, 9.0),
-                MarkUi("lab", "CSE1001", "Synthetic Course", "Lab", "CAT 1", 20.0, null, "Pending", null, null),
+                MarkUi("fat", "CSE1001", "Synthetic Course", "Theory", "FAT", 100.0, 40.0, "Published", 81.0, 32.4),
+                MarkUi("quiz", "CSE1001", "Synthetic Course", "Theory", "Quiz", 10.0, null, "Published", 9.0, null),
+                MarkUi("da", "CSE1001", "Synthetic Course", "Theory", "Digital Assessment", 10.0, null, "Published", 8.0, null),
+                MarkUi("lab", "CSE 1001 (Lab)", "Synthetic Course", "Lab", "Lab Exercise", 20.0, null, "Pending", null, null),
             ),
         )
         compose.setContent {
@@ -79,12 +84,16 @@ class CourseDetailScreenTest {
 
         compose.onNodeWithText("Courses").performClick()
         compose.onNodeWithText("Marks").performClick()
-        compose.onNodeWithText("Assessment marks").assertExists()
+        compose.onNodeWithText("Marks").assertExists()
+        listOf("CAT 1", "FAT", "Quiz", "Digital Assessment", "Lab Exercise").forEach { title ->
+            compose.onNodeWithText(title).assertExists()
+        }
         compose.onNodeWithText("VTOP type: Theory").assertExists()
         compose.onNodeWithText("VTOP type: Lab").assertExists()
         compose.onNodeWithText("Raw score: 18 / 20").assertExists()
-        compose.onNodeWithText("Raw score: — / 20").assertExists()
-        compose.onNodeWithText("Weighted score: —").assertExists()
+        compose.onNodeWithText("Maximum score: 20").assertExists()
+        compose.onAllNodesWithText("Weightage unavailable").assertCountEquals(3)
+        compose.onNodeWithText("Publication: Pending").assertExists()
         compose.onNodeWithText("Attendance").performClick()
         compose.onNodeWithText("Skip allowance").assertExists()
         compose.onNodeWithText("active 80%", substring = true).assertExists()

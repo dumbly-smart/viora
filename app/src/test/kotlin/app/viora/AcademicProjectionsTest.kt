@@ -43,6 +43,17 @@ class AcademicProjectionsTest {
     }
 
     @Test
+    fun `keeps theory and lab components under the same formatted course code`() {
+        val sections = listOf(
+            mark("CAT 1", courseCode = "CSE1001", courseTitle = "Synthetic Course").copy(courseType = "Theory"),
+            mark("Lab Exercise", courseCode = "CSE 1001 (Lab)", courseTitle = "Synthetic Course").copy(courseType = "Lab"),
+        ).markSections()
+
+        assertEquals(1, sections.size)
+        assertEquals(listOf("Theory", "Lab"), sections.single().marks.map(MarkUi::courseType))
+    }
+
+    @Test
     fun `preserves unavailable mark values`() {
         val result = listOf(mark("Quiz 1", scoredMark = null, maxMarks = null, weightageMark = null))
             .markSections()
