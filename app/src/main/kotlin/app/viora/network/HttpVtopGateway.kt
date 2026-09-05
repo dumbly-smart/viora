@@ -20,6 +20,9 @@ import okhttp3.FormBody
 import okhttp3.Cookie
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MultipartBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import java.io.IOException
@@ -138,6 +141,25 @@ class HttpVtopGateway(
         val records = attempts.mapNotNull { it.getOrNull() }.flatten().distinctBy(DigitalAssignmentRecord::id)
         if (subjects.isNotEmpty() && attempts.none { it.isSuccess }) throw attempts.first().exceptionOrNull() ?: IOException("DA details could not be fetched")
         records
+    }
+
+    override suspend fun uploadDigitalAssignment(
+        semesterId: String,
+        assignmentId: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ) = withContext(Dispatchers.IO) {
+        require(bytes.size <= 10 * 1024 * 1024) { "The selected assessment file is too large" }
+        val locator = requireAssignmentUploadLocator(digitalAssignments(semesterId), assignmentId)
+        require(locator.accepts(mimeType, fileName)) { "VTOP does not accept this file type for the assessment" }
+        locator.maxBytes?.let { maximum -> require(bytes.size.toLong() <= maximum) { "The selected assessment file is too large" } }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+            locator.fields.forEach { (name, value) -> addFormDataPart(name, value) }
+            addFormDataPart(locator.fileField, fileName, bytes.toRequestBody(mimeType.toMediaTypeOrNull()))
+        }.build()
+        val html = execute(Request.Builder().url(resolveAssignmentUploadAction(locator.requestPath)).post(body).build())
+        if (VtopDocument.isAuthenticationPage(Jsoup.parse(html))) throw AuthenticationException()
     }
 
     override suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession = withContext(Dispatchers.IO) {
