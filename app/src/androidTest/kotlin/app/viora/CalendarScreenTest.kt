@@ -17,6 +17,8 @@ import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
+import app.viora.network.SemesterOption
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -31,7 +33,7 @@ class CalendarScreenTest {
 
         compose.setContent {
             VioraTheme {
-                ScheduleScreen(state, {}, {}, { _, _ -> }, {})
+                ScheduleScreen(state, {}, { _, _ -> }, {})
             }
         }
 
@@ -100,7 +102,7 @@ class CalendarScreenTest {
 
         compose.setContent {
             VioraTheme {
-                ScheduleScreen(state, {}, {}, { _, _ -> }, {})
+                ScheduleScreen(state, {}, { _, _ -> }, {})
             }
         }
 
@@ -110,6 +112,23 @@ class CalendarScreenTest {
         compose.onNodeWithText("Imported class").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Imported").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Imported 1 event").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun scheduleShowsCurrentTimetableBeforeInterchangeWithoutSemesterChips() {
+        val today = LocalDate.now(ZoneId.of("Asia/Kolkata"))
+        val state = markerState(today).copy(
+            semesters = listOf(SemesterOption("current", "Fall 2026"), SemesterOption("previous", "Winter 2026")),
+            activeSemester = SemesterOption("current", "Fall 2026"),
+        )
+
+        compose.setContent { VioraTheme { ScheduleScreen(state, {}, { _, _ -> }, {}) } }
+
+        compose.onNodeWithText("Fall 2026").assertDoesNotExist()
+        compose.onNodeWithText("Winter 2026").assertDoesNotExist()
+        val timetableTop = compose.onNodeWithText("Synthetic Course").performScrollTo().fetchSemanticsNode().boundsInRoot.top
+        val exportTop = compose.onNodeWithText("Export to Viora calendar").performScrollTo().fetchSemanticsNode().boundsInRoot.top
+        assertTrue(timetableTop < exportTop)
     }
 
     private fun markerState(date: LocalDate): VioraUiState {

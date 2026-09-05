@@ -336,7 +336,6 @@ private fun Dashboard(
                     0 -> HomeScreen(state, PaddingValues())
                     1 -> ScheduleScreen(
                         state = state,
-                        selectSemester = selectSemester,
                         shareTimetableQr = shareTimetableQr,
                         markClass = markClass,
                         showExam = { detail = DetailSelection("exam", it.id) },
@@ -651,7 +650,6 @@ internal fun AttendanceCard(item: AttendanceUi, ninePointRule: Boolean = false) 
 @Composable
 internal fun ScheduleScreen(
     state: VioraUiState,
-    selectSemester: (app.viora.network.SemesterOption) -> Unit,
     shareTimetableQr: () -> Unit,
     markClass: (String, ClassCheckIn?) -> Unit,
     showExam: (ExamUi) -> Unit,
@@ -712,27 +710,6 @@ internal fun ScheduleScreen(
             }
         }
         item {
-            val canExport = !state.loading && (state.slots.isNotEmpty() || state.exams.isNotEmpty() || state.assignments.any { it.dueEpochMillis != null })
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = exportToDeviceCalendar, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export to Viora calendar") }
-                OutlinedButton(onClick = exportIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export ICS") }
-                OutlinedButton(onClick = { confirmImport = true }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) { Text("Import ICS") }
-                OutlinedButton(onClick = shareCalendarIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Share timetable") }
-                state.calendarInterchangeMessage?.let { message ->
-                    Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                }
-            }
-        }
-        if (state.semesters.size > 1) {
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.semesters.take(3).forEach { semester ->
-                        FilterChip(selected = semester == state.activeSemester, onClick = { selectSemester(semester) }, label = { Text(semester.name) })
-                    }
-                }
-            }
-        }
-        item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (1..7).forEach { day ->
                     val hasClasses = state.slots.any { it.dayOfWeek == day } || state.importedCalendarEvents.any {
@@ -779,6 +756,18 @@ internal fun ScheduleScreen(
                         Text(listOf(time, event.location).filter(String::isNotBlank).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (event.details.isNotBlank()) Text(event.details)
                     }
+                }
+            }
+        }
+        item {
+            val canExport = !state.loading && (state.slots.isNotEmpty() || state.exams.isNotEmpty() || state.assignments.any { it.dueEpochMillis != null })
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = exportToDeviceCalendar, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export to Viora calendar") }
+                OutlinedButton(onClick = exportIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export ICS") }
+                OutlinedButton(onClick = { confirmImport = true }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) { Text("Import ICS") }
+                OutlinedButton(onClick = shareCalendarIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Share timetable") }
+                state.calendarInterchangeMessage?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
                 }
             }
         }
