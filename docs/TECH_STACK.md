@@ -58,7 +58,7 @@ Compose is also used for:
 
 - Current and next class cards
 - A calendar-aware seven-day academic timeline
-- Cached assessment Marks and Attendance screens, including CAT 1, CAT 2, and FAT milestone allowances
+- Complete cached Marks and Attendance screens, including CAT 1, CAT 2, and FAT forward-looking milestone allowances
 - A local-only academic calendar view built from cached academic records
 - Attendance projections and what-if controls
 - Consolidated course, assignment, exam, and material detail views
@@ -113,7 +113,11 @@ OkHttp 5.3.2 performs network requests. The client has 20-second connection and 
 
 `VtopGateway` is the interface between the rest of the app and VTOP. `HttpVtopGateway` owns endpoint paths, request forms, CSRF tokens, authorized student IDs, session detection, and conversion from parser results into typed snapshots.
 
-The gateway covers semesters, timetable, attendance, assignments, exams, marks, grades, CGPA, calendar, class messages, course-page faculty/material metadata, and on-demand material bodies.
+The gateway covers semesters, timetable, attendance, assignments, native
+assignment multipart upload, exams, marks, grades, CGPA, calendar, class
+messages, course-page faculty/material metadata, and on-demand material bodies.
+Upload actions are accepted only when fresh authenticated assignment markup
+provides the form fields and a VTOP-only HTTPS target.
 
 There is no application server. Viora communicates directly with VTOP from the phone. Search, parsing, attendance math, caching, change detection, notifications, and downloads all happen locally.
 
@@ -126,7 +130,7 @@ VTOP is an HTML application, so Viora uses Jsoup 1.22.1 rather than pretending t
 - Parsers return `ParseResult.Success`, `AuthenticationRequired`, or `InvalidDocument`.
 - Repositories decide whether a parsed snapshot is safe to commit.
 
-Parsers normalize headers and support known aliases—for example, `Course Code` versus `Subject Code`, or `Time` versus `Session`. Attendance supports both separate attended/held columns and the combined `13/15` form used by current VTOP layouts. Theory and lab rows have separate stable identities and are never collapsed just because their subject names match.
+Parsers normalize headers and support known aliases—for example, `Course Code` versus `Subject Code`, or `Time` versus `Session`. Attendance supports both separate attended/held columns and the combined `13/15` form used by current VTOP layouts. Marks accept supported `th` and `td` headers, course-heading rows, and components without weightage. Theory and lab rows have separate stable identities and are never collapsed just because their subject names match.
 
 Parser tests use redacted HTML fixtures. Fixtures cover alternate attendance, exam-session, grade-history, and course-material layouts without storing registration numbers, cookies, credentials, or personal course content.
 
@@ -160,11 +164,18 @@ A pure ICS codec reads and writes full-detail timed events in `Asia/Kolkata`;
 Android integrations use the Storage Access Framework, FileProvider, and a
 dedicated local `Viora timetable` calendar only after an explicit user action.
 
-Attendance milestone allowances use only cached exam dates, cached timetable occurrences, and cached calendar exceptions when deciding which classes can be skipped before CAT 1, CAT 2, or FAT. The calendar view is a local projection of cached records; opening it does not request a separate calendar service or publish events externally.
+Attendance milestone allowances use only cached exam dates, cached timetable
+occurrences, and cached calendar exceptions. If `F` future units occur before a
+milestone and `S` are skipped, Viora requires
+`(attended + F - S) * 100 >= target * (held + F)`, counting whole occurrences.
+Global CAT/FAT windows prefer explicit VIT calendar ends; without one they
+resume conservatively on the next instructional Monday/day-order and are
+labelled estimated. The calendar view remains a local projection of cached
+records; opening it does not request or publish data.
 
 ## 10. Repositories, synchronization, and change detection
 
-Each resource has a repository responsible for fetching, mapping, validating, and committing it. `refreshResource`-style flows write `SYNCING`, `FRESH`, or `ERROR` resource states with safe user-facing errors.
+Each resource has a repository responsible for fetching, mapping, validating, and committing it. `refreshResource`-style flows write `SYNCING`, `FRESH`, or `ERROR` resource states with safe user-facing errors. Marks commit independently from grades/CGPA; a partial results failure retains whichever prior snapshot was not safely replaced.
 
 `VioraSyncWorker` uses WorkManager 2.11.0 for periodic network-constrained refresh. The selected cadence is stored locally and can be configured between one and 24 hours. WorkManager is intentionally treated as inexact; opening the app and manual Sync remain important freshness paths.
 

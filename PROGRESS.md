@@ -38,7 +38,7 @@ Updated: 2026-09-05
 
 ### Academic data and screens
 
-- Five adaptive destinations: Home, Schedule, Courses, Tasks, and More, using a
+- Five adaptive destinations: Home, Schedule, Courses, Assessments, and More, using a
   bottom bar on compact screens and a navigation rail at 840dp and wider.
 - Home dashboard with current/next class, today and tomorrow context, upcoming
   assignments and exams, attendance risk, recent messages, sync status, and a
@@ -55,14 +55,25 @@ Updated: 2026-09-05
 - Attendance synchronization preserving theory/lab identity, configurable
   target percentages, exact integer projections, hypothetical missed classes,
   conservative whole-lab-block allowances, and CAT 1/CAT 2/FAT milestone
-  planning from cached timetable and calendar data.
+  planning that credits projected attended classes before each milestone.
+- CAT/FAT periods suppress all projected classes through explicit VIT calendar
+  end/resumption dates when available. Otherwise Viora uses the latest cached
+  slot exam and the next instructional Monday/day-order, visibly labelled as
+  an estimate.
 - Digital-assignment synchronization with shared field-aware submitted-status
-  classification across Home, Tasks, and reminders.
-- Exam schedule, assessment marks grouped by course, theory/lab mark identity,
-  grades, GPA, CGPA, credits, academic summaries, and target-CGPA planning.
+  classification across Home, Assessments, and reminders. Home shows pending
+  due work only; Assessments shows submitted-inclusive weekly work and course
+  drill-down.
+- Native single-file assessment submission and pre-deadline replacement using
+  fresh multipart form metadata parsed from authenticated VTOP HTML, with a
+  10 MiB app cap, MIME enforcement, filename sanitization, and VTOP-only HTTPS.
+- Exam schedule, every parsed VTOP mark component grouped by course with
+  theory/lab identity, grades, GPA, CGPA, credits, academic summaries, and
+  target-CGPA planning. Marks persist independently when grade/CGPA refresh
+  fails.
 - Consolidated course details covering faculty, slots, attendance, marks,
   grades, messages, and course materials.
-- Assignment detail and VTOP-hosted assignment upload flow.
+- Assignment detail with native document selection and upload progress/errors.
 - Local search across cached courses, assignments, exams, marks, messages, and
   material metadata.
 

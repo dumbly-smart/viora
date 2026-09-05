@@ -4,7 +4,7 @@ Current implementation also includes live-contract attendance rows (theory/lab p
 
 ## Navigation
 
-Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings. Search spans courses, assessments, messages, and materials.
+Five primary destinations: Home, Schedule, Courses, Assessments, and Profile/Settings. Search spans courses, assessments, messages, and materials.
 
 ## MVP
 
@@ -19,7 +19,7 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 - Current/next class with room and faculty.
 - Today’s timeline and tomorrow preview.
 - Course-wise attendance risk and skippable-class projections.
-- DAs and assessments due soon.
+- Pending, unsubmitted assessments due in the next seven days.
 - Upcoming exams and latest class messages.
 - Pull-to-refresh, last successful sync, and actionable partial-sync errors.
 
@@ -27,7 +27,8 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 
 - Day/week timetable, academic calendar, holidays, and exam schedule.
 - Calendar view showing cached classes, deadlines, exams, holidays, and day-order exceptions; it is local-only and does not add a separate calendar service.
-- Filters by semester and exam type.
+- Current-semester timetable without a semester selector; historical selection
+  remains in settings.
 - User-initiated export to a dedicated Viora Android calendar, full-detail ICS
   export/share, and transactional ICS timetable import labelled in Schedule.
 
@@ -35,14 +36,19 @@ Five primary destinations: Home, Schedule, Courses, Tasks, and Profile/Settings.
 
 - Consolidated course page: faculty, slots, attendance, marks, grade, messages, and materials.
 - Course materials list with explicit download/open/share actions.
-- Marks screen with cached VTOP assessment marks grouped by course, including raw and weighted scores.
-- Attendance screen with cached attendance rows and CAT 1, CAT 2, and FAT skip-allowance milestones.
+- Marks screen with every cached VTOP component grouped by course, including
+  raw/max scores, optional weightage, publication status, and theory/lab type.
+- Attendance screen with cached attendance rows and forward-looking CAT 1,
+  CAT 2, and FAT skip capacity. Global exam windows use explicit VIT dates or
+  a clearly labelled conservative estimate.
 - Marks and grade history; CGPA summary where available.
 
-### Tasks
+### Assessments
 
-- Unified DA and assessment feed grouped by due date.
-- Due time, upload state, question-paper availability, and deep link to the relevant screen.
+- Submitted-inclusive work due within seven days, followed by course drill-down
+  containing every cached assignment.
+- Pending/Submitted tags, due time, and native single-file submission or
+  replacement before the deadline.
 - Local reminders; notification tap opens the item.
 
 ## Notifications
@@ -67,7 +73,8 @@ Android background execution is inexact, so reminders are best effort. For exact
 ## Explicit non-goals
 
 - No bypass or outsourcing of interactive verification challenges such as reCAPTCHA.
-- No submission of assignments or registration actions in the first releases.
+- No registration actions or uploads to any host other than authenticated
+  `https://vtop.vit.ac.in` form actions.
 - No cloud sync of VTOP credentials or personal academic records.
 - No claim that a projection grants permission to miss class.
 - No ads or analytics SDK that receives academic data.
