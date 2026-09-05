@@ -55,6 +55,24 @@ class HomeAgendaTest {
         assertTrue(agenda.items.none { it.slot != null })
     }
 
+    @Test fun `home suppresses classes after own exam until later cached slot exam series finishes`() {
+        val now = time(2026, 8, 18, 8, 0)
+        val ownStart = time(2026, 8, 17, 9, 0)
+        val laterStart = time(2026, 8, 19, 9, 0)
+        val state = VioraUiState(
+            slots = listOf(slot("class", 2, 10 * 60, 11 * 60)),
+            exams = listOf(
+                exam("own", ownStart, ownStart + 120 * 60_000),
+                exam("later", laterStart, laterStart + 120 * 60_000),
+            ),
+        )
+
+        val agenda = state.homeAgenda(now)
+
+        assertTrue(agenda.examDates)
+        assertTrue(agenda.items.none { it.slot != null })
+    }
+
     @Test fun `exam only home starts at midnight on the first exam date`() {
         val now = time(2026, 8, 12, 7, 0)
         val firstStart = time(2026, 8, 12, 9, 0)

@@ -102,7 +102,7 @@ class AcademicProjectionsTest {
     }
 
     @Test
-    fun `milestone counts only slots strictly between now and exam start on the same date`() {
+    fun `milestone suppresses all classes on an exam series date`() {
         val date = LocalDate.of(2026, 9, 7)
         val now = at(date, 8)
         val state = VioraUiState(
@@ -119,8 +119,8 @@ class AcademicProjectionsTest {
         val milestone = state.attendanceMilestones(now)
             .single { it.milestone == AttendanceMilestone.CAT_1 }
 
-        assertEquals(MilestoneState.SCHEDULED, milestone.state)
-        assertEquals(1, milestone.occurrenceCount)
+        assertEquals(MilestoneState.NO_CLASSES, milestone.state)
+        assertEquals(0, milestone.occurrenceCount)
     }
 
     @Test
@@ -191,7 +191,7 @@ class AcademicProjectionsTest {
 
         val events = state.eventsForDate(date)
 
-        assertEquals(listOf("class:20678:slot", "exam:exam", "assignment:assignment", "calendar:semester:order"), events.map(AcademicDayEvent::id))
+        assertEquals(listOf("exam:exam", "assignment:assignment", "calendar:semester:order"), events.map(AcademicDayEvent::id))
         assertEquals("DA 1", events.single { it.marker == AcademicCalendarMarker.ASSIGNMENT }.title)
         assertEquals("10:00 AM · Algorithms · Room AB-101 · Seat 42", events.single { it.marker == AcademicCalendarMarker.EXAM }.detail)
         assertEquals("Monday order", events.single { it.marker == AcademicCalendarMarker.DAY_ORDER }.title)

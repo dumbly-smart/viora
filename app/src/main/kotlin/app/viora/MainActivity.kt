@@ -124,8 +124,11 @@ import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.sameCourseCode
 import app.viora.domain.ExamWindow
+import app.viora.domain.ExamCalendarDate
+import app.viora.domain.ExamSuppressionWindow
+import app.viora.domain.examSuppressionWindows as buildExamSuppressionWindows
+import app.viora.domain.suppresses
 import app.viora.domain.isExamActive
-import app.viora.domain.isExamPeriodActive
 import app.viora.domain.isAssignmentSubmitted
 import app.viora.domain.overlapsExam
 import app.viora.domain.shouldShowExamInSchedule
@@ -1362,6 +1365,7 @@ private fun VioraUiState.courseNameFor(slot: SlotWithCourse): String {
 }
 
 internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
+    if (examSuppressionWindows().any { it.suppresses(date) }) return emptyList()
     val descriptions = calendar
         .filter { it.dateEpochDay == date.toEpochDay() }
         .map { "${it.title} ${it.dayType}" }
@@ -1376,6 +1380,12 @@ internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
         }
     }
 }
+
+internal fun VioraUiState.examSuppressionWindows(): List<ExamSuppressionWindow> = buildExamSuppressionWindows(
+    exams = exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
+    calendar = calendar.map { ExamCalendarDate(LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
+    zone = academicZone,
+)
 
 private fun VioraUiState.examsForDate(date: LocalDate): List<ExamUi> = exams
     .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).toLocalDate() == date }
@@ -1392,7 +1402,7 @@ private fun ExamUi.endMinute(): Int? = endsEpochMillis?.let {
 
 internal fun VioraUiState.homeAgenda(nowEpochMillis: Long, classLookAheadDays: Long = 7): HomeAgenda {
     val now = Instant.ofEpochMilli(nowEpochMillis).atZone(academicZone)
-    val examDates = isExamPeriodActive(exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }, nowEpochMillis)
+    val examDates = examSuppressionWindows().any { it.suppresses(now.toLocalDate()) }
     val examItems = exams
         .filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, nowEpochMillis) }
         .map { exam ->
