@@ -21,6 +21,7 @@ import org.junit.Assert.assertTrue
 import app.viora.network.SemesterOption
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class CalendarScreenTest {
     @get:Rule
@@ -40,9 +41,9 @@ class CalendarScreenTest {
         compose.onNodeWithText("Calendar").performClick()
         compose.onNodeWithText("Academic calendar").assertExists()
         compose.onNodeWithContentDescription("Next month").performClick()
-        compose.onNodeWithText(today.plusMonths(1).month.name.lowercase().replaceFirstChar(Char::titlecase), substring = true).assertExists()
+        compose.onNodeWithText(today.plusMonths(1).format(DateTimeFormatter.ofPattern("MMMM yyyy"))).assertExists()
         compose.onNodeWithContentDescription("Previous month").performClick()
-        compose.onNodeWithText(today.month.name.lowercase().replaceFirstChar(Char::titlecase), substring = true).assertExists()
+        compose.onNodeWithText(today.format(DateTimeFormatter.ofPattern("MMMM yyyy"))).assertExists()
         compose.onNodeWithText("Exam · CSE1001").assertExists()
         compose.onNodeWithText("Timetable").performClick()
         compose.onNodeWithContentDescription("Share timetable QR").assertIsEnabled()

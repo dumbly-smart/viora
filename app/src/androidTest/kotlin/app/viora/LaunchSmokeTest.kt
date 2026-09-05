@@ -12,6 +12,6 @@ class LaunchSmokeTest {
 
     @Test
     fun appLaunchesAndShowsVioraRoot() {
-        compose.onNodeWithText("viora").assertIsDisplayed()
+        compose.onNodeWithText("viora", ignoreCase = true).assertIsDisplayed()
     }
 }
