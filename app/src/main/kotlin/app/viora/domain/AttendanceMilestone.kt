@@ -8,14 +8,16 @@ fun maximumSkippableOccurrences(
     targetPercent: Int,
     occurrenceUnits: List<Int>,
 ): Int {
-    if (attended.toLong() * 100 < targetPercent.toLong() * held) return 0
-
+    val futureUnits = occurrenceUnits.filter { it > 0 }.sumOf(Int::toLong)
+    val finalHeld = held.toLong() + futureUnits
     var skippedUnits = 0L
     return occurrenceUnits
         .filter { it > 0 }
         .sorted()
         .takeWhile { units ->
-            val allowed = attended.toLong() * 100 >= targetPercent.toLong() * (held.toLong() + skippedUnits + units)
+            val candidateSkipped = skippedUnits + units
+            val allowed = (attended.toLong() + futureUnits - candidateSkipped) * 100 >=
+                targetPercent.toLong() * finalHeld
             if (allowed) skippedUnits += units
             allowed
         }

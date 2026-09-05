@@ -140,6 +140,27 @@ class AcademicProjectionsTest {
     }
 
     @Test
+    fun `FAT capacity credits classes after CAT two`() {
+        val nowDate = LocalDate.of(2026, 9, 6)
+        val state = VioraUiState(
+            attendance = listOf(attendance(sourceHeld = 20).copy(attended = 14)),
+            slots = listOf(slot(dayOfWeek = 1)),
+            exams = listOf(
+                exam("CAT 2", LocalDate.of(2026, 9, 22)),
+                exam("FAT", LocalDate.of(2026, 11, 3)),
+            ),
+        )
+
+        val milestones = state.attendanceMilestones(at(nowDate, 0)).associateBy { it.milestone }
+
+        assertEquals(3, milestones.getValue(AttendanceMilestone.CAT_2).occurrenceCount)
+        assertEquals(0, milestones.getValue(AttendanceMilestone.CAT_2).skippableOccurrences)
+        assertEquals(9, milestones.getValue(AttendanceMilestone.FAT).occurrenceCount)
+        assertEquals(1, milestones.getValue(AttendanceMilestone.FAT).skippableOccurrences)
+        assertTrue(milestones.getValue(AttendanceMilestone.FAT).estimatedWindow)
+    }
+
+    @Test
     fun `same title does not match an exam for a different course code`() {
         val now = LocalDate.of(2026, 9, 6).atStartOfDay(academicZone).toInstant().toEpochMilli()
         val state = VioraUiState(

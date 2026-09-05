@@ -159,6 +159,7 @@ data class CourseAttendanceMilestoneUi(
     val exam: ExamUi? = null,
     val occurrenceCount: Int = 0,
     val skippableOccurrences: Int = 0,
+    val estimatedWindow: Boolean = false,
 )
 
 internal fun VioraUiState.attendanceMilestones(nowEpochMillis: Long): List<CourseAttendanceMilestoneUi> =
@@ -187,12 +188,18 @@ private fun VioraUiState.attendanceMilestone(
     }
 
     val occurrenceUnits = occurrenceUnitsBefore(attendance, upcomingExam.startsEpochMillis, nowEpochMillis)
+    val examDate = Instant.ofEpochMilli(upcomingExam.startsEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
+    val nowDate = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
+    val estimatedWindow = examSuppressionWindows().any { window ->
+        window.estimated && !window.resumeDate.isBefore(nowDate) && !window.startDate.isAfter(examDate)
+    }
     if (occurrenceUnits.isEmpty()) {
         return CourseAttendanceMilestoneUi(
             attendance = attendance,
             milestone = milestone,
             state = MilestoneState.NO_CLASSES,
             exam = upcomingExam,
+            estimatedWindow = estimatedWindow,
         )
     }
 
@@ -208,6 +215,7 @@ private fun VioraUiState.attendanceMilestone(
             targetPercent = attendanceTarget,
             occurrenceUnits = occurrenceUnits,
         ),
+        estimatedWindow = estimatedWindow,
     )
 }
 

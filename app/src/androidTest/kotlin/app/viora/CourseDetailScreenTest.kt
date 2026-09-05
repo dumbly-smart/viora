@@ -14,6 +14,7 @@ import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
+import app.viora.domain.AttendanceMilestone
 
 class CourseDetailScreenTest {
     @get:Rule
@@ -179,5 +180,22 @@ class CourseDetailScreenTest {
         render(AssignmentUi("closed", "CSE1001", "Closed DA", now - 1, "Pending"))
         compose.onNodeWithText("Submit file").assertDoesNotExist()
         compose.onNodeWithText("Replace submission").assertDoesNotExist()
+    }
+
+    @Test
+    fun estimatedAttendanceWindowIsLabelled() {
+        val attendance = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 14, 20, 20, 70.0, 0, 1, 1, 0, 1)
+        val projection = CourseAttendanceMilestoneUi(
+            attendance = attendance,
+            milestone = AttendanceMilestone.FAT,
+            state = MilestoneState.SCHEDULED,
+            occurrenceCount = 9,
+            skippableOccurrences = 1,
+            estimatedWindow = true,
+        )
+
+        compose.setContent { VioraTheme { AttendanceMilestoneRow(AttendanceMilestone.FAT, projection) } }
+
+        compose.onNodeWithText("Estimated from timetable and exam dates").assertExists()
     }
 }

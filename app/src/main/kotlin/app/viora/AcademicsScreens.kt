@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -157,13 +158,18 @@ private fun AttendanceScreen(state: VioraUiState) {
 }
 
 @Composable
-private fun AttendanceMilestoneRow(
+internal fun AttendanceMilestoneRow(
     milestone: AttendanceMilestone,
     projection: CourseAttendanceMilestoneUi?,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(milestone.label, style = MaterialTheme.typography.titleSmall)
-        Text(projection?.stateCopy ?: "Not scheduled", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(projection?.stateCopy ?: "Not scheduled", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (projection?.estimatedWindow == true) {
+                Text("Estimated from timetable and exam dates", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
