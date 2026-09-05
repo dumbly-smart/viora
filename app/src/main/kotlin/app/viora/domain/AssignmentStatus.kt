@@ -13,10 +13,11 @@ fun isAssignmentSubmitted(status: String, lastUpload: String): Boolean = when (s
 private fun signal(value: String): SubmissionSignal {
     val normalized = value.trim().lowercase(Locale.ENGLISH).replace(Regex("\\s+"), " ")
     if (normalized.contains("not uploaded") || normalized.contains("not submitted") ||
-        normalized == "pending" || normalized == "missing"
+        normalized.contains("not received") || normalized == "pending" || normalized == "missing" || normalized == "no"
     ) return SubmissionSignal.NEGATIVE
     if (normalized.contains("submitted") || normalized.contains("uploaded") ||
-        normalized.contains("completed")
+        normalized.contains("upload successful") || normalized.contains("completed") ||
+        normalized.contains("received") || normalized == "yes"
     ) return SubmissionSignal.POSITIVE
     return SubmissionSignal.UNKNOWN
 }

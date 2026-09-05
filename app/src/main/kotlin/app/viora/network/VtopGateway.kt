@@ -49,6 +49,15 @@ data class DigitalAssignmentRecord(
     val dueAt: LocalDateTime?,
     val lastUpload: String,
     val status: String,
+    val uploadLocator: AssignmentUploadLocator? = null,
+)
+
+data class AssignmentUploadLocator(
+    val requestPath: String,
+    val fields: Map<String, String>,
+    val fileField: String,
+    val acceptedMimeTypes: Set<String>,
+    val maxBytes: Long?,
 )
 
 data class VtopWebSession(
