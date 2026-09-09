@@ -301,6 +301,7 @@ internal fun Dashboard(
         })
     }
     var librarySection by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "tasks") 1 else 0) }
+    var academicsTab by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "attendance") 2 else 0) }
     var showProfileSheet by remember(initialDestination) { mutableStateOf(initialRoute == "more") }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
     if (showProfileSheet) {
@@ -331,7 +332,10 @@ internal fun Dashboard(
         bottomBar = {
             if (!expanded) VioraFloatingNavigationBar(selected, showingHome) { index ->
                 selected = index
-                if (index == 2) librarySection = 0
+                if (index == 2) {
+                    librarySection = 0
+                    academicsTab = 0
+                }
                 detail = null
             }
         },
@@ -343,7 +347,10 @@ internal fun Dashboard(
                         selected = selected == index,
                         onClick = {
                             selected = index
-                            if (index == 2) librarySection = 0
+                            if (index == 2) {
+                                librarySection = 0
+                                academicsTab = 0
+                            }
                             detail = null
                         },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
@@ -375,7 +382,7 @@ internal fun Dashboard(
                     else -> LibraryDestination(
                         state = state,
                         initialSection = librarySection,
-                        initialAcademicsTab = if (initialRoute == "attendance") 2 else 0,
+                        initialAcademicsTab = academicsTab,
                         uploadAssignment = uploadAssignment,
                         showDetail = { kind, id -> detail = DetailSelection(kind, id) },
                     )

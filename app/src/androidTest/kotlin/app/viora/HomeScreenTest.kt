@@ -135,10 +135,26 @@ class HomeScreenTest {
         compose.onNodeWithContentDescription("Open profile and settings").performClick()
         compose.onNodeWithText("More").assertIsDisplayed()
     }
+
+    @Test
+    fun attendanceDeepLinkReturnsToCoursesAfterExplicitLibrarySelection() {
+        compose.setContent {
+            VioraTheme {
+                TestDashboard(initialDestination = "attendance")
+            }
+        }
+
+        compose.onNodeWithText("Skip allowance").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Plan").performClick()
+        compose.onNodeWithContentDescription("Library").performClick()
+
+        compose.onNodeWithText("Consolidated courses").assertIsDisplayed()
+        compose.onNodeWithText("Skip allowance").assertDoesNotExist()
+    }
 }
 
 @Composable
-private fun TestDashboard() {
+private fun TestDashboard(initialDestination: String? = null) {
     Dashboard(
         state = VioraUiState(),
         refresh = {},
@@ -163,6 +179,6 @@ private fun TestDashboard() {
         exportIcs = {},
         importIcs = {},
         shareCalendarIcs = {},
-        initialDestination = null,
+        initialDestination = initialDestination,
     )
 }
