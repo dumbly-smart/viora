@@ -69,7 +69,11 @@ class DigitalAssignmentParser {
         val lastUpload = values.find(
             "uploaded file", "last uploaded date", "last updated", "last upload", "last_upload", "uploaded on",
         ).orEmpty().trim().ifBlank { "N/A" }
-        val status = values.find("status", "upload status", "submission status").orEmpty().trim()
+        val status = if (row.selectFirst("#downloadStudentDA") != null) {
+            "Submitted"
+        } else {
+            values.find("status", "upload status", "submission status").orEmpty().trim()
+        }
         val assignmentCode = row.selectFirst("input[name=code]")?.attr("value")
             .orEmpty().ifBlank { row.selectFirst("button[data-editcode]")?.attr("data-editcode").orEmpty() }
         return DigitalAssignmentRecord(

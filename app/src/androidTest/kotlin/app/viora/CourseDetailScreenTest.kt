@@ -50,6 +50,38 @@ class CourseDetailScreenTest {
     }
 
     @Test
+    fun courseShowsEveryMarkAcrossCodeFormatsWhenVtopTitlesDiffer() {
+        val course = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 8, 10, 10, 80.0, 2, 0, 1, 2, 0)
+        val state = VioraUiState(
+            attendance = listOf(course),
+            marks = listOf(
+                MarkUi("cat", "CSE1001", "Synthetic Course - ETH", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+                MarkUi("lab", "CSE 1001 (Lab)", "Synthetic Course Lab", "Lab", "Lab Exercise 1", 20.0, null, "Pending", null, null),
+            ),
+        )
+
+        compose.setContent {
+            VioraTheme {
+                DetailScreen(
+                    state = state,
+                    selection = DetailSelection("course", course.id),
+                    openMaterial = { _, _ -> },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Marks").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CAT 1").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Raw score: 42 / 50").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Weighted score: 12.60").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Percentage weight: 15%").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab Exercise 1").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("VTOP type: Lab").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Maximum score: 20").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Publication: Pending").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun academicsTabsShowCoursesMarksAndAttendance() {
         val attendance = AttendanceUi(
             "attendance",
@@ -99,6 +131,23 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("Skip allowance").assertExists()
         compose.onNodeWithText("active 80%", substring = true).assertExists()
         compose.onAllNodesWithText("Not scheduled").assertCountEquals(3)
+    }
+
+    @Test
+    fun marksShowCgpaAfterEveryComponent() {
+        val state = VioraUiState(
+            marks = listOf(
+                MarkUi("cat", "CSE1001", "Synthetic Course", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+                MarkUi("fat", "CSE1001", "Synthetic Course", "Theory", "FAT", 100.0, 40.0, "Published", 81.0, 32.4),
+            ),
+            cgpa = 8.74,
+        )
+
+        compose.setContent { VioraTheme { AcademicsScreen(state, initialTab = 1) { _, _ -> } } }
+
+        compose.onNodeWithText("FAT").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CGPA").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("8.74").assertIsDisplayed()
     }
 
     @Test
@@ -157,7 +206,15 @@ class CourseDetailScreenTest {
         compose.runOnIdle { assertEquals("CSE1001", openedCourse) }
         compose.onNodeWithText("Pending DA").assertExists()
         compose.onNodeWithText("Submitted DA").assertExists()
+        compose.onNodeWithText("Submit file").assertDoesNotExist()
+        compose.onNodeWithText("Replace submission").assertDoesNotExist()
+
+        compose.onNodeWithText("Pending DA").performClick()
         compose.onNodeWithText("Submit file").assertExists()
+        compose.onNodeWithText("Replace submission").assertDoesNotExist()
+
+        compose.onNodeWithText("Submitted DA").performClick()
+        compose.onNodeWithText("Submit file").assertDoesNotExist()
         compose.onNodeWithText("Replace submission").assertExists()
     }
 
@@ -193,7 +250,7 @@ class CourseDetailScreenTest {
     }
 
     @Test
-    fun estimatedAttendanceWindowIsLabelled() {
+    fun estimatedAttendanceSourceIsNotRepeatedInsideMilestoneRow() {
         val attendance = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 14, 20, 20, 70.0, 0, 1, 1, 0, 1)
         val projection = CourseAttendanceMilestoneUi(
             attendance = attendance,
@@ -206,6 +263,18 @@ class CourseDetailScreenTest {
 
         compose.setContent { VioraTheme { AttendanceMilestoneRow(AttendanceMilestone.FAT, projection) } }
 
-        compose.onNodeWithText("Estimated from timetable and exam dates").assertExists()
+        compose.onNodeWithText("Calculated from timetable and exam dates").assertDoesNotExist()
+        compose.onNodeWithText("Estimated from timetable and exam dates").assertDoesNotExist()
+    }
+
+    @Test
+    fun attendanceShowsCalculationSourceOnceAtTheBottom() {
+        val attendance = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 14, 20, 20, 70.0, 0, 1, 1, 0, 1)
+        val state = VioraUiState(attendance = listOf(attendance))
+
+        compose.setContent { VioraTheme { AcademicsScreen(state, initialTab = 2) { _, _ -> } } }
+
+        compose.onNodeWithText("Calculated from timetable and exam dates").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Calculated from timetable and exam dates").assertCountEquals(1)
     }
 }

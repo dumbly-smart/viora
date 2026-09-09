@@ -7,10 +7,79 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
 class HomeAgendaTest {
+    @Test fun `home timeline merges classes assignments and exams across fourteen days`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val assignmentDue = time(2026, 8, 12, 9, 0)
+        val examStart = time(2026, 8, 13, 8, 30)
+        val state = VioraUiState(
+            slots = listOf(slot("class", 3, 10 * 60, 10 * 60 + 50)),
+            assignments = listOf(AssignmentUi("assignment", "CSE1002", "DA 1", assignmentDue, "Pending", courseTitle = "Course Two")),
+            exams = listOf(exam("exam", examStart, examStart + 90 * 60_000)),
+        )
+
+        val timeline = state.homeTimeline(now)
+
+        assertEquals(
+            listOf(HomeTimelineKind.ASSIGNMENT, HomeTimelineKind.CLASS, HomeTimelineKind.EXAM, HomeTimelineKind.CLASS),
+            timeline.map(HomeTimelineItem::kind),
+        )
+        assertEquals(listOf("DA 1", "Course", "Course", "Course"), timeline.map(HomeTimelineItem::title))
+    }
+
+    @Test fun `home timeline excludes submitted assignments and events outside fourteen days`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val state = VioraUiState(
+            assignments = listOf(
+                AssignmentUi("submitted", "CSE1001", "Submitted", time(2026, 8, 13, 9, 0), "Open", lastUpload = "answer.pdf"),
+                AssignmentUi("boundary", "CSE1002", "Too late", time(2026, 8, 26, 8, 1), "Pending"),
+            ),
+        )
+
+        assertTrue(state.homeTimeline(now).isEmpty())
+    }
+
+    @Test fun `home timeline dates report distinct academic days with events`() {
+        val timeline = listOf(
+            HomeTimelineItem("one", time(2026, 8, 12, 9, 0), HomeTimelineKind.CLASS, "One", "", ""),
+            HomeTimelineItem("two", time(2026, 8, 12, 10, 0), HomeTimelineKind.ASSIGNMENT, "Two", "", ""),
+            HomeTimelineItem("three", time(2026, 8, 14, 9, 0), HomeTimelineKind.EXAM, "Three", "", ""),
+        )
+
+        assertEquals(setOf(LocalDate.of(2026, 8, 12), LocalDate.of(2026, 8, 14)), timeline.academicDates())
+    }
+
+    @Test fun `home timeline covers exactly fourteen academic calendar dates`() {
+        val now = time(2026, 8, 12, 8, 0)
+        val fifteenthDate = LocalDateTime.of(2026, 8, 26, 0, 0).atZone(zone).toInstant().toEpochMilli()
+        val state = VioraUiState(
+            slots = listOf(slot("early", 3, 7 * 60, 8 * 60)),
+            assignments = listOf(AssignmentUi("boundary", "CSE1002", "Boundary assignment", fifteenthDate, "Pending")),
+            exams = listOf(exam("boundary-exam", fifteenthDate + 7 * 60 * 60_000, fifteenthDate + 8 * 60 * 60_000)),
+        )
+
+        val timeline = state.homeTimeline(now)
+
+        assertEquals(listOf(LocalDate.of(2026, 8, 19)), timeline.academicDates().toList())
+    }
+
+    @Test fun `home calendar day description announces date selection and events`() {
+        val today = LocalDate.of(2026, 8, 12)
+
+        assertEquals(
+            "Wednesday, August 12, today, events scheduled",
+            homeCalendarDayDescription(today, today, hasEvent = true),
+        )
+        assertEquals(
+            "Thursday, August 13, no events scheduled",
+            homeCalendarDayDescription(today.plusDays(1), today, hasEvent = false),
+        )
+    }
+
     @Test fun `orders assignments by due date with unknown deadlines last`() {
         val later = AssignmentUi("later", "CSE1002", "DA 2", 2_000, "Open", courseTitle = "Course Two")
         val unknown = AssignmentUi("unknown", "CSE1003", "DA 3", null, "Open", courseTitle = "Course Three")

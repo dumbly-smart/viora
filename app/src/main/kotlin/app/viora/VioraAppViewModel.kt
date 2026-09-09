@@ -48,6 +48,8 @@ data class VioraUiState(
     val syncMessage: String? = null,
     val error: String? = null,
     val uploadingAssignmentId: String? = null,
+    val captchaImageDataUri: String? = null,
+    val captchaAnswer: String = "",
     val semesters: List<SemesterOption> = emptyList(),
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
@@ -172,9 +174,10 @@ class VioraAppViewModel(
         }
     }
 
-    fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null) }
-    fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null) }
+    fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null, captchaImageDataUri = null, captchaAnswer = "") }
+    fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null, captchaImageDataUri = null, captchaAnswer = "") }
     fun updateRememberLogin(value: Boolean) = mutableState.update { it.copy(rememberLogin = value) }
+    fun updateCaptchaAnswer(value: String) = mutableState.update { it.copy(captchaAnswer = value, error = null) }
 
     fun signIn() {
         val snapshot = state.value
@@ -182,11 +185,11 @@ class VioraAppViewModel(
             mutableState.update { it.copy(error = "Enter your VTOP username and password") }
             return
         }
-        mutableState.update { it.copy(loading = true, error = null) }
+        mutableState.update { it.copy(loading = true, error = null, captchaImageDataUri = null, captchaAnswer = "") }
         viewModelScope.launch {
             val password = snapshot.password.toCharArray()
             try {
-                when (graph.gateway.login(snapshot.username.trim(), password)) {
+                when (val result = graph.gateway.login(snapshot.username.trim(), password)) {
                     SessionState.Active -> {
                         if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
                         else graph.credentials.clear()
@@ -196,12 +199,55 @@ class VioraAppViewModel(
                         }
                         loadSemestersAndRefresh()
                     }
+                    is SessionState.CaptchaRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = result.imageDataUri, captchaAnswer = "", error = null)
+                    }
                     SessionState.VerificationRequired -> {
-                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
-                        mutableState.update { it.copy(loading = false, interactiveVerification = true, error = null) }
+                        mutableState.update {
+                            it.copy(loading = false, error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
+                        }
                     }
                     SessionState.Missing -> mutableState.update {
                         it.copy(loading = false, error = "VTOP rejected the sign-in details")
+                    }
+                }
+            } catch (error: Exception) {
+                val message = when (error) { is UnknownHostException -> "VTOP could not be reached. Check your connection."; is SocketTimeoutException -> "VTOP took too long to respond. Try again."; else -> "Could not connect to VTOP (${error.message?.take(80) ?: "unknown error"})" }
+                mutableState.update { it.copy(loading = false, error = message) }
+            } finally {
+                password.fill('\u0000')
+            }
+        }
+    }
+
+    fun submitCaptcha() {
+        val snapshot = state.value
+        if (snapshot.captchaImageDataUri == null || snapshot.captchaAnswer.length != 6) {
+            mutableState.update { it.copy(error = "Enter the six-character CAPTCHA") }
+            return
+        }
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            val password = snapshot.password.toCharArray()
+            try {
+                when (val result = graph.gateway.submitCaptcha(snapshot.username.trim(), password, snapshot.captchaAnswer)) {
+                    SessionState.Active -> {
+                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
+                        else graph.credentials.clear()
+                        graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, true).commit()
+                        mutableState.update {
+                            it.copy(configured = true, reauthRequired = false, password = "", loading = false, captchaImageDataUri = null, captchaAnswer = "")
+                        }
+                        loadSemestersAndRefresh()
+                    }
+                    is SessionState.CaptchaRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = result.imageDataUri, captchaAnswer = "", error = "That CAPTCHA was not accepted. Try the new one.")
+                    }
+                    SessionState.VerificationRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
+                    }
+                    SessionState.Missing -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP rejected the sign-in details")
                     }
                 }
             } catch (error: Exception) {
@@ -222,7 +268,7 @@ class VioraAppViewModel(
     }
 
     fun beginReauthentication() = mutableState.update {
-        it.copy(configured = false, loading = false, password = "", error = null)
+        it.copy(configured = false, loading = false, password = "", error = null, captchaImageDataUri = null, captchaAnswer = "")
     }
     fun logout() { viewModelScope.launch { graph.materialManager.clearDownloads(); graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) {

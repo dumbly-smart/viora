@@ -1,6 +1,9 @@
 package app.viora.setup
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +57,13 @@ import app.viora.ui.VioraCoral
 @Composable
 fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
     var passwordVisible by remember { mutableStateOf(false) }
+    val captchaImage = remember(state.captchaImageDataUri) {
+        state.captchaImageDataUri?.substringAfter("base64,", "")
+            ?.takeIf(String::isNotBlank)
+            ?.let { encoded -> runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull() }
+            ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+            ?.asImageBitmap()
+    }
     Box(
         modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
         contentAlignment = Alignment.Center,
@@ -118,6 +129,29 @@ fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
                             )
                             Text("Keep me signed in on this phone", modifier = Modifier.weight(1f))
                         }
+                        if (state.captchaImageDataUri != null) {
+                            Text("Automatic CAPTCHA attempts did not work", style = MaterialTheme.typography.titleMedium)
+                            Text("Enter this VTOP CAPTCHA to finish signing in without leaving Viora.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            captchaImage?.let { image ->
+                                Image(
+                                    bitmap = image,
+                                    contentDescription = "VTOP CAPTCHA",
+                                    modifier = Modifier.fillMaxWidth().height(80.dp),
+                                )
+                            }
+                            OutlinedTextField(
+                                value = state.captchaAnswer,
+                                onValueChange = { value ->
+                                    onAction(SetupAction.CaptchaAnswerChanged(value.uppercase().filter(Char::isLetterOrDigit).take(6)))
+                                },
+                                label = { Text("CAPTCHA") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                                enabled = !state.loading,
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                        }
                         state.error?.let { message ->
                             Surface(
                                 color = VioraCoral.copy(alpha = 0.12f),
@@ -128,8 +162,11 @@ fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
                             }
                         }
                         Button(
-                            onClick = { onAction(SetupAction.Submit) },
-                            enabled = !state.loading && state.username.isNotBlank() && state.password.isNotBlank(),
+                            onClick = {
+                                onAction(if (state.captchaImageDataUri == null) SetupAction.Submit else SetupAction.SubmitCaptcha)
+                            },
+                            enabled = !state.loading && state.username.isNotBlank() && state.password.isNotBlank() &&
+                                (state.captchaImageDataUri == null || state.captchaAnswer.length == 6),
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = MaterialTheme.shapes.medium,
                         ) {
@@ -137,7 +174,7 @@ fun SetupScreen(state: SetupState, onAction: (SetupAction) -> Unit) {
                                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(10.dp))
                                 Text("Talking to VTOP…")
-                            } else Text("Continue  →")
+                            } else Text(if (state.captchaImageDataUri == null) "Continue  →" else "Verify CAPTCHA")
                         }
                     }
                 }
