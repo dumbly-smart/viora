@@ -51,10 +51,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Check
@@ -69,6 +68,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -259,16 +259,14 @@ private data class Destination(val label: String, val icon: ImageVector)
 internal data class DetailSelection(val kind: String, val id: String)
 
 private val destinations = listOf(
-    Destination("Home", Icons.Outlined.Home),
-    Destination("Schedule", Icons.Outlined.CalendarMonth),
-    Destination("Courses", Icons.AutoMirrored.Outlined.MenuBook),
-    Destination("Assessments", Icons.Outlined.Checklist),
-    Destination("More", Icons.Outlined.MoreHoriz),
+    Destination("Today", Icons.Outlined.Home),
+    Destination("Plan", Icons.Outlined.CalendarMonth),
+    Destination("Library", Icons.AutoMirrored.Outlined.MenuBook),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Dashboard(
+internal fun Dashboard(
     state: VioraUiState,
     refresh: () -> Unit,
     selectSemester: (app.viora.network.SemesterOption) -> Unit,
@@ -295,24 +293,62 @@ private fun Dashboard(
     initialDestination: String?,
 ) {
     val initialRoute = initialDestination?.substringBefore('#')
-    var selected by remember(initialDestination) { mutableIntStateOf(when (initialRoute) { "schedule" -> 1; "courses", "attendance" -> 2; "tasks" -> 3; "more" -> 4; else -> 0 }) }
+    var selected by remember(initialDestination) {
+        mutableIntStateOf(when (initialRoute) {
+            "schedule" -> 1
+            "courses", "attendance", "tasks" -> 2
+            else -> 0
+        })
+    }
+    var librarySection by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "tasks") 1 else 0) }
+    var showProfileSheet by remember(initialDestination) { mutableStateOf(initialRoute == "more") }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
+    if (showProfileSheet) {
+        ModalBottomSheet(onDismissRequest = { showProfileSheet = false }) {
+            MoreScreen(
+                state,
+                logout,
+                setDeadlineNotifications,
+                setExamNotifications,
+                setSearchQuery,
+                setQuietHours,
+                selectSemester,
+                setSyncHours,
+                refreshDiagnostics,
+                clearDownloads,
+                clearAcademicCache,
+            )
+        }
+    }
     BoxWithConstraints {
     val expanded = maxWidth >= 840.dp
     val showingHome = detail == null && selected == 0
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (!showingHome) VioraTopBar(state, detail, { detail = null }, refresh, reauthenticate)
+            VioraTopBar(state, detail, { detail = null }, refresh, reauthenticate) { showProfileSheet = true }
         },
         bottomBar = {
-            if (!expanded) VioraFloatingNavigationBar(selected, showingHome) { index -> selected = index; detail = null }
+            if (!expanded) VioraFloatingNavigationBar(selected, showingHome) { index ->
+                selected = index
+                if (index == 2) librarySection = 0
+                detail = null
+            }
         },
     ) { padding ->
         Row(Modifier.fillMaxSize().padding(padding)) {
             if (expanded) NavigationRail {
                 destinations.forEachIndexed { index, destination ->
-                    NavigationRailItem(selected = selected == index, onClick = { selected = index; detail = null }, icon = { Icon(destination.icon, contentDescription = destination.label) }, label = { Text(destination.label) })
+                    NavigationRailItem(
+                        selected = selected == index,
+                        onClick = {
+                            selected = index
+                            if (index == 2) librarySection = 0
+                            detail = null
+                        },
+                        icon = { Icon(destination.icon, contentDescription = destination.label) },
+                        label = { Text(destination.label) },
+                    )
                 }
             }
         Column(Modifier.weight(1f).fillMaxSize()) {
@@ -336,9 +372,13 @@ private fun Dashboard(
                         importIcs = importIcs,
                         shareCalendarIcs = shareCalendarIcs,
                     )
-                    2 -> AcademicsScreen(state, initialTab = if (initialRoute == "attendance") 2 else 0) { kind, id -> detail = DetailSelection(kind, id) }
-                    3 -> AssessmentsScreen(state, uploadAssignment, { detail = DetailSelection("assignment", it.id) }, { detail = DetailSelection("assessments-course", it) })
-                    else -> MoreScreen(state, logout, setDeadlineNotifications, setExamNotifications, setSearchQuery, setQuietHours, selectSemester, setSyncHours, refreshDiagnostics, clearDownloads, clearAcademicCache)
+                    else -> LibraryDestination(
+                        state = state,
+                        initialSection = librarySection,
+                        initialAcademicsTab = if (initialRoute == "attendance") 2 else 0,
+                        uploadAssignment = uploadAssignment,
+                        showDetail = { kind, id -> detail = DetailSelection(kind, id) },
+                    )
                 }
             }
         }
@@ -358,17 +398,24 @@ internal fun VioraFloatingNavigationBar(selected: Int, lightBackground: Boolean,
             Row(Modifier.padding(horizontal = 6.dp, vertical = 5.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 destinations.forEachIndexed { index, destination ->
                     val active = selected == index
-                    Box(
-                        Modifier.size(48.dp).clip(CircleShape).background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    Column(
+                        Modifier.width(80.dp).height(56.dp).clip(RoundedCornerShape(24.dp))
+                            .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
                             .selectable(selected = active, onClick = { onSelect(index) }, role = Role.Tab)
                             .semantics { contentDescription = destination.label },
-                        contentAlignment = Alignment.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
                     ) {
                         Icon(
                             destination.icon,
                             contentDescription = null,
                             tint = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(19.dp),
+                        )
+                        Text(
+                            destination.label,
+                            color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 }
@@ -384,6 +431,7 @@ private fun VioraTopBar(
     closeDetail: () -> Unit,
     refresh: () -> Unit,
     reauthenticate: () -> Unit,
+    openProfile: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
         Row(
@@ -417,6 +465,35 @@ private fun VioraTopBar(
                     }
                 }
             }
+            IconButton(onClick = openProfile) {
+                Icon(Icons.Outlined.AccountCircle, contentDescription = "Open profile and settings")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryDestination(
+    state: VioraUiState,
+    initialSection: Int,
+    initialAcademicsTab: Int,
+    uploadAssignment: (AssignmentUi) -> Unit,
+    showDetail: (String, String) -> Unit,
+) {
+    var selectedSection by remember(initialSection) { mutableIntStateOf(initialSection.coerceIn(0, 1)) }
+    Column(Modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = selectedSection) {
+            Tab(selected = selectedSection == 0, onClick = { selectedSection = 0 }, text = { Text("Academics") })
+            Tab(selected = selectedSection == 1, onClick = { selectedSection = 1 }, text = { Text("Assessments") })
+        }
+        when (selectedSection) {
+            0 -> AcademicsScreen(state, initialTab = initialAcademicsTab, showCourseDetail = showDetail)
+            else -> AssessmentsScreen(
+                state,
+                uploadAssignment,
+                { showDetail("assignment", it.id) },
+                { showDetail("assessments-course", it) },
+            )
         }
     }
 }

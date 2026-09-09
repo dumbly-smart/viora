@@ -1,8 +1,11 @@
 package app.viora
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -93,14 +96,73 @@ class HomeScreenTest {
     }
 
     @Test
-    fun floatingNavigationAnnouncesTheSelectedDestination() {
+    fun dashboardDefaultsToExactlyThreeAcademicDestinations() {
         compose.setContent {
             VioraTheme {
-                VioraFloatingNavigationBar(selected = 0, lightBackground = true, onSelect = {})
+                TestDashboard()
             }
         }
 
-        compose.onNodeWithContentDescription("Home").assertIsSelected()
-        compose.onNodeWithContentDescription("Courses").assertIsNotSelected()
+        compose.onAllNodes(isSelectable()).assertCountEquals(3)
+        compose.onNodeWithContentDescription("Today").assertIsSelected()
+        compose.onNodeWithContentDescription("Plan").assertIsNotSelected()
+        compose.onNodeWithContentDescription("Library").assertIsNotSelected()
     }
+
+    @Test
+    fun dashboardOpensPlanAndLibraryContent() {
+        compose.setContent {
+            VioraTheme {
+                TestDashboard()
+            }
+        }
+
+        compose.onNodeWithContentDescription("Plan").performClick()
+        compose.onNodeWithText("No classes").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Library").performClick()
+        compose.onNodeWithText("Consolidated courses").assertIsDisplayed()
+    }
+
+    @Test
+    fun dashboardKeepsSettingsBehindTheProfileSheet() {
+        compose.setContent {
+            VioraTheme {
+                TestDashboard()
+            }
+        }
+
+        compose.onNodeWithContentDescription("Open profile and settings").performClick()
+        compose.onNodeWithText("More").assertIsDisplayed()
+    }
+}
+
+@Composable
+private fun TestDashboard() {
+    Dashboard(
+        state = VioraUiState(),
+        refresh = {},
+        selectSemester = {},
+        reauthenticate = {},
+        logout = {},
+        setDeadlineNotifications = {},
+        setExamNotifications = {},
+        openMaterial = { _, _ -> },
+        downloadMaterial = {},
+        downloadMaterials = {},
+        uploadAssignment = {},
+        setSearchQuery = {},
+        setQuietHours = {},
+        setSyncHours = {},
+        refreshDiagnostics = {},
+        clearDownloads = {},
+        clearAcademicCache = {},
+        shareTimetableQr = {},
+        markClass = { _, _ -> },
+        exportToDeviceCalendar = {},
+        exportIcs = {},
+        importIcs = {},
+        shareCalendarIcs = {},
+        initialDestination = null,
+    )
 }
