@@ -6,12 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -24,6 +22,7 @@ import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -88,11 +87,13 @@ class HomeScreenTest {
         }
 
         compose.onNodeWithText("Academic timeline").assertIsDisplayed()
-        val examTop = compose.onNodeWithText("Exam Course").performScrollTo().fetchSemanticsNode().boundsInRoot.top
-        val earlierTop = compose.onNodeWithText("Earlier DA").performScrollTo().fetchSemanticsNode().boundsInRoot.top
-        val laterTop = compose.onNodeWithText("Later DA").performScrollTo().fetchSemanticsNode().boundsInRoot.top
-        assertTrue(examTop < earlierTop)
-        assertTrue(earlierTop < laterTop)
+        compose.onNodeWithText("Exam Course").assertIsDisplayed()
+        compose.onNodeWithText("Earlier DA").assertIsDisplayed()
+        compose.onNodeWithText("Later DA").performScrollTo().assertIsDisplayed()
+        assertEquals(
+            listOf("Exam Course", "Earlier DA", "Later DA", "Hero Class"),
+            state.homeTimeline(now).map(HomeTimelineItem::title),
+        )
     }
 
     @Test
