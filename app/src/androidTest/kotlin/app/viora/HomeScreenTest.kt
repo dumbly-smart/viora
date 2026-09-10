@@ -1,16 +1,25 @@
 package app.viora
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
@@ -22,6 +31,128 @@ import java.time.ZoneId
 class HomeScreenTest {
     @get:Rule
     val compose = createComposeRule()
+
+    @Test
+    fun todayHeroPrioritizesNextClassOverEarlierDeadline() {
+        val now = LocalDateTime.of(2026, 8, 12, 8, 0)
+            .atZone(ZoneId.of("Asia/Kolkata"))
+            .toInstant()
+            .toEpochMilli()
+        val state = VioraUiState(
+            slots = listOf(
+                SlotWithCourse("slot", "course", "CSE1001", "Synthetic Course", "Faculty", 3, 10 * 60, 11 * 60, "SJT 101", "Theory"),
+            ),
+            assignments = listOf(
+                AssignmentUi("assignment", "CSE1002", "Earlier DA", now + 30 * 60_000, "Pending", courseTitle = "Course Two"),
+            ),
+        )
+        var opened: DetailSelection? = null
+
+        compose.setContent {
+            VioraTheme {
+                HomeScreen(state = state, refresh = {}, openDetail = { opened = it }, nowEpochMillis = now)
+            }
+        }
+
+        compose.onNodeWithText("Next class").assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            "Next class: Synthetic Course at 10:00 AM in SJT 101. Open course details.",
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Open course").performClick()
+        compose.runOnIdle { assertTrue(opened == DetailSelection("course", "CSE1001")) }
+    }
+
+    @Test
+    fun todayTimelineOrdersAcademicDeadlinesChronologically() {
+        val now = LocalDateTime.of(2026, 8, 12, 8, 0)
+            .atZone(ZoneId.of("Asia/Kolkata"))
+            .toInstant()
+            .toEpochMilli()
+        val state = VioraUiState(
+            slots = listOf(
+                SlotWithCourse("slot", "course", "CSE1004", "Hero Class", "Faculty", 4, 10 * 60, 11 * 60, "SJT 101", "Theory"),
+            ),
+            assignments = listOf(
+                AssignmentUi("later", "CSE1002", "Later DA", now + 5 * 60 * 60_000, "Pending", courseTitle = "Course Two"),
+                AssignmentUi("earlier", "CSE1001", "Earlier DA", now + 90 * 60_000, "Pending", courseTitle = "Course One"),
+            ),
+            exams = listOf(
+                ExamUi("exam", "CSE1003", "Exam Course", "CAT", now + 60 * 60_000, null, "AB1", "A12"),
+            ),
+        )
+
+        compose.setContent {
+            VioraTheme {
+                HomeScreen(state = state, refresh = {}, nowEpochMillis = now)
+            }
+        }
+
+        compose.onNodeWithText("Academic timeline").assertIsDisplayed()
+        val examTop = compose.onNodeWithText("Exam Course").performScrollTo().fetchSemanticsNode().boundsInRoot.top
+        val earlierTop = compose.onNodeWithText("Earlier DA").performScrollTo().fetchSemanticsNode().boundsInRoot.top
+        val laterTop = compose.onNodeWithText("Later DA").performScrollTo().fetchSemanticsNode().boundsInRoot.top
+        assertTrue(examTop < earlierTop)
+        assertTrue(earlierTop < laterTop)
+    }
+
+    @Test
+    fun todayOmitsNeedsAttentionWhenNoDeadlineOrAttendanceNeedsAction() {
+        val now = LocalDateTime.of(2026, 8, 12, 8, 0)
+            .atZone(ZoneId.of("Asia/Kolkata"))
+            .toInstant()
+            .toEpochMilli()
+        val state = VioraUiState(
+            assignments = listOf(
+                AssignmentUi("submitted", "CSE1001", "Submitted DA", now + 2 * 60 * 60_000, "Submitted", courseTitle = "Course One"),
+            ),
+            attendance = listOf(
+                AttendanceUi("attendance", "CSE1001", "Course One", "Theory", "Faculty", 18, 20, 20, 90.0, 5, 0, 1, 5, 0),
+            ),
+        )
+
+        compose.setContent {
+            VioraTheme {
+                HomeScreen(state = state, refresh = {}, nowEpochMillis = now)
+            }
+        }
+
+        compose.onNodeWithText("Academic timeline").assertIsDisplayed()
+        compose.onNodeWithText("Needs attention").assertDoesNotExist()
+    }
+
+    @Test
+    fun todayNeedsAttentionExposesAccessibleRiskAndOverdueLabelsAtLargeFont() {
+        val now = LocalDateTime.of(2026, 8, 12, 8, 0)
+            .atZone(ZoneId.of("Asia/Kolkata"))
+            .toInstant()
+            .toEpochMilli()
+        val state = VioraUiState(
+            assignments = listOf(
+                AssignmentUi("overdue", "CSE1002", "Lab record", now - 30 * 60_000, "Pending", courseTitle = "Course Two"),
+            ),
+            attendance = listOf(
+                AttendanceUi("risk", "CSE1001", "Synthetic Risk", "Theory", "Faculty", 13, 18, 18, 72.2, 0, 2, 1, 0, 2),
+            ),
+        )
+
+        compose.setContent {
+            VioraTheme {
+                CompositionLocalProvider(LocalDensity provides Density(1f, 1.5f)) {
+                    Box(Modifier.width(360.dp)) {
+                        HomeScreen(state = state, refresh = {}, nowEpochMillis = now)
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithText("Needs attention").assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            "Attendance risk: Synthetic Risk is 72 percent. Attend next 2 classes to reach 75 percent.",
+        ).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            "Overdue assignment: Lab record for Course Two was due at 7:30 AM.",
+        ).performScrollTo().assertIsDisplayed()
+    }
 
     @Test
     fun homeShowsReferenceHeroAndChronologicalAcademicRows() {
@@ -44,14 +175,14 @@ class HomeScreenTest {
             }
         }
 
-        compose.onNodeWithText("Upcoming").assertIsDisplayed()
-        compose.onNodeWithText("In the next 2 weeks").assertIsDisplayed()
+        compose.onNodeWithText("Today").assertIsDisplayed()
+        compose.onNodeWithText("Next class").assertIsDisplayed()
         compose.onNodeWithContentDescription("Sync Viora").assertIsDisplayed()
         compose.onNodeWithText("Synthetic assignment").assertIsDisplayed()
         compose.onNodeWithContentDescription("Synthetic Course, 10:00 AM, August 12", substring = true)
             .performScrollTo()
             .assertIsDisplayed()
-        compose.onNodeWithContentDescription("Upcoming class").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Wednesday, August 12, today, events scheduled").assertIsDisplayed()
     }
 
     @Test
@@ -78,12 +209,13 @@ class HomeScreenTest {
     fun homeRowsOpenTheirAcademicDetail() {
         val now = 1_786_498_200_000
         var opened: DetailSelection? = null
+        val leadAssignment = AssignmentUi("lead", "CSE1001", "First task", now + 30 * 60_000, "Pending")
         val assignment = AssignmentUi("assignment", "CSE1002", "Open me", now + 60 * 60_000, "Pending")
 
         compose.setContent {
             VioraTheme {
                 HomeScreen(
-                    state = VioraUiState(assignments = listOf(assignment)),
+                    state = VioraUiState(assignments = listOf(leadAssignment, assignment)),
                     refresh = {},
                     openDetail = { opened = it },
                     nowEpochMillis = now,
@@ -91,7 +223,7 @@ class HomeScreenTest {
             }
         }
 
-        compose.onNodeWithText("Open me").performClick()
+        compose.onNodeWithContentDescription("Open me, Due", substring = true).performScrollTo().performClick()
         compose.runOnIdle { assertTrue(opened == DetailSelection("assignment", "assignment")) }
     }
 

@@ -5,8 +5,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 internal enum class HomeTimelineKind { CLASS, ASSIGNMENT, EXAM }
+
+internal enum class HomeAttentionKind { ATTENDANCE, OVERDUE_ASSIGNMENT }
 
 internal data class HomeTimelineItem(
     val id: String,
@@ -17,6 +20,20 @@ internal data class HomeTimelineItem(
     val status: String,
     val detailKind: String? = null,
     val detailId: String? = null,
+    val location: String = "",
+)
+
+internal data class HomeAttentionItem(
+    val id: String,
+    val kind: HomeAttentionKind,
+    val timelineKind: HomeTimelineKind,
+    val title: String,
+    val subtitle: String,
+    val status: String,
+    val accessibilityLabel: String,
+    val detailKind: String,
+    val detailId: String,
+    val at: Long,
 )
 
 internal fun VioraUiState.homeTimeline(
@@ -42,6 +59,7 @@ internal fun VioraUiState.homeTimeline(
                 status = start.format(timeFormat),
                 detailKind = "course",
                 detailId = slot.code,
+                location = slot.venue,
             )
         }
     }
@@ -71,10 +89,52 @@ internal fun VioraUiState.homeTimeline(
             status = Instant.ofEpochMilli(exam.startsEpochMillis).atZone(academicZone).format(timeFormat),
             detailKind = "exam",
             detailId = exam.id,
+            location = exam.venue.takeIf(String::isNotBlank)?.let { "Room $it" }.orEmpty(),
         )
     }
 
     return (classItems + assignmentItems + examItems).sortedWith(compareBy(HomeTimelineItem::at, HomeTimelineItem::id))
+}
+
+internal fun VioraUiState.homeNeedsAttention(nowEpochMillis: Long): List<HomeAttentionItem> {
+    val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+    val overdueAssignments = assignments.mapNotNull { assignment ->
+        val due = assignment.dueEpochMillis ?: return@mapNotNull null
+        if (due > nowEpochMillis || isAssignmentSubmitted(assignment.status, assignment.lastUpload)) return@mapNotNull null
+        val course = assignment.courseTitle.ifBlank { assignment.courseCode }
+        val dueTime = Instant.ofEpochMilli(due).atZone(academicZone).format(timeFormat)
+        HomeAttentionItem(
+            id = "attention:assignment:${assignment.id}",
+            kind = HomeAttentionKind.OVERDUE_ASSIGNMENT,
+            timelineKind = HomeTimelineKind.ASSIGNMENT,
+            title = assignment.title,
+            subtitle = course,
+            status = "Overdue · due $dueTime",
+            accessibilityLabel = "Overdue assignment: ${assignment.title} for $course was due at $dueTime.",
+            detailKind = "assignment",
+            detailId = assignment.id,
+            at = due,
+        )
+    }
+    val attendanceRisks = attendance.mapNotNull { item ->
+        if (item.recovery <= 0 && item.percentage >= attendanceTarget) return@mapNotNull null
+        val course = item.courseTitle.ifBlank { item.courseCode }
+        val action = item.attendanceRecoveryCopy(attendanceTarget)
+        val rounded = item.percentage.roundToInt()
+        HomeAttentionItem(
+            id = "attention:attendance:${item.id}",
+            kind = HomeAttentionKind.ATTENDANCE,
+            timelineKind = HomeTimelineKind.CLASS,
+            title = course,
+            subtitle = item.courseCode,
+            status = "$rounded% attendance · $action",
+            accessibilityLabel = "Attendance risk: $course is $rounded percent. $action",
+            detailKind = "attendance",
+            detailId = item.id,
+            at = Long.MIN_VALUE + rounded,
+        )
+    }
+    return (attendanceRisks + overdueAssignments).sortedWith(compareBy(HomeAttentionItem::at, HomeAttentionItem::id))
 }
 
 internal fun List<HomeTimelineItem>.academicDates(): Set<LocalDate> =
@@ -84,4 +144,16 @@ internal fun homeCalendarDayDescription(date: LocalDate, today: LocalDate, hasEv
     append(date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)))
     if (date == today) append(", today")
     append(if (hasEvent) ", events scheduled" else ", no events scheduled")
+}
+
+private fun AttendanceUi.attendanceRecoveryCopy(target: Int): String {
+    val meetings = if (blockSize > 1) recoveryBlocks else recovery
+    if (meetings <= 0) return "Do not skip the next class."
+    val unit = when {
+        blockSize > 1 && meetings == 1 -> "lab class"
+        blockSize > 1 -> "lab classes"
+        meetings == 1 -> "class"
+        else -> "classes"
+    }
+    return "Attend next $meetings $unit to reach $target percent."
 }
