@@ -14,6 +14,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpVtopGatewayLoginTest {
+    @Test fun `incorrect credential response is not retried as a captcha failure`() = runTest {
+        val challenge = """
+            <html><body>
+            <input name="_csrf" value="synthetic-token">
+            <input name="captchaStr">
+            <img src="data:image/png;base64,synthetic">
+            </body></html>
+        """.trimIndent()
+        val interceptor = Interceptor { chain ->
+            val request = chain.request()
+            val html = if (request.method == "POST" && request.url.encodedPath == "/vtop/login") {
+                "<html><body><div class=\"alert\">Username or password is incorrect.</div></body></html>"
+            } else if (request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage") {
+                challenge
+            } else {
+                "<html><body><input name=\"_csrf\" value=\"synthetic-token\"></body></html>"
+            }
+            Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(html.toResponseBody("text/html".toMediaType()))
+                .build()
+        }
+        val gateway = HttpVtopGateway(
+            client = OkHttpClient.Builder().addInterceptor(interceptor).build(),
+            cookieJar = IsolatedCookieJar(MemoryCookieStore()),
+            captchaSolver = CaptchaSolver { "ABC234" },
+        )
+
+        assertEquals(SessionState.Missing, gateway.login("SYNTHETIC", "not-a-real-password".toCharArray()))
+    }
+
     @Test fun `text captcha mode is used when page also contains dormant recaptcha element`() = runTest {
         val challenge = """
             <html><body>
