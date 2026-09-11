@@ -30,6 +30,8 @@ Logging out clears Viora's saved account and local academic data without logging
 
 ## Download the APK
 
+[![GitHub Downloads](https://img.shields.io/github/downloads/dumbly-smart/viora/total?label=downloads)](https://github.com/dumbly-smart/viora/releases)
+
 Grab the newest APK from [GitHub Releases](https://github.com/dumbly-smart/viora/releases/latest), open it on your Android phone and tap **Install**.
 
 Android may ask you to allow installs from your browser or file manager since the APK is downloaded directly. You can turn that permission back off after installing. When there is a newer version, install it over the old one to keep your local data.
