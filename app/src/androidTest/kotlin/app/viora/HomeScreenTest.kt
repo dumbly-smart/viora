@@ -24,6 +24,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -182,6 +183,20 @@ class HomeScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
         compose.onNodeWithContentDescription("Wednesday, August 12, today, events scheduled").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Upcoming class").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Pending assignment").assertDoesNotExist()
+    }
+
+    @Test
+    fun homeDateRailSelectsAnotherDay() {
+        val today = LocalDate.of(2026, 8, 12)
+        compose.setContent {
+            VioraTheme {
+                HomeScreen(state = VioraUiState(), refresh = {}, nowEpochMillis = today.atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli())
+            }
+        }
+
+        compose.onNodeWithContentDescription("Thursday, August 13, no events scheduled").performClick().assertIsSelected()
     }
 
     @Test

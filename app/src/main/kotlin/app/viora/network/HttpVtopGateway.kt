@@ -361,7 +361,10 @@ class HttpVtopGateway(
     }
 
     private fun isInvalidCredentials(html: String): Boolean =
-        Regex("invalid\\s+(?:username|password|credentials)", RegexOption.IGNORE_CASE).containsMatchIn(html)
+        Regex(
+            "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(html)
 
     private fun isMandatoryAction(html: String): Boolean =
         Regex("mandatory/data/off|feedback|studentFeedback|redressal|hostel.*instruction", RegexOption.IGNORE_CASE)

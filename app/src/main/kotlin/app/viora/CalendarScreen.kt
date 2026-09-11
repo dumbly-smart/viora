@@ -1,6 +1,7 @@
 package app.viora
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +17,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,6 +54,7 @@ internal fun CalendarScreen(
     state: VioraUiState,
     initialDate: LocalDate = LocalDate.now(academicZone),
     footer: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     var month by remember { mutableStateOf(YearMonth.from(initialDate)) }
     var selectedDate by remember { mutableStateOf(initialDate) }
@@ -62,7 +62,7 @@ internal fun CalendarScreen(
     val selectedEvents = state.eventsForDate(selectedDate)
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = CALENDAR_HORIZONTAL_PADDING, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -177,42 +177,41 @@ private fun CalendarDayCell(
         append(date.format(DateTimeFormatter.ofPattern("EEEE, dd MMMM yyyy", Locale.ENGLISH)))
         if (markers.isNotEmpty()) append(", ").append(markers.sortedBy(AcademicCalendarMarker::ordinal).joinToString { it.displayName() })
     }
-    Surface(
-        onClick = { onSelectDate(date) },
+    Column(
         modifier = modifier
             .height(CALENDAR_DAY_HEIGHT)
+            .clickable { onSelectDate(date) }
             .semantics {
                 contentDescription = description
                 role = Role.Button
                 this.selected = selected
             },
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant,
-        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Column(
-            Modifier.padding(top = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                markers.sortedBy(AcademicCalendarMarker::ordinal).chunked(MARKERS_PER_ROW).forEach { markerRow ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        markerRow.forEach { marker ->
-                            Box(
-                                Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(marker.color())
-                                    .semantics { contentDescription = "Calendar marker: ${marker.displayName()}" },
-                            )
-                        }
-                    }
-                }
+            Text(
+                date.dayOfMonth.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            markers.sortedBy(AcademicCalendarMarker::ordinal).take(MARKERS_PER_ROW).forEach { marker ->
+                Box(
+                    Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(marker.color())
+                        .semantics { contentDescription = "Calendar marker: ${marker.displayName()}" },
+                )
             }
         }
     }

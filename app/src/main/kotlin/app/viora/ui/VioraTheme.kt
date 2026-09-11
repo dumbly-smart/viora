@@ -15,9 +15,10 @@ import androidx.compose.ui.unit.sp
 
 val VioraIce = Color(0xFFF4F5F9)
 val VioraBlue = Color(0xFF9BAAFD)
-val VioraSuccess = Color(0xFF57C785)
-val VioraCoral = Color(0xFFFF8E8E)
-val VioraAmber = Color(0xFFF0B66A)
+// Quiet semantic accents for graphite surfaces: informative, never fluorescent.
+val VioraSuccess = Color(0xFF7FA98C)
+val VioraCoral = Color(0xFFBD7A73)
+val VioraAmber = Color(0xFFB89A67)
 val VioraCanvas = Color(0xFF0D0F14)
 val VioraSurface = Color(0xFF16181F)
 val VioraSurfaceHigh = Color(0xFF20232C)

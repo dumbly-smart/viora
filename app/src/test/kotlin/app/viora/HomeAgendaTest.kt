@@ -12,6 +12,25 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 class HomeAgendaTest {
+
+    @Test fun `home includes assessment deadlines only through the current sunday`() {
+        val friday = time(2026, 8, 14, 9, 0)
+        val sunday = time(2026, 8, 16, 18, 0)
+        val nextMonday = time(2026, 8, 17, 9, 0)
+        val state = VioraUiState(assignments = listOf(
+            AssignmentUi("sunday", "CSE1001", "Current week", sunday, "Pending"),
+            AssignmentUi("monday", "CSE1002", "Next week", nextMonday, "Pending"),
+        ))
+
+        assertEquals(listOf("Current week"), state.homeTimeline(friday).filter { it.kind == HomeTimelineKind.ASSIGNMENT }.map(HomeTimelineItem::title))
+    }
+
+    @Test fun `upcoming panel interpolates from expanded to compact across its scroll range`() {
+        assertEquals(0f, homeUpcomingCollapseFraction(scrollOffset = 0f, collapseRange = 156f))
+        assertEquals(0.5f, homeUpcomingCollapseFraction(scrollOffset = 78f, collapseRange = 156f))
+        assertEquals(1f, homeUpcomingCollapseFraction(scrollOffset = 200f, collapseRange = 156f))
+    }
+
     @Test fun `home timeline merges classes assignments and exams across fourteen days`() {
         val now = time(2026, 8, 12, 8, 0)
         val assignmentDue = time(2026, 8, 12, 9, 0)
