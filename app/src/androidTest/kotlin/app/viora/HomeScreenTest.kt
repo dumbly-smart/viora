@@ -122,7 +122,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun todayNeedsAttentionExposesAccessibleRiskAndOverdueLabelsAtLargeFont() {
+    fun todayKeepsAttendanceRiskButHidesOverdueAssessmentsAtLargeFont() {
         val now = LocalDateTime.of(2026, 8, 12, 8, 0)
             .atZone(ZoneId.of("Asia/Kolkata"))
             .toInstant()
@@ -150,9 +150,7 @@ class HomeScreenTest {
         compose.onNodeWithContentDescription(
             "Attendance risk: Synthetic Risk is 72 percent. Attend next 2 classes to reach 75 percent.",
         ).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription(
-            "Overdue assignment: Lab record for Course Two was due at 7:30 AM.",
-        ).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab record").assertDoesNotExist()
     }
 
     @Test

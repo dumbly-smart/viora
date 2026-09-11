@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
 
 internal enum class HomeTimelineKind { CLASS, ASSIGNMENT, EXAM }
 
-internal enum class HomeAttentionKind { ATTENDANCE, OVERDUE_ASSIGNMENT }
+internal enum class HomeAttentionKind { ATTENDANCE }
 
 internal data class HomeTimelineItem(
     val id: String,
@@ -97,25 +97,6 @@ internal fun VioraUiState.homeTimeline(
 }
 
 internal fun VioraUiState.homeNeedsAttention(nowEpochMillis: Long): List<HomeAttentionItem> {
-    val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
-    val overdueAssignments = assignments.mapNotNull { assignment ->
-        val due = assignment.dueEpochMillis ?: return@mapNotNull null
-        if (due > nowEpochMillis || isAssignmentSubmitted(assignment.status, assignment.lastUpload)) return@mapNotNull null
-        val course = assignment.courseTitle.ifBlank { assignment.courseCode }
-        val dueTime = Instant.ofEpochMilli(due).atZone(academicZone).format(timeFormat)
-        HomeAttentionItem(
-            id = "attention:assignment:${assignment.id}",
-            kind = HomeAttentionKind.OVERDUE_ASSIGNMENT,
-            timelineKind = HomeTimelineKind.ASSIGNMENT,
-            title = assignment.title,
-            subtitle = course,
-            status = "Overdue · due $dueTime",
-            accessibilityLabel = "Overdue assignment: ${assignment.title} for $course was due at $dueTime.",
-            detailKind = "assignment",
-            detailId = assignment.id,
-            at = due,
-        )
-    }
     val attendanceRisks = attendance.mapNotNull { item ->
         if (item.recovery <= 0 && item.percentage >= attendanceTarget) return@mapNotNull null
         val course = item.courseTitle.ifBlank { item.courseCode }
@@ -134,7 +115,7 @@ internal fun VioraUiState.homeNeedsAttention(nowEpochMillis: Long): List<HomeAtt
             at = Long.MIN_VALUE + rounded,
         )
     }
-    return (attendanceRisks + overdueAssignments).sortedWith(compareBy(HomeAttentionItem::at, HomeAttentionItem::id))
+    return attendanceRisks.sortedWith(compareBy(HomeAttentionItem::at, HomeAttentionItem::id))
 }
 
 internal fun List<HomeTimelineItem>.academicDates(): Set<LocalDate> =

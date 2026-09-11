@@ -62,7 +62,7 @@ internal fun HomeScreen(
     val timeline = remember(state.slots, state.assignments, state.exams, state.calendar, referenceNow) {
         state.homeTimeline(referenceNow)
     }
-    val attention = remember(state.assignments, state.attendance, state.attendanceTarget, referenceNow) {
+    val attention = remember(state.attendance, state.attendanceTarget, referenceNow) {
         state.homeNeedsAttention(referenceNow)
     }
     val eventDates = remember(timeline) { timeline.academicDates() }
@@ -229,14 +229,8 @@ private fun AttentionRow(item: HomeAttentionItem, openDetail: (DetailSelection) 
             .clickable { openDetail(DetailSelection(item.detailKind, item.detailId)) }
             .semantics { contentDescription = item.accessibilityLabel },
         shape = MaterialTheme.shapes.medium,
-        color = when (item.kind) {
-            HomeAttentionKind.ATTENDANCE -> MaterialTheme.colorScheme.errorContainer
-            HomeAttentionKind.OVERDUE_ASSIGNMENT -> MaterialTheme.colorScheme.surfaceVariant
-        },
-        contentColor = when (item.kind) {
-            HomeAttentionKind.ATTENDANCE -> MaterialTheme.colorScheme.onErrorContainer
-            HomeAttentionKind.OVERDUE_ASSIGNMENT -> MaterialTheme.colorScheme.onSurface
-        },
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
