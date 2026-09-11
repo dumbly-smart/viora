@@ -42,6 +42,7 @@ internal fun VioraUiState.homeTimeline(
 ): List<HomeTimelineItem> {
     val now = Instant.ofEpochMilli(nowEpochMillis).atZone(academicZone)
     val horizonExclusive = now.toLocalDate().plusDays(lookAheadDays).atStartOfDay(academicZone).toInstant().toEpochMilli()
+    val assessmentWeekExclusive = now.toLocalDate().plusDays((8 - now.dayOfWeek.value).toLong()).atStartOfDay(academicZone).toInstant().toEpochMilli()
     val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 
     val classItems = (0L until lookAheadDays).flatMap { offset ->
@@ -65,7 +66,7 @@ internal fun VioraUiState.homeTimeline(
     }
     val assignmentItems = assignments.mapNotNull { assignment ->
         val due = assignment.dueEpochMillis ?: return@mapNotNull null
-        if (due <= nowEpochMillis || due >= horizonExclusive || isAssignmentSubmitted(assignment.status, assignment.lastUpload)) return@mapNotNull null
+        if (due <= nowEpochMillis || due >= assessmentWeekExclusive || isAssignmentSubmitted(assignment.status, assignment.lastUpload)) return@mapNotNull null
         HomeTimelineItem(
             id = "assignment:${assignment.id}",
             at = due,

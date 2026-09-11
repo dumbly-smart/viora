@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -49,6 +50,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -90,6 +95,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +105,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -574,38 +581,23 @@ internal fun CoursesScreen(
 
 @Composable
 private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
-    val palette = courseCardPalette(course.code)
     Surface(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .semantics { contentDescription = "Open ${course.code} ${course.type} course" },
         shape = RoundedCornerShape(28.dp),
-        color = palette.accent,
-        contentColor = palette.onAccent,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = Color(0xFFF8F7FA),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = palette.onAccent.copy(alpha = 0.10f),
-                    contentColor = palette.onAccent,
-                ) {
-                    Text(
-                        course.code,
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Text("OPEN  ↗", style = MaterialTheme.typography.labelMedium)
-            }
+            Text("${course.code}  ·  ${course.type.ifBlank { "COURSE" }}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             if (course.type.isNotBlank()) {
-                Text(course.type, style = MaterialTheme.typography.labelMedium, color = palette.onAccent.copy(alpha = 0.76f))
+                Text(course.type, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
                 course.title.takeIf { it.isNotBlank() && it != course.code } ?: course.code,
@@ -621,7 +613,7 @@ private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
                         "${course.messages.size} ${if (course.messages.size == 1) "message" else "messages"}",
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = palette.onAccent.copy(alpha = 0.76f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -777,11 +769,12 @@ internal fun AttendanceCard(item: AttendanceUi, ninePointRule: Boolean = false) 
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (healthy) VioraSuccess.copy(alpha = 0.22f) else VioraCoral.copy(alpha = 0.28f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(item.courseCode, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             Text(
-                if (item.courseTitle.isBlank()) item.courseCode else "${item.courseCode} · ${item.courseTitle}",
+                item.courseTitle.ifBlank { item.courseCode },
                 style = MaterialTheme.typography.titleMedium,
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -839,19 +832,7 @@ internal fun ScheduleScreen(
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Calendar") })
         }
         if (selectedTab == 1) {
-            Column(Modifier.weight(1f)) {
-                CalendarInterchangeActions(
-                    canExport = canExport,
-                    loading = state.loading,
-                    message = state.calendarInterchangeMessage,
-                    exportToDeviceCalendar = exportToDeviceCalendar,
-                    exportIcs = exportIcs,
-                    importIcs = { confirmImport = true },
-                    shareCalendarIcs = shareCalendarIcs,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                )
-                Box(Modifier.weight(1f)) { CalendarScreen(state, initialDate = initialDate) }
-            }
+            CalendarScreen(state, initialDate = initialDate, modifier = Modifier.weight(1f))
             return@Column
         }
     val today = initialDate
@@ -869,7 +850,23 @@ internal fun ScheduleScreen(
         }
         .sortedBy { it.startsEpochMillis }
     val visibleExams = state.exams.filter { shouldShowExamInSchedule(it.startsEpochMillis, it.endsEpochMillis, System.currentTimeMillis()) }
+    val timelineListState = rememberLazyListState()
+    val focusedSlotId by remember(timelineListState, daySlots) {
+        derivedStateOf {
+            focusedTimelineCourseKey(
+                viewportStart = timelineListState.layoutInfo.viewportStartOffset,
+                viewportEnd = timelineListState.layoutInfo.viewportEndOffset,
+                courses = timelineListState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+                    val key = info.key as? String ?: return@mapNotNull null
+                    key.takeIf { it.startsWith("timeline-slot:") }?.let {
+                        TimelineViewportCourse(it.removePrefix("timeline-slot:"), info.offset, info.size)
+                    }
+                },
+            ) ?: daySlots.firstOrNull()?.slotId
+        }
+    }
     LazyColumn(
+        state = timelineListState,
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -912,11 +909,11 @@ internal fun ScheduleScreen(
                 EmptyStateCard("No classes", "This day has no cached timetable entries.")
             }
         } else {
-            items(daySlots, key = SlotWithCourse::slotId) { slot ->
+            items(daySlots, key = { "timeline-slot:${it.slotId}" }) { slot ->
                 val isToday = selectedDay == today.dayOfWeek.value
                 val phase = if (isToday) classPhase(slot.startMinute, slot.endMinute, nowMinute) else ClassPhase.UPCOMING
                 val key = classCheckInKey(selectedDate, slot.slotId)
-                ClassCard(slot, state.attendanceFor(slot), phase, state.classCheckIns[key], if (selectedDate <= today && phase != ClassPhase.UPCOMING) key else null, markClass, ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa))
+                ClassCard(slot, state.attendanceFor(slot), phase, state.classCheckIns[key], if (selectedDate <= today && phase != ClassPhase.UPCOMING) key else null, markClass, ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa), timelineFocused = slot.slotId == focusedSlotId)
             }
         }
         if (importedForDay.isNotEmpty()) {
@@ -1009,27 +1006,23 @@ internal fun AssessmentsScreen(
 
 @Composable
 private fun AssessmentCourseCard(group: AssessmentCourseGroup, onClick: () -> Unit) {
-    val palette = courseCardPalette(group.courseCode)
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        color = palette.accent,
-        contentColor = palette.onAccent,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = Color(0xFFF8F7FA),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(group.courseCode, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("VIEW  ↗", style = MaterialTheme.typography.labelMedium)
-            }
+            Text(group.courseCode, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Text(group.courseTitle.ifBlank { group.courseCode }, style = MaterialTheme.typography.titleLarge)
             Text(
                 "${group.assignments.size} ${if (group.assignments.size == 1) "assessment" else "assessments"}",
-                color = palette.onAccent.copy(alpha = 0.76f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -1039,19 +1032,23 @@ private fun AssessmentCourseCard(group: AssessmentCourseGroup, onClick: () -> Un
 @Composable
 private fun AssessmentCard(assignment: AssignmentUi, modifier: Modifier = Modifier) {
     val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
-    val palette = courseCardPalette(assignment.courseCode)
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        color = palette.container,
+        color = MaterialTheme.colorScheme.surface,
         contentColor = Color(0xFFF8F7FA),
-        border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.42f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("ASSESSMENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text(assignment.courseCode, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(assignment.title, style = MaterialTheme.typography.titleMedium)
             Text(assignment.courseLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Due ${assignment.dueEpochMillis.asAcademicTime("date unavailable")}")
-            Text(if (submitted) "Submitted" else "Pending", color = if (submitted) Color(0xFF75D9B2) else Color(0xFFFF9B8E), fontWeight = FontWeight.Bold)
+            Text(if (submitted) "Submitted" else "Pending", color = if (submitted) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
             if (assignment.lastUpload.isNotBlank() && !assignment.lastUpload.equals("N/A", true)) Text("Last upload · ${assignment.lastUpload}")
         }
     }
@@ -1066,7 +1063,6 @@ private fun ExpandableAssessmentCard(
     uploadAssignment: (AssignmentUi) -> Unit,
     onToggle: () -> Unit,
 ) {
-    val palette = courseCardPalette(assignment.courseCode)
     val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
     Surface(
         onClick = onToggle,
@@ -1075,13 +1071,13 @@ private fun ExpandableAssessmentCard(
             .animateContentSize()
             .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
         shape = RoundedCornerShape(26.dp),
-        color = palette.container,
+        color = MaterialTheme.colorScheme.surface,
         contentColor = Color(0xFFF8F7FA),
-        border = BorderStroke(1.dp, palette.accent.copy(alpha = if (expanded) 0.72f else 0.34f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = palette.accent, contentColor = palette.onAccent) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface) {
                     Text(
                         number.toString().padStart(2, '0'),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -1100,18 +1096,18 @@ private fun ExpandableAssessmentCard(
                 Icon(
                     if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
                     contentDescription = if (expanded) "Collapse assessment" else "Expand assessment",
-                    tint = palette.accent,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
                 if (submitted) "SUBMITTED" else "PENDING",
-                color = if (submitted) Color(0xFF75D9B2) else Color(0xFFFF9B8E),
+                color = if (submitted) VioraSuccess else VioraCoral,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
             )
             AnimatedVisibility(visible = expanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HorizontalDivider(color = palette.accent.copy(alpha = 0.24f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(assignment.courseLabel(), color = Color(0xFFD8D4DF), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         assignment.status.takeIf(String::isNotBlank)?.let { "VTOP status · $it" } ?: "VTOP status unavailable",
@@ -1128,23 +1124,6 @@ private fun ExpandableAssessmentCard(
             }
         }
     }
-}
-
-private data class CourseCardPalette(
-    val accent: Color,
-    val onAccent: Color,
-    val container: Color,
-)
-
-private fun courseCardPalette(courseCode: String): CourseCardPalette {
-    val palettes = listOf(
-        CourseCardPalette(Color(0xFF61D5BD), Color(0xFF082D28), Color(0xFF153430)),
-        CourseCardPalette(Color(0xFF66C7F0), Color(0xFF092C3B), Color(0xFF142F3A)),
-        CourseCardPalette(Color(0xFFFFC45B), Color(0xFF352300), Color(0xFF3A2D17)),
-        CourseCardPalette(Color(0xFFFF8E7D), Color(0xFF3C120D), Color(0xFF3B2421)),
-        CourseCardPalette(Color(0xFFB9A7FF), Color(0xFF24174D), Color(0xFF2D2942)),
-    )
-    return palettes[Math.floorMod(courseCode.filter(Char::isLetterOrDigit).uppercase(Locale.ENGLISH).hashCode(), palettes.size)]
 }
 
 @Composable
@@ -1173,16 +1152,31 @@ private fun ClassCard(
     markClass: (String, ClassCheckIn?) -> Unit = { _, _ -> },
     ninePointRule: Boolean = false,
     whenText: String? = null,
+    timelineFocused: Boolean = true,
 ) {
+    val focusAlpha by animateFloatAsState(
+        targetValue = if (timelineFocused) 1f else 0.42f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "timeline-course-alpha",
+    )
+    val focusBlur by animateDpAsState(
+        targetValue = if (timelineFocused) 0.dp else 1.2.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "timeline-course-blur",
+    )
     val accent = when (checkIn) {
         ClassCheckIn.ATTENDED -> VioraSuccess
         ClassCheckIn.MISSED -> VioraCoral
         null -> if (phase == ClassPhase.LIVE) VioraBlue else MaterialTheme.colorScheme.outlineVariant
     }
     Surface(
-        Modifier.fillMaxWidth().animateContentSize(),
+        Modifier.fillMaxWidth().animateContentSize().alpha(focusAlpha).blur(focusBlur),
         shape = MaterialTheme.shapes.medium,
-        color = if (phase == ClassPhase.LIVE) VioraBlue.copy(alpha = 0.09f) else MaterialTheme.colorScheme.surface,
+        color = when {
+            phase == ClassPhase.LIVE -> VioraBlue.copy(alpha = 0.09f)
+            timelineFocused -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            else -> MaterialTheme.colorScheme.surface
+        },
         border = androidx.compose.foundation.BorderStroke(if (phase == ClassPhase.LIVE || checkIn != null) 1.5.dp else 1.dp, accent),
     ) {
         Row {

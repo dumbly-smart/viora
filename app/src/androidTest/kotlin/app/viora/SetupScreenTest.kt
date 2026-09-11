@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -21,6 +22,20 @@ import org.junit.Test
 class SetupScreenTest {
     @get:Rule
     val compose = createComposeRule()
+
+    @Test
+    fun mobileEditorSignInKeepsCredentialLinesAccessible() {
+        compose.setContent {
+            VioraTheme {
+                SetupScreen(SetupState()) {}
+            }
+        }
+
+        compose.onAllNodesWithText("auth.viora")[0].assertIsDisplayed()
+        compose.onAllNodesWithText("createVtopClient", substring = true)[0].assertIsDisplayed()
+        compose.onNodeWithText("VTOP username").assertIsDisplayed()
+        compose.onNodeWithText("Password").assertIsDisplayed()
+    }
 
     @Test
     fun manualCaptchaAppearsOnlyAsNativeFallbackAndSubmitsItsAnswer() {
@@ -44,10 +59,10 @@ class SetupScreenTest {
             }
         }
 
-        compose.onNodeWithText("Automatic CAPTCHA attempts did not work").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("// CAPTCHA fallback required by VTOP").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("VTOP CAPTCHA").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("CAPTCHA").performScrollTo().performTextInput("ABC234")
-        compose.onNodeWithText("Verify CAPTCHA").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("CAPTCHA").performScrollTo().performTextInput("ABC234")
+        compose.onNodeWithContentDescription("Run sign in").performClick()
 
         compose.runOnIdle { assertEquals("ABC234", submittedAnswer) }
     }

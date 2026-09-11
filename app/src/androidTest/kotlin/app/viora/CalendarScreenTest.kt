@@ -52,7 +52,7 @@ class CalendarScreenTest {
     }
 
     @Test
-    fun planSwitchesBetweenTimelineAndCalendarWithInterchangeActions() {
+    fun planKeepsInterchangeActionsInTimelineButNotCalendar() {
         val today = LocalDate.now(ZoneId.of("Asia/Kolkata"))
         val state = markerState(today)
 
@@ -69,7 +69,10 @@ class CalendarScreenTest {
         compose.onNodeWithText("Calendar").performClick()
         compose.onNode(hasText("Calendar") and isSelectable()).assertIsSelected()
         compose.onNodeWithText("Academic calendar").assertIsDisplayed()
-        compose.onNodeWithText("Export ICS").assertIsDisplayed()
+        compose.onNodeWithText("Export to Viora calendar").assertDoesNotExist()
+        compose.onNodeWithText("Export ICS").assertDoesNotExist()
+        compose.onNodeWithText("Import ICS").assertDoesNotExist()
+        compose.onNodeWithText("Share timetable").assertDoesNotExist()
 
         compose.onNodeWithText("Timeline").performClick()
         compose.onNodeWithText("Synthetic Course").performScrollTo().assertIsDisplayed()
