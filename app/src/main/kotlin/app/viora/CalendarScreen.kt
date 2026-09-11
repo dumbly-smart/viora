@@ -54,6 +54,7 @@ import java.util.Locale
 internal fun CalendarScreen(
     state: VioraUiState,
     initialDate: LocalDate = LocalDate.now(academicZone),
+    footer: (@Composable () -> Unit)? = null,
 ) {
     var month by remember { mutableStateOf(YearMonth.from(initialDate)) }
     var selectedDate by remember { mutableStateOf(initialDate) }
@@ -113,6 +114,9 @@ internal fun CalendarScreen(
             item { CalendarEmptyState() }
         } else {
             items(selectedEvents, key = AcademicDayEvent::id) { event -> CalendarEventCard(event) }
+        }
+        footer?.let { calendarFooter ->
+            item { calendarFooter() }
         }
     }
 }

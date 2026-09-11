@@ -52,7 +52,7 @@ Notifications are change-driven: compare the new snapshot with the last committe
 
 ## Threat model highlights
 
-- Device theft: secrets encrypted at rest; optional biometric app lock.
+- Device theft: secrets encrypted at rest.
 - Malicious backup: credentials/cookies excluded from Android backup.
 - Logs/crash reports: centralized redaction; academic payloads disabled by default.
 - MITM: normal platform certificate validation; no trust-all client.

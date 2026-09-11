@@ -139,3 +139,13 @@ data class CourseMaterialEntity(val semesterId: String, val id: String, val cour
 
 @Entity(tableName = "academic_changes", indices = [Index("occurredEpochMillis")])
 data class AcademicChangeEntity(@PrimaryKey val id: String, val category: String, val title: String, val detail: String, val occurredEpochMillis: Long)
+
+@Entity(tableName = "imported_calendar_events", indices = [Index("startsEpochMillis")])
+data class ImportedCalendarEventEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val details: String,
+    val location: String,
+    val startsEpochMillis: Long,
+    val endsEpochMillis: Long,
+)

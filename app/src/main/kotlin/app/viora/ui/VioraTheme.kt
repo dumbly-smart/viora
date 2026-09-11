@@ -13,35 +13,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val VioraIce = Color(0xFFF1F1F1)
-val VioraBlue = Color(0xFFD7D7D7)
-val VioraSuccess = Color(0xFFE6E6E6)
-val VioraCoral = Color(0xFFB8B8B8)
-val VioraAmber = Color(0xFF989898)
-val VioraCanvas = Color(0xFF09090B)
-val VioraSurface = Color(0xFF121212)
-val VioraSurfaceHigh = Color(0xFF1B1B1B)
+val VioraIce = Color(0xFFF4F5F9)
+val VioraBlue = Color(0xFF9BAAFD)
+val VioraSuccess = Color(0xFF57C785)
+val VioraCoral = Color(0xFFFF8E8E)
+val VioraAmber = Color(0xFFF0B66A)
+val VioraCanvas = Color(0xFF0D0F14)
+val VioraSurface = Color(0xFF16181F)
+val VioraSurfaceHigh = Color(0xFF20232C)
 
 private val VioraColors = darkColorScheme(
-    primary = VioraIce,
-    onPrimary = Color(0xFF151515),
-    primaryContainer = Color(0xFF2A2A2A),
-    onPrimaryContainer = Color(0xFFF5F5F5),
-    secondary = VioraBlue,
-    onSecondary = Color(0xFF191919),
-    secondaryContainer = Color(0xFF303030),
-    onSecondaryContainer = Color(0xFFE8E8E8),
+    primary = VioraBlue,
+    onPrimary = Color(0xFF12141C),
+    primaryContainer = Color(0xFF2A3168),
+    onPrimaryContainer = Color(0xFFE0E5FF),
+    secondary = VioraIce,
+    onSecondary = Color(0xFF151820),
+    secondaryContainer = Color(0xFF252A38),
+    onSecondaryContainer = Color(0xFFDDE2F2),
     tertiary = VioraAmber,
     error = VioraCoral,
-    errorContainer = Color(0xFF343434),
+    errorContainer = Color(0xFF4A2428),
     background = VioraCanvas,
-    onBackground = Color(0xFFF3F3F3),
+    onBackground = Color(0xFFF4F5F9),
     surface = VioraSurface,
-    onSurface = Color(0xFFF3F3F3),
+    onSurface = Color(0xFFF4F5F9),
     surfaceVariant = VioraSurfaceHigh,
-    onSurfaceVariant = Color(0xFFB2B2B2),
-    outline = Color(0xFF4A4A4A),
-    outlineVariant = Color(0xFF2D2D2D),
+    onSurfaceVariant = Color(0xFFB4BAC9),
+    outline = Color(0xFF596174),
+    outlineVariant = Color(0xFF303642),
 )
 
 private val VioraTypography = Typography(

@@ -4,11 +4,15 @@ import app.viora.model.ClassSlot
 import app.viora.model.Course
 import java.time.LocalDateTime
 import java.time.LocalDate
+import java.io.IOException
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 sealed interface SessionState {
     data object Missing : SessionState
     data object Active : SessionState
     data object VerificationRequired : SessionState
+    data class CaptchaRequired(val imageDataUri: String) : SessionState
 }
 
 data class TimetableSnapshot(
@@ -49,14 +53,43 @@ data class DigitalAssignmentRecord(
     val dueAt: LocalDateTime?,
     val lastUpload: String,
     val status: String,
+    val uploadLocator: AssignmentUploadLocator? = null,
 )
 
-data class VtopWebSession(
-    val url: String,
-    val cookies: List<String>,
-    val postBody: String? = null,
-    val shellUrl: String? = null,
+data class AssignmentUploadLocator(
+    val requestPath: String,
+    val fields: Map<String, String>,
+    val fileField: String,
+    val acceptedMimeTypes: Set<String>,
+    val maxBytes: Long?,
 )
+
+internal fun requireAssignmentUploadLocator(
+    assignments: List<DigitalAssignmentRecord>,
+    assignmentId: String,
+): AssignmentUploadLocator = assignments.firstOrNull { it.id == assignmentId }?.uploadLocator
+    ?: throw IOException("VTOP did not provide a current upload form for this assessment")
+
+internal fun resolveAssignmentUploadAction(requestPath: String): HttpUrl {
+    val resolved = "https://vtop.vit.ac.in/".toHttpUrl().resolve(requestPath)
+        ?: throw IOException("VTOP provided an invalid assessment upload action")
+    if (resolved.scheme != "https" || resolved.host != "vtop.vit.ac.in" || resolved.port != 443) {
+        throw IOException("Blocked an unsafe assessment upload action")
+    }
+    return resolved
+}
+
+fun AssignmentUploadLocator.accepts(mimeType: String, fileName: String): Boolean {
+    if (acceptedMimeTypes.isEmpty()) return true
+    val normalizedMime = mimeType.lowercase()
+    val normalizedName = fileName.lowercase()
+    return acceptedMimeTypes.any { raw ->
+        val accepted = raw.trim().lowercase()
+        accepted == "*/*" || accepted == normalizedMime ||
+            (accepted.endsWith("/*") && normalizedMime.startsWith(accepted.removeSuffix("*"))) ||
+            (accepted.startsWith('.') && normalizedName.endsWith(accepted))
+    }
+}
 
 data class ExamRecord(
     val id: String,
@@ -72,11 +105,12 @@ data class ExamRecord(
 interface VtopGateway {
     suspend fun sessionState(): SessionState
     suspend fun login(username: String, password: CharArray): SessionState
+    suspend fun submitCaptcha(username: String, password: CharArray, answer: String): SessionState = SessionState.VerificationRequired
     suspend fun semesters(): List<SemesterOption>
     suspend fun timetable(semesterId: String): TimetableSnapshot
     suspend fun attendance(semesterId: String): AttendanceSnapshot
     suspend fun digitalAssignments(semesterId: String): List<DigitalAssignmentRecord>
-    suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession
+    suspend fun uploadDigitalAssignment(semesterId: String, assignmentId: String, fileName: String, mimeType: String, bytes: ByteArray)
     suspend fun exams(semesterId: String): List<ExamRecord>
     suspend fun marks(semesterId: String): List<MarkRecord>
     suspend fun grades(semesterId: String): GradeSnapshot

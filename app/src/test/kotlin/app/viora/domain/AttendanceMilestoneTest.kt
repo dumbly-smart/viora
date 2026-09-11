@@ -15,7 +15,12 @@ class AttendanceMilestoneTest {
     }
 
     @Test
-    fun `does not allow skips when current attendance is below target`() {
-        assertEquals(0, maximumSkippableOccurrences(14, 20, 75, listOf(1, 1)))
+    fun `future attended classes can recover a currently below target course`() {
+        assertEquals(1, maximumSkippableOccurrences(14, 20, 75, List(10) { 1 }))
+    }
+
+    @Test
+    fun `lab skip capacity preserves whole two unit occurrences`() {
+        assertEquals(1, maximumSkippableOccurrences(14, 20, 75, List(6) { 2 }))
     }
 }

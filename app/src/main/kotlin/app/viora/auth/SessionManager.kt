@@ -19,6 +19,7 @@ class SessionManager(
     suspend fun ensureActive(): SessionResolution = try {
         when (gateway.sessionState()) {
             SessionState.Active -> SessionResolution.Ready
+            is SessionState.CaptchaRequired -> SessionResolution.SignInRequired
             SessionState.VerificationRequired -> SessionResolution.VerificationRequired
             SessionState.Missing -> silentlySignIn()
         }
@@ -31,6 +32,7 @@ class SessionManager(
         return try {
             when (gateway.login(saved.username, saved.password)) {
                 SessionState.Active -> SessionResolution.Ready
+                is SessionState.CaptchaRequired -> SessionResolution.SignInRequired
                 SessionState.VerificationRequired -> SessionResolution.VerificationRequired
                 SessionState.Missing -> SessionResolution.SignInRequired
             }

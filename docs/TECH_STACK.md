@@ -58,7 +58,7 @@ Compose is also used for:
 
 - Current and next class cards
 - A calendar-aware seven-day academic timeline
-- Cached assessment Marks and Attendance screens, including CAT 1, CAT 2, and FAT milestone allowances
+- Complete cached Marks and Attendance screens, including CAT 1, CAT 2, and FAT forward-looking milestone allowances
 - A local-only academic calendar view built from cached academic records
 - Attendance projections and what-if controls
 - Consolidated course, assignment, exam, and material detail views
@@ -80,7 +80,7 @@ Blocking work such as clearing the database or writing files is moved to `Dispat
 
 ## 5. Local database: Room and SQLite
 
-Room 2.8.4 is the app's source of truth. KSP generates DAO implementations and validates SQL queries at build time. The database is currently schema version 6.
+Room 2.8.4 is the app's source of truth. KSP generates DAO implementations and validates SQL queries at build time. The database is currently schema version 9.
 
 Important tables include:
 
@@ -97,10 +97,11 @@ Important tables include:
 - `sync_resources`: last attempt, success, status, and safe error per resource
 - `academic_changes`: durable change events used by the UI and notifications
 - `notification_ledger`: deduplication keys for already-published notifications
+- `imported_calendar_events`: one transactionally replaced set of user-imported ICS events
 
 Timetable tables use foreign keys and cascade deletion within a semester. Remote records receive deterministic IDs so repeated syncs are idempotent. Repositories generally replace one resource for one semester inside a Room transaction; unrelated semesters and unrelated resources remain intact.
 
-Schema migrations preserve installed-user data. The migration chain currently covers versions 1 through 6. Instrumentation tests include an offline in-memory database check and a direct v5-to-v6 migration assertion. CI compiles the Android instrumentation APK even when no emulator is attached.
+Schema migrations preserve installed-user data. The migration chain currently covers versions 1 through 9. Instrumentation tests include offline Room behavior and direct migration assertions, including the v8-to-v9 imported-calendar table. CI compiles the Android instrumentation APK even when no emulator is attached.
 
 Semester rollover is based on remote semester ordering plus locally known semester IDs. When a genuinely new first semester appears, Viora selects it, marks older semester rows inactive, and preserves their cached records as archives.
 
@@ -112,7 +113,11 @@ OkHttp 5.3.2 performs network requests. The client has 20-second connection and 
 
 `VtopGateway` is the interface between the rest of the app and VTOP. `HttpVtopGateway` owns endpoint paths, request forms, CSRF tokens, authorized student IDs, session detection, and conversion from parser results into typed snapshots.
 
-The gateway covers semesters, timetable, attendance, assignments, exams, marks, grades, CGPA, calendar, class messages, course-page faculty/material metadata, and on-demand material bodies.
+The gateway covers semesters, timetable, attendance, assignments, native
+assignment multipart upload, exams, marks, grades, CGPA, calendar, class
+messages, course-page faculty/material metadata, and on-demand material bodies.
+Upload actions are accepted only when fresh authenticated assignment markup
+provides the form fields and a VTOP-only HTTPS target.
 
 There is no application server. Viora communicates directly with VTOP from the phone. Search, parsing, attendance math, caching, change detection, notifications, and downloads all happen locally.
 
@@ -125,7 +130,7 @@ VTOP is an HTML application, so Viora uses Jsoup 1.22.1 rather than pretending t
 - Parsers return `ParseResult.Success`, `AuthenticationRequired`, or `InvalidDocument`.
 - Repositories decide whether a parsed snapshot is safe to commit.
 
-Parsers normalize headers and support known aliases—for example, `Course Code` versus `Subject Code`, or `Time` versus `Session`. Attendance supports both separate attended/held columns and the combined `13/15` form used by current VTOP layouts. Theory and lab rows have separate stable identities and are never collapsed just because their subject names match.
+Parsers normalize headers and support known aliases—for example, `Course Code` versus `Subject Code`, or `Time` versus `Session`. Attendance supports both separate attended/held columns and the combined `13/15` form used by current VTOP layouts. Marks accept supported `th` and `td` headers, course-heading rows, and components without weightage. Theory and lab rows have separate stable identities and are never collapsed just because their subject names match.
 
 Parser tests use redacted HTML fixtures. Fixtures cover alternate attendance, exam-session, grade-history, and course-material layouts without storing registration numbers, cookies, credentials, or personal course content.
 
@@ -154,11 +159,23 @@ Lab projections use a block size. If a lab contributes two attendance hours as o
 
 The academic timeline materializes weekly slots into dated occurrences for the next seven days. Calendar entries can suppress classes on holidays/exam days or substitute another weekday through labels such as `Monday order`. Classes, assignments, exams, calendar events, and messages are merged and sorted by time.
 
-Attendance milestone allowances use only cached exam dates, cached timetable occurrences, and cached calendar exceptions when deciding which classes can be skipped before CAT 1, CAT 2, or FAT. The calendar view is a local projection of cached records; opening it does not request a separate calendar service or publish events externally.
+Calendar interchange reuses those date rules for a 180-day export projection.
+A pure ICS codec reads and writes full-detail timed events in `Asia/Kolkata`;
+Android integrations use the Storage Access Framework, FileProvider, and a
+dedicated local `Viora timetable` calendar only after an explicit user action.
+
+Attendance milestone allowances use only cached exam dates, cached timetable
+occurrences, and cached calendar exceptions. If `F` future units occur before a
+milestone and `S` are skipped, Viora requires
+`(attended + F - S) * 100 >= target * (held + F)`, counting whole occurrences.
+Global CAT/FAT windows prefer explicit VIT calendar ends; without one they
+resume conservatively on the next instructional Monday/day-order and are
+labelled estimated. The calendar view remains a local projection of cached
+records; opening it does not request or publish data.
 
 ## 10. Repositories, synchronization, and change detection
 
-Each resource has a repository responsible for fetching, mapping, validating, and committing it. `refreshResource`-style flows write `SYNCING`, `FRESH`, or `ERROR` resource states with safe user-facing errors.
+Each resource has a repository responsible for fetching, mapping, validating, and committing it. `refreshResource`-style flows write `SYNCING`, `FRESH`, or `ERROR` resource states with safe user-facing errors. Marks commit independently from grades/CGPA; a partial results failure retains whichever prior snapshot was not safely replaced.
 
 `VioraSyncWorker` uses WorkManager 2.11.0 for periodic network-constrained refresh. The selected cadence is stored locally and can be configured between one and 24 hours. WorkManager is intentionally treated as inexact; opening the app and manual Sync remain important freshness paths.
 
@@ -172,16 +189,21 @@ Android notification channels separate deadlines, examinations, and general acad
 
 - assignment reminders within 24 hours or three hours;
 - exam reminders;
-- attendance-below-target warnings;
+- one consolidated attendance update/warning summary rather than one alert per course;
 - detected schedule, mark, grade, message, or material changes.
 
 The notification ledger prevents the same semantic event from being emitted repeatedly. Pending intents carry a destination so tapping a notification opens Schedule, Courses, Tasks, or More. Quiet hours default to 10 PM–7 AM, and assignment/exam categories can be disabled locally.
 
+The attendance summary opens Courses directly on its Attendance tab and uses a
+stable Android notification ID, so later updates replace rather than stack.
+When cached CGPA is at least 9.00, Viora omits 75-percent attendance warnings;
+raw values and ordinary change updates remain visible.
+
 ## 12. Course material files
 
-Material metadata syncs in the background, but file bodies download only after an explicit user action. Downloads are restricted to VTOP, capped at 50 MB, sanitized to safe filenames, and written to `files/course-materials` inside Viora's private storage.
+Material metadata syncs in the background, but file bodies download only after an explicit user action. Downloads are restricted to VTOP, capped at 50 MB, sanitized to safe filenames, and organized under `files/Viora/materials/<course>` inside Viora's private storage. Tracked files from the older public `Downloads/Viora-VIT` layout migrate into a `Legacy materials` folder only after the private copy is verified; the public copy is then removed.
 
-The download manager exposes `StateFlow` states such as `DOWNLOADING`, `READY`, and `ERROR`, retries failures up to three times, reports storage usage, and supports cleanup. Open/share actions use Android `FileProvider`, granting temporary read access without exposing Viora's private directory as a filesystem path.
+The download manager exposes `StateFlow` states such as `DOWNLOADING`, `READY`, and `ERROR`, retries failures up to three times, reports storage usage, and supports cleanup. Generated share artifacts live under `files/Viora/shared`. Open/share actions use Android `FileProvider`, granting temporary read access without exposing Viora's private directory as a filesystem path.
 
 ## 13. Search
 

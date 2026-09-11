@@ -43,6 +43,17 @@ class AcademicProjectionsTest {
     }
 
     @Test
+    fun `keeps theory and lab components under the same formatted course code`() {
+        val sections = listOf(
+            mark("CAT 1", courseCode = "CSE1001", courseTitle = "Synthetic Course").copy(courseType = "Theory"),
+            mark("Lab Exercise", courseCode = "CSE 1001 (Lab)", courseTitle = "Synthetic Course").copy(courseType = "Lab"),
+        ).markSections()
+
+        assertEquals(1, sections.size)
+        assertEquals(listOf("Theory", "Lab"), sections.single().marks.map(MarkUi::courseType))
+    }
+
+    @Test
     fun `preserves unavailable mark values`() {
         val result = listOf(mark("Quiz 1", scoredMark = null, maxMarks = null, weightageMark = null))
             .markSections()
@@ -91,7 +102,7 @@ class AcademicProjectionsTest {
     }
 
     @Test
-    fun `milestone counts only slots strictly between now and exam start on the same date`() {
+    fun `milestone suppresses all classes on an exam series date`() {
         val date = LocalDate.of(2026, 9, 7)
         val now = at(date, 8)
         val state = VioraUiState(
@@ -108,8 +119,8 @@ class AcademicProjectionsTest {
         val milestone = state.attendanceMilestones(now)
             .single { it.milestone == AttendanceMilestone.CAT_1 }
 
-        assertEquals(MilestoneState.SCHEDULED, milestone.state)
-        assertEquals(1, milestone.occurrenceCount)
+        assertEquals(MilestoneState.NO_CLASSES, milestone.state)
+        assertEquals(0, milestone.occurrenceCount)
     }
 
     @Test
@@ -126,6 +137,27 @@ class AcademicProjectionsTest {
 
         assertEquals(2, milestone.occurrenceCount)
         assertEquals(2, milestone.skippableOccurrences)
+    }
+
+    @Test
+    fun `FAT capacity credits classes after CAT two`() {
+        val nowDate = LocalDate.of(2026, 9, 6)
+        val state = VioraUiState(
+            attendance = listOf(attendance(sourceHeld = 20).copy(attended = 14)),
+            slots = listOf(slot(dayOfWeek = 1)),
+            exams = listOf(
+                exam("CAT 2", LocalDate.of(2026, 9, 22)),
+                exam("FAT", LocalDate.of(2026, 11, 3)),
+            ),
+        )
+
+        val milestones = state.attendanceMilestones(at(nowDate, 0)).associateBy { it.milestone }
+
+        assertEquals(3, milestones.getValue(AttendanceMilestone.CAT_2).occurrenceCount)
+        assertEquals(0, milestones.getValue(AttendanceMilestone.CAT_2).skippableOccurrences)
+        assertEquals(9, milestones.getValue(AttendanceMilestone.FAT).occurrenceCount)
+        assertEquals(1, milestones.getValue(AttendanceMilestone.FAT).skippableOccurrences)
+        assertTrue(milestones.getValue(AttendanceMilestone.FAT).estimatedWindow)
     }
 
     @Test
@@ -180,7 +212,7 @@ class AcademicProjectionsTest {
 
         val events = state.eventsForDate(date)
 
-        assertEquals(listOf("class:20678:slot", "exam:exam", "assignment:assignment", "calendar:semester:order"), events.map(AcademicDayEvent::id))
+        assertEquals(listOf("exam:exam", "assignment:assignment", "calendar:semester:order"), events.map(AcademicDayEvent::id))
         assertEquals("DA 1", events.single { it.marker == AcademicCalendarMarker.ASSIGNMENT }.title)
         assertEquals("10:00 AM · Algorithms · Room AB-101 · Seat 42", events.single { it.marker == AcademicCalendarMarker.EXAM }.detail)
         assertEquals("Monday order", events.single { it.marker == AcademicCalendarMarker.DAY_ORDER }.title)

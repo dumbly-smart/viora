@@ -131,19 +131,24 @@ private fun Long.academicDate(): LocalDate = Instant.ofEpochMilli(this).atZone(a
 private fun Long.asAcademicTime(): String =
     Instant.ofEpochMilli(this).atZone(academicCalendarZone).format(academicCalendarTime)
 
-internal fun List<MarkUi>.markSections(): List<MarkSectionUi> =
-    groupBy { mark ->
-        mark.courseCode.trim().takeIf(String::isNotEmpty)?.uppercase(Locale.ROOT)
-            ?: mark.courseTitle.trim()
+internal fun List<MarkUi>.markSections(): List<MarkSectionUi> {
+    val groups = mutableListOf<MutableList<MarkUi>>()
+    forEach { mark ->
+        groups.firstOrNull { rows ->
+            val first = rows.first()
+            sameCourseCode(first.courseCode, mark.courseCode) ||
+                (first.courseCode.isBlank() && mark.courseCode.isBlank() && first.courseTitle.equals(mark.courseTitle, true))
+        }?.add(mark) ?: groups.add(mutableListOf(mark))
     }
-        .map { (key, rows) ->
-            MarkSectionUi(
-                courseCode = key,
-                courseTitle = rows.first().courseTitle,
-                marks = rows.sortedWith(compareBy<MarkUi> { assessmentRank(it.title) }.thenBy { it.title.lowercase(Locale.ROOT) }),
-            )
-        }
-        .sortedBy { it.courseCode.lowercase(Locale.ROOT) }
+    return groups.map { rows ->
+        val first = rows.first()
+        MarkSectionUi(
+            courseCode = first.courseCode.trim().uppercase(Locale.ROOT).ifBlank { first.courseTitle.trim() },
+            courseTitle = first.courseTitle,
+            marks = rows.sortedWith(compareBy<MarkUi> { assessmentRank(it.title) }.thenBy { it.title.lowercase(Locale.ROOT) }),
+        )
+    }.sortedBy { it.courseCode.lowercase(Locale.ROOT) }
+}
 
 enum class MilestoneState { SCHEDULED, PASSED, NOT_SCHEDULED, NO_CLASSES }
 
@@ -154,6 +159,7 @@ data class CourseAttendanceMilestoneUi(
     val exam: ExamUi? = null,
     val occurrenceCount: Int = 0,
     val skippableOccurrences: Int = 0,
+    val estimatedWindow: Boolean = false,
 )
 
 internal fun VioraUiState.attendanceMilestones(nowEpochMillis: Long): List<CourseAttendanceMilestoneUi> =
@@ -182,12 +188,18 @@ private fun VioraUiState.attendanceMilestone(
     }
 
     val occurrenceUnits = occurrenceUnitsBefore(attendance, upcomingExam.startsEpochMillis, nowEpochMillis)
+    val examDate = Instant.ofEpochMilli(upcomingExam.startsEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
+    val nowDate = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
+    val estimatedWindow = examSuppressionWindows().any { window ->
+        window.estimated && !window.resumeDate.isBefore(nowDate) && !window.startDate.isAfter(examDate)
+    }
     if (occurrenceUnits.isEmpty()) {
         return CourseAttendanceMilestoneUi(
             attendance = attendance,
             milestone = milestone,
             state = MilestoneState.NO_CLASSES,
             exam = upcomingExam,
+            estimatedWindow = estimatedWindow,
         )
     }
 
@@ -203,6 +215,7 @@ private fun VioraUiState.attendanceMilestone(
             targetPercent = attendanceTarget,
             occurrenceUnits = occurrenceUnits,
         ),
+        estimatedWindow = estimatedWindow,
     )
 }
 

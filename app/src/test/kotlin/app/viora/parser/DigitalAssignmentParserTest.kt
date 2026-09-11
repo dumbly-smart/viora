@@ -1,6 +1,7 @@
 package app.viora.parser
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDateTime
@@ -48,5 +49,45 @@ class DigitalAssignmentParserTest {
         """.trimIndent()
         val result = DigitalAssignmentParser().parse(html) as ParseResult.Success
         assertNull(result.value.single().dueAt)
+    }
+
+    @Test fun `parses submitted aliases and relative upload form contract`() {
+        val html = """
+            <table class="customTable">
+              <thead><tr><th>Course Code</th><th>Title</th><th>Due Date</th><th>Uploaded File</th><th>Last Uploaded Date</th><th>Submission Status</th><th>Upload</th></tr></thead>
+              <tbody><tr>
+                <td>CSE2001</td><td>DA 2</td><td>12-Sep-2026 11:59 PM</td><td>solution.pdf</td><td>05-Sep-2026 08:15 PM</td><td>Upload Successful</td>
+                <td><form action="/vtop/examinations/upload-assignment" method="post" enctype="multipart/form-data">
+                  <input type="hidden" name="_csrf" value="synthetic-token" />
+                  <input type="hidden" name="assignmentCode" value="DA-2" />
+                  <input type="file" name="assignmentFile" accept="application/pdf,.pdf" data-max-bytes="2097152" />
+                </form></td>
+              </tr></tbody>
+            </table>
+        """.trimIndent()
+
+        val assignment = (DigitalAssignmentParser().parse(html) as ParseResult.Success).value.single()
+
+        assertEquals("solution.pdf", assignment.lastUpload)
+        assertEquals("Upload Successful", assignment.status)
+        val locator = assertNotNull(assignment.uploadLocator).let { assignment.uploadLocator!! }
+        assertEquals("/vtop/examinations/upload-assignment", locator.requestPath)
+        assertEquals(mapOf("_csrf" to "synthetic-token", "assignmentCode" to "DA-2"), locator.fields)
+        assertEquals("assignmentFile", locator.fileField)
+        assertEquals(setOf("application/pdf", ".pdf"), locator.acceptedMimeTypes)
+        assertEquals(2_097_152L, locator.maxBytes)
+    }
+
+    @Test fun `rejects absolute upload form actions`() {
+        val html = """
+            <table class="customTable"><thead><tr><th>Course Code</th><th>Title</th><th>Due Date</th><th>Upload</th></tr></thead>
+            <tbody><tr><td>CSE2001</td><td>DA 3</td><td>13-Sep-2026</td><td>
+              <form action="https://files.example/upload"><input type="file" name="file" /></form>
+            </td></tr></tbody></table>
+        """.trimIndent()
+
+        val assignment = (DigitalAssignmentParser().parse(html) as ParseResult.Success).value.single()
+
+        assertNull(assignment.uploadLocator)
     }
 }

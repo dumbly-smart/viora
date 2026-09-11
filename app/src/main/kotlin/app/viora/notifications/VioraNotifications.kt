@@ -13,6 +13,8 @@ import app.viora.database.AcademicDao
 import app.viora.database.NotificationLedgerEntity
 import java.time.Duration
 import java.time.LocalTime
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class VioraNotifications(
     private val context: Context,
@@ -34,14 +36,49 @@ class VioraNotifications(
 
     suspend fun publishUpcoming(semesterId: String) {
         if (!canNotify() || inQuietHours()) return
-        val now = clock()
-        val target = 75
-        dao.attendanceSnapshot(semesterId).filter { it.held > 0 && it.attended * 100 < target * it.held }.forEach { attendance ->
-            notifyOnce("attendance:$semesterId:${attendance.id}:${attendance.attended}:${attendance.held}:$target", DEADLINES, "Attendance below $target%", attendance.courseTitle.ifBlank { attendance.courseCode }, "courses")
+        publishMutex.withLock {
+            val now = clock()
+            val changes = dao.changesSince(now - Duration.ofDays(7).toMillis())
+            val attendancePlan = AttendanceNotificationPolicy.plan(
+                semesterId = semesterId,
+                cgpa = dao.academicSummarySnapshot()?.cgpa,
+                attendance = dao.attendanceSnapshot(semesterId),
+                attendanceChanges = changes.filter { it.category == "attendance" },
+                publishedKeys = dao.notificationLedgerKeys().toSet(),
+            )
+            attendancePlan?.let { publishAttendance(it) }
+            changes.filterNot { it.category == "materials" || it.category == "attendance" }.forEach { change ->
+                notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) { "exams" -> "schedule"; "messages" -> "more"; else -> "courses" })
+            }
         }
-        dao.changesSince(now - Duration.ofDays(7).toMillis()).filterNot { it.category == "materials" }.forEach { change ->
-            notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) { "exams" -> "schedule"; "messages" -> "more"; else -> "courses" })
-        }
+    }
+
+    private suspend fun publishAttendance(plan: AttendanceNotificationPlan) {
+        val launch = PendingIntent.getActivity(
+            context,
+            ATTENDANCE_UPDATE_NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java)
+                .setPackage(context.packageName)
+                .putExtra("viora_destination", "attendance")
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val style = android.app.Notification.InboxStyle()
+            .setBigContentTitle(plan.title)
+            .setSummaryText(plan.summary)
+        plan.expandedLines.forEach(style::addLine)
+        val notification = android.app.Notification.Builder(context, UPDATES)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(plan.title)
+            .setContentText(plan.summary)
+            .setStyle(style)
+            .setCategory(android.app.Notification.CATEGORY_STATUS)
+            .setVisibility(android.app.Notification.VISIBILITY_PRIVATE)
+            .setContentIntent(launch)
+            .setAutoCancel(true)
+            .build()
+        manager.notify(ATTENDANCE_UPDATE_NOTIFICATION_ID, notification)
+        dao.insertNotificationLedgers(plan.ledgerKeys.map { NotificationLedgerEntity(it, clock()) })
     }
 
     private suspend fun notifyOnce(key: String, channel: String, title: String, text: String, destination: String) {
@@ -85,5 +122,7 @@ class VioraNotifications(
         const val CLASSES = "viora-classes"
         const val EXAMS = "viora-exams"
         const val UPDATES = "viora-updates"
+        const val ATTENDANCE_UPDATE_NOTIFICATION_ID = 0x56494f41
+        private val publishMutex = Mutex()
     }
 }

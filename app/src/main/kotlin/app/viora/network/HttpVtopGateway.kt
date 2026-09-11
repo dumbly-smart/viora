@@ -20,6 +20,9 @@ import okhttp3.FormBody
 import okhttp3.Cookie
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MultipartBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import java.io.IOException
@@ -27,7 +30,7 @@ import java.io.IOException
 class HttpVtopGateway(
     private val client: OkHttpClient,
     private val cookieJar: IsolatedCookieJar,
-    private val captchaSolver: VtopCaptchaSolver,
+    private val captchaSolver: CaptchaSolver,
     private val timetableParser: TimetableParser = TimetableParser(),
     private val semesterParser: SemesterParser = SemesterParser(),
     private val attendanceParser: AttendanceParser = AttendanceParser(),
@@ -42,6 +45,7 @@ class HttpVtopGateway(
 ) : VtopGateway {
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
+    @Volatile private var pendingLoginChallenge: LoginChallenge? = null
 
     override suspend fun sessionState(): SessionState = withContext(Dispatchers.IO) {
         val html = get(INIT_PAGE)
@@ -51,22 +55,31 @@ class HttpVtopGateway(
 
     override suspend fun login(username: String, password: CharArray): SessionState = withContext(Dispatchers.IO) {
         authorizedId = username.trim()
+        pendingLoginChallenge = null
         repeat(MAX_CAPTCHA_ATTEMPTS) {
             val challenge = prepareLoginChallenge() ?: return@withContext SessionState.VerificationRequired
             val answer = captchaSolver.solve(challenge.imageDataUri)
-            val body = FormBody.Builder()
-                .add("_csrf", challenge.csrf)
-                .add("username", username.trim())
-                .add("password", String(password))
-                .add("captchaStr", answer)
-                .build()
-            val html = execute(Request.Builder().url(LOGIN).post(body).build())
-            updateTokens(html)
-            if (isAuthenticated(html)) return@withContext SessionState.Active
-            if (isInvalidCredentials(html)) return@withContext SessionState.Missing
-            if (isMandatoryAction(html)) return@withContext SessionState.VerificationRequired
+            when (submitLoginChallenge(challenge, username, password, answer)) {
+                LoginAttempt.ACTIVE -> return@withContext SessionState.Active
+                LoginAttempt.INVALID_CREDENTIALS -> return@withContext SessionState.Missing
+                LoginAttempt.VERIFICATION_REQUIRED -> return@withContext SessionState.VerificationRequired
+                LoginAttempt.RETRY_CAPTCHA -> Unit
+            }
         }
-        SessionState.VerificationRequired
+        manualCaptchaState()
+    }
+
+    override suspend fun submitCaptcha(username: String, password: CharArray, answer: String): SessionState = withContext(Dispatchers.IO) {
+        val normalizedAnswer = answer.trim().uppercase().filter(Char::isLetterOrDigit)
+        val challenge = pendingLoginChallenge
+        if (challenge == null || normalizedAnswer.length != CAPTCHA_LENGTH) return@withContext manualCaptchaState()
+        pendingLoginChallenge = null
+        when (submitLoginChallenge(challenge, username, password, normalizedAnswer)) {
+            LoginAttempt.ACTIVE -> SessionState.Active
+            LoginAttempt.INVALID_CREDENTIALS -> SessionState.Missing
+            LoginAttempt.VERIFICATION_REQUIRED -> SessionState.VerificationRequired
+            LoginAttempt.RETRY_CAPTCHA -> manualCaptchaState()
+        }
     }
 
     override suspend fun semesters(): List<SemesterOption> = withContext(Dispatchers.IO) {
@@ -140,18 +153,23 @@ class HttpVtopGateway(
         records
     }
 
-    override suspend fun digitalAssignmentUploadSession(semesterId: String): VtopWebSession = withContext(Dispatchers.IO) {
-        val token = currentToken()
-        val id = authorizedId ?: throw IOException("VTOP did not provide an authorized student ID")
-        val url = DA_PAGE.toHttpUrl()
-        val body = academicBody(token, id, semesterId)
-        val encoded = (0 until body.size).joinToString("&") { "${body.encodedName(it)}=${body.encodedValue(it)}" }
-        VtopWebSession(
-            url = DA_PAGE,
-            cookies = cookieJar.loadForRequest(url).map { "${it.name}=${it.value}; Path=/vtop; Secure" },
-            postBody = encoded,
-            shellUrl = VTOP_SHELL,
-        )
+    override suspend fun uploadDigitalAssignment(
+        semesterId: String,
+        assignmentId: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ) = withContext(Dispatchers.IO) {
+        require(bytes.size <= 10 * 1024 * 1024) { "The selected assessment file is too large" }
+        val locator = requireAssignmentUploadLocator(digitalAssignments(semesterId), assignmentId)
+        require(locator.accepts(mimeType, fileName)) { "VTOP does not accept this file type for the assessment" }
+        locator.maxBytes?.let { maximum -> require(bytes.size.toLong() <= maximum) { "The selected assessment file is too large" } }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+            locator.fields.forEach { (name, value) -> addFormDataPart(name, value) }
+            addFormDataPart(locator.fileField, fileName, bytes.toRequestBody(mimeType.toMediaTypeOrNull()))
+        }.build()
+        val html = execute(Request.Builder().url(resolveAssignmentUploadAction(locator.requestPath)).post(body).build())
+        if (VtopDocument.isAuthenticationPage(Jsoup.parse(html))) throw AuthenticationException()
     }
 
     override suspend fun exams(semesterId: String): List<ExamRecord> = withContext(Dispatchers.IO) {
@@ -254,6 +272,7 @@ class HttpVtopGateway(
         cookieJar.clear()
         csrf = null
         authorizedId = null
+        pendingLoginChallenge = null
     }
 
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
@@ -287,6 +306,40 @@ class HttpVtopGateway(
         return null
     }
 
+    private fun manualCaptchaState(): SessionState {
+        val challenge = prepareLoginChallenge() ?: return SessionState.VerificationRequired
+        pendingLoginChallenge = challenge
+        return SessionState.CaptchaRequired(challenge.imageDataUri)
+    }
+
+    private fun submitLoginChallenge(
+        challenge: LoginChallenge,
+        username: String,
+        password: CharArray,
+        answer: String,
+    ): LoginAttempt {
+        val body = FormBody.Builder()
+            .add("_csrf", challenge.csrf)
+            .add("username", username.trim())
+            .add("password", String(password))
+            .add("captchaStr", answer)
+            .build()
+        val response = executeDocument(Request.Builder().url(LOGIN).post(body).build())
+        val html = response.html
+        updateTokens(html)
+        return when {
+            isAuthenticated(html) -> LoginAttempt.ACTIVE
+            isInvalidCredentials(html) -> LoginAttempt.INVALID_CREDENTIALS
+            isMandatoryAction("${response.url}\n$html") || isRecaptchaPage(html, Jsoup.parse(html)) -> LoginAttempt.VERIFICATION_REQUIRED
+            response.url.encodedPath != "/vtop/login" -> {
+                val content = get(CONTENT)
+                updateTokens(content)
+                if (isAuthenticated(content)) LoginAttempt.ACTIVE else LoginAttempt.RETRY_CAPTCHA
+            }
+            else -> LoginAttempt.RETRY_CAPTCHA
+        }
+    }
+
     private fun extractCaptchaDataUri(document: org.jsoup.nodes.Document): String? {
         if (document.selectFirst("input[name=captchaStr], input#captchaStr") == null) return null
         return document.select("img[src]")
@@ -295,9 +348,17 @@ class HttpVtopGateway(
             .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
     }
 
-    private fun isRecaptchaPage(html: String, document: org.jsoup.nodes.Document): Boolean =
-        document.selectFirst("#recaptcha, #g-recaptcha, .g-recaptcha") != null ||
-            Regex("captchaType\\s*=\\s*2", RegexOption.IGNORE_CASE).containsMatchIn(html)
+    private fun isRecaptchaPage(html: String, document: org.jsoup.nodes.Document): Boolean {
+        val activeCaptchaType = Regex("captchaType\\s*[:=]\\s*[\"']?([12])", RegexOption.IGNORE_CASE)
+            .find(html)
+            ?.groupValues
+            ?.get(1)
+        return when (activeCaptchaType) {
+            "1" -> false
+            "2" -> true
+            else -> document.selectFirst("#recaptcha, #g-recaptcha, .g-recaptcha") != null
+        }
+    }
 
     private fun isInvalidCredentials(html: String): Boolean =
         Regex("invalid\\s+(?:username|password|credentials)", RegexOption.IGNORE_CASE).containsMatchIn(html)
@@ -352,7 +413,9 @@ class HttpVtopGateway(
         return html
     }
 
-    private fun execute(request: Request): String = client.newCall(request).execute().use { response ->
+    private fun execute(request: Request): String = executeDocument(request).html
+
+    private fun executeDocument(request: Request): HttpDocument = client.newCall(request).execute().use { response ->
         if (response.code == 404) {
             cookieJar.clear()
             csrf = null
@@ -360,7 +423,7 @@ class HttpVtopGateway(
             throw AuthenticationException()
         }
         if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
-        response.body.string()
+        HttpDocument(response.body.string(), response.request.url)
     }
 
     private fun updateTokens(html: String) {
@@ -394,17 +457,18 @@ class HttpVtopGateway(
         .trim()
 
     companion object {
-        private const val VTOP_SHELL = "https://vtop.vit.ac.in/vtop/init/page"
         private const val SITE_ROOT = "https://vtop.vit.ac.in/"
         private const val VTOP_ROOT = "https://vtop.vit.ac.in/vtop/"
         private const val BASE = "https://vtop.vit.ac.in/vtop"
         private const val MAX_MATERIAL_BYTES = 50 * 1024 * 1024
         private const val MAX_CAPTCHA_ATTEMPTS = 4
         private const val MAX_CAPTCHA_PAGE_ATTEMPTS = 6
+        private const val CAPTCHA_LENGTH = 6
         private const val OPEN_PAGE = "$BASE/openPage"
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
+        private const val CONTENT = "$BASE/content"
         private const val TIMETABLE_PAGE = "$BASE/academics/common/StudentTimeTable"
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"
         private const val ATTENDANCE_PAGE = "$BASE/academics/common/StudentAttendance"
@@ -426,6 +490,8 @@ class HttpVtopGateway(
     }
 
     private data class LoginChallenge(val csrf: String, val imageDataUri: String)
+    private data class HttpDocument(val html: String, val url: okhttp3.HttpUrl)
+    private enum class LoginAttempt { ACTIVE, INVALID_CREDENTIALS, VERIFICATION_REQUIRED, RETRY_CAPTCHA }
 }
 
 private fun ByteArray.looksLikeHtml(): Boolean {

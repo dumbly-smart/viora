@@ -54,11 +54,12 @@ actions only; they do not access DAOs or VTOP gateways directly.
 - `Exam` (type, course, date, session, venue, seat number)
 - `CourseMaterial` (metadata locally; file only after explicit download)
 - `AcademicCalendarDay`, `ClassMessage`
+- `ImportedCalendarEvent` (one local replacement set from user-selected ICS)
 - `SyncRun`, `SyncResourceState`, `NotificationLedger`
 
 Remote identities are scoped by account + semester. Parsed records get deterministic fingerprints so a repeated sync is idempotent and change notifications can show exactly what changed.
 
-The Room database is currently version 8. A schema change needs a forward
+The Room database is currently version 9. A schema change needs a forward
 migration, registration in `VioraDatabase`, an updated exported schema, and
 migration instrumentation coverage.
 
@@ -73,17 +74,38 @@ Use exact rational/integer comparisons to avoid floating-point boundary errors. 
 
 CAT-1, CAT-2, and FAT planning projects cached timetable slots against cached
 calendar rows in `Asia/Kolkata`. It counts starts strictly after the current
-instant and before the relevant exam; any holiday row suppresses a class. These
-values are planning aids, not institutional attendance rulings.
+instant and before the relevant exam. For projected units `F` and skipped units
+`S`, the largest whole-occurrence prefix must satisfy
+`(a + F - S) * 100 >= p * (h + F)`, so later attended classes can recover a
+currently low percentage and lab blocks remain indivisible.
+
+The same global CAT/FAT suppression windows drive Home, Schedule, calendar
+export, and attendance planning. Explicit VIT calendar end/resumption rows win;
+otherwise Viora suppresses through the latest cached exam in the series and
+resumes on the next valid instructional Monday or explicit day-order date. The
+fallback is surfaced as an estimate. These values are planning aids, not
+institutional attendance rulings.
 
 ## Academic views
 
-- Home shares an assignment-status classifier with Tasks, so submitted work is
-  not shown as outstanding.
+- Home uses the shared assignment-status classifier to show only pending work
+  due within seven days. Assessments includes submitted work in its weekly
+  section, followed by per-course drill-down.
 - Courses provides course, marks, and attendance views. Marks retain theory/lab
   identity even when display names match.
-- Schedule provides timetable and local calendar views for cached classes,
-  holidays, exams, instructional day orders, and other academic events.
+- Schedule provides current-semester timetable and local calendar views for
+  cached classes, holidays, exams, instructional day orders, and other academic
+  events. Calendar interchange controls follow timetable entries.
+- Calendar interchange projects 180 days of cached classes with the same
+  holiday/day-order rules, adds exams and assignment deadlines, and supports
+  explicit Android-calendar export, ICS export/share, and transactional ICS
+  import. Imported rows are local, visibly labelled, and never synced to VTOP.
+- Assessment uploads use Android's document picker, read one capped file, and
+  submit only to a fresh multipart action parsed from authenticated VTOP HTML.
+  Upload form secrets are never stored in Room; success refreshes assignments.
+- Marks and grades refresh independently. A valid marks snapshot commits even
+  when the grades/CGPA path fails, while the combined resource state reports
+  the partial error and preserves the prior grade cache.
 
 ## Testing and validation
 

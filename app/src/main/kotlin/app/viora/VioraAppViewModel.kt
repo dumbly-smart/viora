@@ -1,5 +1,6 @@
 package app.viora
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -11,12 +12,13 @@ import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
 import app.viora.database.AcademicChangeEntity
 import app.viora.database.SemesterEntity
+import app.viora.database.ImportedCalendarEventEntity
+import app.viora.calendar.CalendarExportProjector
 import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
 import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
-import app.viora.network.VtopWebSession
 import app.viora.network.AuthenticationException
 import app.viora.sync.SyncOutcome
 import app.viora.sync.VioraSyncScheduler
@@ -33,6 +35,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.net.UnknownHostException
 import java.net.SocketTimeoutException
+import java.time.LocalDate
+import java.time.ZoneId
 
 data class VioraUiState(
     val configured: Boolean = false,
@@ -43,7 +47,9 @@ data class VioraUiState(
     val loading: Boolean = false,
     val syncMessage: String? = null,
     val error: String? = null,
-    val assignmentUploadSession: VtopWebSession? = null,
+    val uploadingAssignmentId: String? = null,
+    val captchaImageDataUri: String? = null,
+    val captchaAnswer: String = "",
     val semesters: List<SemesterOption> = emptyList(),
     val activeSemester: SemesterOption? = null,
     val slots: List<SlotWithCourse> = emptyList(),
@@ -75,6 +81,8 @@ data class VioraUiState(
     val rolloverDetected: Boolean = false,
     val syncDiagnostics: SyncDiagnosticsSnapshot? = null,
     val classCheckIns: Map<String, ClassCheckIn> = emptyMap(),
+    val importedCalendarEvents: List<ImportedCalendarEventEntity> = emptyList(),
+    val calendarInterchangeMessage: String? = null,
 )
 enum class ClassCheckIn { ATTENDED, MISSED }
 data class MarkUi(
@@ -146,10 +154,19 @@ class VioraAppViewModel(
 
     init {
         graph.settings.edit().putInt("attendance_target", ATTENDANCE_TARGET).apply()
+        viewModelScope.launch {
+            graph.materialManager.organizeLegacyDownloads()
+            mutableState.update { it.copy(downloadStorageBytes = graph.materialManager.storageBytes()) }
+        }
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
         viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
+        viewModelScope.launch {
+            graph.database.academicDao().observeImportedCalendarEvents()
+                .catch { mutableState.update { state -> state.copy(error = "Could not read imported calendar events") } }
+                .collect { rows -> mutableState.update { it.copy(importedCalendarEvents = rows) } }
+        }
         refreshDiagnostics()
         if (state.value.configured) {
             observeSavedSemester()
@@ -157,9 +174,10 @@ class VioraAppViewModel(
         }
     }
 
-    fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null) }
-    fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null) }
+    fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null, captchaImageDataUri = null, captchaAnswer = "") }
+    fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null, captchaImageDataUri = null, captchaAnswer = "") }
     fun updateRememberLogin(value: Boolean) = mutableState.update { it.copy(rememberLogin = value) }
+    fun updateCaptchaAnswer(value: String) = mutableState.update { it.copy(captchaAnswer = value, error = null) }
 
     fun signIn() {
         val snapshot = state.value
@@ -167,11 +185,11 @@ class VioraAppViewModel(
             mutableState.update { it.copy(error = "Enter your VTOP username and password") }
             return
         }
-        mutableState.update { it.copy(loading = true, error = null) }
+        mutableState.update { it.copy(loading = true, error = null, captchaImageDataUri = null, captchaAnswer = "") }
         viewModelScope.launch {
             val password = snapshot.password.toCharArray()
             try {
-                when (graph.gateway.login(snapshot.username.trim(), password)) {
+                when (val result = graph.gateway.login(snapshot.username.trim(), password)) {
                     SessionState.Active -> {
                         if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
                         else graph.credentials.clear()
@@ -181,12 +199,55 @@ class VioraAppViewModel(
                         }
                         loadSemestersAndRefresh()
                     }
+                    is SessionState.CaptchaRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = result.imageDataUri, captchaAnswer = "", error = null)
+                    }
                     SessionState.VerificationRequired -> {
-                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
-                        mutableState.update { it.copy(loading = false, interactiveVerification = true, error = null) }
+                        mutableState.update {
+                            it.copy(loading = false, error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
+                        }
                     }
                     SessionState.Missing -> mutableState.update {
                         it.copy(loading = false, error = "VTOP rejected the sign-in details")
+                    }
+                }
+            } catch (error: Exception) {
+                val message = when (error) { is UnknownHostException -> "VTOP could not be reached. Check your connection."; is SocketTimeoutException -> "VTOP took too long to respond. Try again."; else -> "Could not connect to VTOP (${error.message?.take(80) ?: "unknown error"})" }
+                mutableState.update { it.copy(loading = false, error = message) }
+            } finally {
+                password.fill('\u0000')
+            }
+        }
+    }
+
+    fun submitCaptcha() {
+        val snapshot = state.value
+        if (snapshot.captchaImageDataUri == null || snapshot.captchaAnswer.length != 6) {
+            mutableState.update { it.copy(error = "Enter the six-character CAPTCHA") }
+            return
+        }
+        mutableState.update { it.copy(loading = true, error = null) }
+        viewModelScope.launch {
+            val password = snapshot.password.toCharArray()
+            try {
+                when (val result = graph.gateway.submitCaptcha(snapshot.username.trim(), password, snapshot.captchaAnswer)) {
+                    SessionState.Active -> {
+                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
+                        else graph.credentials.clear()
+                        graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, true).commit()
+                        mutableState.update {
+                            it.copy(configured = true, reauthRequired = false, password = "", loading = false, captchaImageDataUri = null, captchaAnswer = "")
+                        }
+                        loadSemestersAndRefresh()
+                    }
+                    is SessionState.CaptchaRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = result.imageDataUri, captchaAnswer = "", error = "That CAPTCHA was not accepted. Try the new one.")
+                    }
+                    SessionState.VerificationRequired -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
+                    }
+                    SessionState.Missing -> mutableState.update {
+                        it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP rejected the sign-in details")
                     }
                 }
             } catch (error: Exception) {
@@ -207,9 +268,9 @@ class VioraAppViewModel(
     }
 
     fun beginReauthentication() = mutableState.update {
-        it.copy(configured = false, loading = false, password = "", error = null)
+        it.copy(configured = false, loading = false, password = "", error = null, captchaImageDataUri = null, captchaAnswer = "")
     }
-    fun logout() { viewModelScope.launch { graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
+    fun logout() { viewModelScope.launch { graph.materialManager.clearDownloads(); graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
     fun setDeadlineNotifications(enabled: Boolean) {
         graph.settings.edit().putBoolean("notify_deadlines", enabled).apply()
         mutableState.update { it.copy(deadlineNotifications = enabled) }
@@ -224,24 +285,27 @@ class VioraAppViewModel(
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
     fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
-    fun beginAssignmentUpload() {
-        mutableState.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
-            runCatching {
-                check(graph.sessions.ensureActive() == SessionResolution.Ready) { "Sign in again before uploading" }
-                val semester = requireNotNull(state.value.activeSemester) { "Select a semester before uploading" }
-                graph.gateway.digitalAssignmentUploadSession(semester.id)
-            }.onSuccess { session -> mutableState.update { it.copy(loading = false, assignmentUploadSession = session) } }
-                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.message ?: "Could not open VTOP assignment upload") } }
+    fun uploadAssignment(assignmentId: String, uri: Uri) {
+        val assignment = state.value.assignments.firstOrNull { it.id == assignmentId }
+        if (assignment?.dueEpochMillis == null || assignment.dueEpochMillis <= System.currentTimeMillis()) {
+            mutableState.update { it.copy(error = "This assessment is no longer open for submission") }
+            return
         }
-    }
-    fun closeAssignmentUpload(cookieHeader: String?) {
-        mutableState.update { it.copy(assignmentUploadSession = null) }
+        mutableState.update { it.copy(uploadingAssignmentId = assignmentId, error = null) }
         viewModelScope.launch {
-            if (!cookieHeader.isNullOrBlank()) graph.gateway.importInteractiveSession(cookieHeader)
-            state.value.activeSemester?.let { semester ->
-                graph.assignments.refresh(semester.id)
-                graph.reminders.schedule(semester.id)
+            val semester = state.value.activeSemester
+            val result = if (semester == null || graph.sessions.ensureActive() != SessionResolution.Ready) {
+                Result.failure(IllegalStateException("session unavailable"))
+            } else {
+                graph.assignmentUploads.upload(semester.id, assignmentId, uri)
+            }
+            if (result.isSuccess && semester != null) graph.reminders.schedule(semester.id)
+            mutableState.update {
+                it.copy(
+                    uploadingAssignmentId = null,
+                    syncMessage = if (result.isSuccess) "Assessment uploaded and refreshed" else it.syncMessage,
+                    error = if (result.isFailure) "Could not upload the assessment. Cached assignments were not changed." else null,
+                )
             }
         }
     }
@@ -306,6 +370,64 @@ class VioraAppViewModel(
             mutableState.update { it.copy(loading = false) }
         }
     }
+
+    fun exportCalendarIcs(uri: Uri) {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.writeTo(uri, calendarName(snapshot), calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Exported $count calendar events") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not export the calendar")) } }
+        }
+    }
+
+    fun importCalendarIcs(uri: Uri) {
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.importFrom(uri) }
+                .onSuccess { summary ->
+                    val skipped = if (summary.skipped == 0) "" else "; skipped ${summary.skipped} unsupported event(s)"
+                    mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Imported ${summary.imported} event(s)$skipped") }
+                }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not import that ICS calendar")) } }
+        }
+    }
+
+    fun shareCalendarIcs() {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.share(calendarName(snapshot), calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Prepared $count events to share") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not share the calendar")) } }
+        }
+    }
+
+    fun exportToDeviceCalendar() {
+        val snapshot = state.value
+        mutableState.update { it.copy(loading = true, calendarInterchangeMessage = null, error = null) }
+        viewModelScope.launch {
+            runCatching { graph.calendarInterchange.exportToDevice(calendarEvents(snapshot)) }
+                .onSuccess { count -> mutableState.update { it.copy(loading = false, calendarInterchangeMessage = "Updated Viora timetable with $count events") } }
+                .onFailure { failure -> mutableState.update { it.copy(loading = false, error = failure.safeCalendarMessage("Could not update the device calendar")) } }
+        }
+    }
+
+    fun calendarPermissionDenied() = mutableState.update {
+        it.copy(loading = false, error = "Calendar permission was denied; Viora data was not changed")
+    }
+
+    private fun calendarEvents(snapshot: VioraUiState) = CalendarExportProjector.project(
+        semesterId = snapshot.activeSemester?.id ?: "active",
+        fromDate = LocalDate.now(ZoneId.of("Asia/Kolkata")),
+        slots = snapshot.slots,
+        calendar = snapshot.calendar,
+        exams = snapshot.exams,
+        assignments = snapshot.assignments,
+    )
+
+    private fun calendarName(snapshot: VioraUiState): String =
+        listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
 
     fun selectSemester(semester: SemesterOption) {
         saveSemester(semester)
@@ -635,3 +757,10 @@ private fun List<AttendanceUi>.reproject(target: Int, missedBlocks: Int): List<A
     val projection = AttendanceCalculator.calculate(item.attended, held, target, item.blockSize)
     item.copy(held = held, percentage = projection.percentage, skippable = projection.skippableClasses, recovery = projection.classesToRecover, skippableBlocks = projection.skippableBlocks, recoveryBlocks = projection.blocksToRecover)
 }
+
+private fun Throwable.safeCalendarMessage(fallback: String): String = message
+    ?.takeIf { value ->
+        listOf("Calendar", "calendar", "No cached academic events", "VEVENT", "VCALENDAR").any(value::contains)
+    }
+    ?.take(180)
+    ?: fallback

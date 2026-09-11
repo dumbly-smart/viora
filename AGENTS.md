@@ -33,7 +33,7 @@ Keep package boundaries intact:
 
 ## Data and schema changes
 
-- The Room database is currently version 8. Any schema change must increment the version, add a forward migration in `VioraDatabase.kt`, register it in `addMigrations`, and update the exported schema in `app/schemas/app.viora.database.VioraDatabase/`.
+- The Room database is currently version 9. Any schema change must increment the version, add a forward migration in `VioraDatabase.kt`, register it in `addMigrations`, and update the exported schema in `app/schemas/app.viora.database.VioraDatabase/`.
 - Add or update migration instrumentation coverage when changing a migration path. Never use destructive migration as a shortcut.
 - Use stable, deterministic identifiers for synced records so refreshes are idempotent and change detection remains reliable.
 

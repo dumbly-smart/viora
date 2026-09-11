@@ -1,6 +1,7 @@
 package app.viora.parser
 
 import app.viora.network.DigitalAssignmentRecord
+import app.viora.network.AssignmentUploadLocator
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -65,8 +66,14 @@ class DigitalAssignmentParser {
         if (title.isBlank() || title.equals(subject.courseCode, true)) return null
         val dueText = values.find("due date", "due date & time", "deadline")?.trim()
         val due = VtopDateParser.dateTime(dueText) ?: VtopDateParser.dateAndTime(dueText, "11:59 PM")
-        val lastUpload = values.find("last updated", "last upload", "last_upload", "uploaded on").orEmpty().trim().ifBlank { "N/A" }
-        val status = values.find("status", "upload status").orEmpty().trim()
+        val lastUpload = values.find(
+            "uploaded file", "last uploaded date", "last updated", "last upload", "last_upload", "uploaded on",
+        ).orEmpty().trim().ifBlank { "N/A" }
+        val status = if (row.selectFirst("#downloadStudentDA") != null) {
+            "Submitted"
+        } else {
+            values.find("status", "upload status", "submission status").orEmpty().trim()
+        }
         val assignmentCode = row.selectFirst("input[name=code]")?.attr("value")
             .orEmpty().ifBlank { row.selectFirst("button[data-editcode]")?.attr("data-editcode").orEmpty() }
         return DigitalAssignmentRecord(
@@ -77,7 +84,26 @@ class DigitalAssignmentParser {
             dueAt = due,
             lastUpload = lastUpload,
             status = status,
+            uploadLocator = uploadLocator(row),
         )
+    }
+
+    private fun uploadLocator(row: Element): AssignmentUploadLocator? {
+        val form = row.selectFirst("form") ?: return null
+        val action = form.attr("action").trim()
+        if (action.isBlank() || action.startsWith("//") || action.contains(":") || !action.startsWith('/')) return null
+        if (!form.attr("method").equals("post", ignoreCase = true)) return null
+        if (!form.attr("enctype").equals("multipart/form-data", ignoreCase = true)) return null
+        val file = form.selectFirst("input[type=file][name]") ?: return null
+        val fileField = file.attr("name").trim().takeIf(String::isNotBlank) ?: return null
+        val fields = form.select("input[type=hidden][name]").associate { input ->
+            input.attr("name") to input.attr("value")
+        }
+        val accepted = file.attr("accept").split(',').map(String::trim).filter(String::isNotBlank).toSet()
+        val maxBytes = sequenceOf(file.attr("data-max-bytes"), form.attr("data-max-bytes"))
+            .mapNotNull(String::toLongOrNull)
+            .firstOrNull { it > 0L }
+        return AssignmentUploadLocator(action, fields, fileField, accepted, maxBytes)
     }
 
     private fun Map<String, String>.find(vararg names: String): String? =
