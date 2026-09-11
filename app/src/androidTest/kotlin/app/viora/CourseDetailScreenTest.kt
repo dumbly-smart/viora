@@ -3,13 +3,17 @@ package app.viora
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
+import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
+import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
 import org.junit.Test
@@ -131,6 +135,46 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("Skip allowance").assertExists()
         compose.onNodeWithText("active 80%", substring = true).assertExists()
         compose.onAllNodesWithText("Not scheduled").assertCountEquals(3)
+    }
+
+    @Test
+    fun librarySearchOpensTheMatchingLabCourse() {
+        val state = theoryAndLabCourseState()
+        var opened = DetailSelection("", "")
+
+        compose.setContent {
+            VioraTheme {
+                CoursesScreen(state) { kind, id -> opened = DetailSelection(kind, id) }
+            }
+        }
+
+        compose.onNodeWithText("Search courses").performTextInput("Lab")
+        compose.onNodeWithText("Lab courses").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Open CSE1001 Lab course").performClick()
+
+        compose.runOnIdle {
+            assertEquals(DetailSelection("course", "lab-course"), opened)
+        }
+    }
+
+    @Test
+    fun courseDetailOpenedFromLibraryPreservesLabIdentityAndMessages() {
+        compose.setContent {
+            VioraTheme {
+                DetailScreen(
+                    state = theoryAndLabCourseState(),
+                    selection = DetailSelection("course", "lab-course"),
+                    openMaterial = { _, _ -> },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Lab · Faculty Lab").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab Exercise").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab briefing").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Bring your record notebook.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CAT 1").assertDoesNotExist()
+        compose.onNodeWithText("Theory announcement").assertDoesNotExist()
     }
 
     @Test
@@ -277,4 +321,26 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("Calculated from timetable and exam dates").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("Calculated from timetable and exam dates").assertCountEquals(1)
     }
+
+    private fun theoryAndLabCourseState(): VioraUiState = VioraUiState(
+        slots = listOf(
+            SlotWithCourse("theory-slot", "theory-course", "CSE1001", "Synthetic Course", "Faculty Theory", 1, 9 * 60, 10 * 60, "AB1", "Theory"),
+            SlotWithCourse("lab-slot", "lab-course", "CSE1001", "Synthetic Course", "Faculty Lab", 2, 14 * 60, 16 * 60, "AB2", "Lab"),
+        ),
+        attendance = listOf(
+            AttendanceUi("theory-attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty Theory", 9, 10, 10, 90.0, 3, 0, 1, 3, 0),
+            AttendanceUi("lab-attendance", "CSE1001", "Synthetic Course", "Lab", "Faculty Lab", 4, 5, 5, 80.0, 1, 0, 2, 1, 0),
+        ),
+        marks = listOf(
+            MarkUi("cat", "CSE1001", "Synthetic Course", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+            MarkUi("lab", "CSE1001", "Synthetic Course", "Lab", "Lab Exercise", 20.0, null, "Published", 19.0, null),
+        ),
+        messages = listOf(
+            ClassMessageEntity("theory-message", "CSE1001", "Synthetic Course", "Faculty Theory", "Theory announcement", "Read chapter 1.", null, 0),
+            ClassMessageEntity("lab-message", "CSE1001", "Synthetic Course", "Faculty Lab", "Lab briefing", "Bring your record notebook.", null, 0),
+        ),
+        materials = listOf(
+            CourseMaterialEntity("semester", "lab-material", "CSE1001 Lab", "Lab manual", "lab.pdf", "/download/lab", null, 0),
+        ),
+    )
 }

@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -34,7 +36,7 @@ class CalendarScreenTest {
 
         compose.setContent {
             VioraTheme {
-                ScheduleScreen(state, {}, { _, _ -> }, {})
+                ScheduleScreen(state, {}, { _, _ -> }, {}, initialDate = today)
             }
         }
 
@@ -45,7 +47,32 @@ class CalendarScreenTest {
         compose.onNodeWithContentDescription("Previous month").performClick()
         compose.onNodeWithText(today.format(DateTimeFormatter.ofPattern("MMMM yyyy"))).assertExists()
         compose.onNodeWithText("Exam · CSE1001").assertExists()
-        compose.onNodeWithText("Timetable").performClick()
+        compose.onNodeWithText("Timeline").performClick()
+        compose.onNodeWithContentDescription("Share timetable QR").assertIsEnabled()
+    }
+
+    @Test
+    fun planSwitchesBetweenTimelineAndCalendarWithInterchangeActions() {
+        val today = LocalDate.now(ZoneId.of("Asia/Kolkata"))
+        val state = markerState(today)
+
+        compose.setContent {
+            VioraTheme {
+                ScheduleScreen(state, {}, { _, _ -> }, {}, initialDate = today)
+            }
+        }
+
+        compose.onNode(hasText("Timeline") and isSelectable()).assertIsSelected()
+        compose.onNodeWithText("Synthetic Course").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Export to Viora calendar").performScrollTo().assertIsDisplayed()
+
+        compose.onNodeWithText("Calendar").performClick()
+        compose.onNode(hasText("Calendar") and isSelectable()).assertIsSelected()
+        compose.onNodeWithText("Academic calendar").assertIsDisplayed()
+        compose.onNodeWithText("Export ICS").assertIsDisplayed()
+
+        compose.onNodeWithText("Timeline").performClick()
+        compose.onNodeWithText("Synthetic Course").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Share timetable QR").assertIsEnabled()
     }
 

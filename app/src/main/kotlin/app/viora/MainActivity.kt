@@ -529,17 +529,25 @@ internal fun CoursesScreen(
     val courses = state.consolidatedCourses()
     var query by remember { mutableStateOf("") }
     val visibleCourses = courses.filter { course ->
-        query.isBlank() || listOf(course.code, course.title, course.faculty)
+        query.isBlank() || listOf(
+            course.code,
+            course.title,
+            course.type,
+            course.faculty,
+            course.materials.joinToString(" ") { "${it.title} ${it.fileName}" },
+            course.messages.joinToString(" ") { "${it.subject} ${it.body}" },
+        )
             .any { it.contains(query.trim(), ignoreCase = true) }
     }
+    val groupedCourses = visibleCourses.groupBy { it.type.ifBlank { "Other" } }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("Consolidated courses", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-            Text("Tap a course to view and download its VTOP materials.")
+            Text("Library", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+            Text("Consolidated courses, materials, marks and class messages.")
         }
         item {
             OutlinedTextField(
@@ -551,8 +559,13 @@ internal fun CoursesScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        items(visibleCourses, key = ConsolidatedCourseUi::code) { course ->
-            CourseCard(course) { showDetail("course", course.code) }
+        groupedCourses.forEach { (type, rows) ->
+            item("course-group:$type") {
+                Text("${type} courses", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
+            }
+            items(rows, key = ConsolidatedCourseUi::id) { course ->
+                CourseCard(course) { showDetail("course", course.id) }
+            }
         }
         if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
         else if (visibleCourses.isEmpty()) item { Text("No courses match your search.") }
@@ -564,7 +577,9 @@ private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
     val palette = courseCardPalette(course.code)
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "Open ${course.code} ${course.type} course" },
         shape = RoundedCornerShape(28.dp),
         color = palette.accent,
         contentColor = palette.onAccent,
@@ -589,6 +604,9 @@ private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 Text("OPEN  ↗", style = MaterialTheme.typography.labelMedium)
             }
+            if (course.type.isNotBlank()) {
+                Text(course.type, style = MaterialTheme.typography.labelMedium, color = palette.onAccent.copy(alpha = 0.76f))
+            }
             Text(
                 course.title.takeIf { it.isNotBlank() && it != course.code } ?: course.code,
                 style = MaterialTheme.typography.titleLarge,
@@ -597,7 +615,11 @@ private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
                 course.attendance?.let { Text("${"%.1f".format(it.percentage)}% attendance", style = MaterialTheme.typography.labelLarge) }
                 if (course.faculty.isNotBlank()) Text(course.faculty, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "${course.materials.size} ${if (course.materials.size == 1) "material" else "materials"}",
+                    listOf(
+                        "${course.materials.size} ${if (course.materials.size == 1) "material" else "materials"}",
+                        "${course.marks.size} ${if (course.marks.size == 1) "mark" else "marks"}",
+                        "${course.messages.size} ${if (course.messages.size == 1) "message" else "messages"}",
+                    ).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = palette.onAccent.copy(alpha = 0.76f),
                 )
@@ -607,32 +629,125 @@ private fun CourseCard(course: ConsolidatedCourseUi, onClick: () -> Unit) {
 }
 
 internal data class ConsolidatedCourseUi(
+    val id: String,
     val code: String,
     val title: String,
+    val type: String,
     val faculty: String,
     val attendance: AttendanceUi?,
     val materials: List<app.viora.database.CourseMaterialEntity>,
+    val marks: List<MarkUi>,
+    val messages: List<app.viora.database.ClassMessageEntity>,
 )
 
 internal fun VioraUiState.consolidatedCourses(): List<ConsolidatedCourseUi> {
-    val codes = linkedSetOf<String>()
-    slots.mapTo(codes) { it.code }
-    attendance.mapTo(codes) { it.courseCode }
-    assignments.mapTo(codes) { it.courseCode }
-    grades.mapTo(codes) { it.courseCode }
-    materials.mapTo(codes) { it.courseCode }
-    return codes.filter(String::isNotBlank).map { code ->
-        val attendanceItem = attendance.firstOrNull { sameCourseCode(it.courseCode, code) }
-        val slot = slots.firstOrNull { sameCourseCode(it.code, code) }
-        val grade = grades.firstOrNull { sameCourseCode(it.courseCode, code) }
+    val anchors = linkedMapOf<String, CourseAnchor>()
+    slots.distinctBy { it.courseId }.forEach { slot ->
+        anchors[slot.courseId] = CourseAnchor(slot.courseId, slot.code, slot.title, slot.type, slot.faculty, strictKind = true)
+    }
+    attendance.forEach { item ->
+        val alreadyRepresented = anchors.values.any { anchor ->
+            sameCourseCode(anchor.code, item.courseCode) &&
+                compatibleCourseKind(item.courseType, anchor.kind, strict = true) &&
+                anchor.faculty.facultyKey().let { it.isEmpty() || it == item.faculty.facultyKey() }
+        }
+        if (!alreadyRepresented) {
+            anchors[item.id] = CourseAnchor(item.id, item.courseCode, item.courseTitle, item.courseType, item.faculty, strictKind = true)
+        }
+    }
+    (assignments.map { it.courseCode } + grades.map { it.courseCode } + marks.map { it.courseCode } + materials.map { it.courseCode } + messages.map { it.courseCode })
+        .filter(String::isNotBlank)
+        .forEach { code ->
+            if (anchors.values.none { sameCourseCode(it.code, code) }) {
+                val grade = grades.firstOrNull { sameCourseCode(it.courseCode, code) }
+                anchors[code] = CourseAnchor(code, code, grade?.courseTitle.orEmpty(), "", "", strictKind = false)
+            }
+        }
+    return anchors.values.map { anchor ->
+        val attendanceItem = attendance.firstOrNull { it.id == anchor.id }
+            ?: attendance.firstOrNull { it.matchesCourse(anchor) }
+        val title = attendanceItem?.courseTitle?.takeIf(String::isNotBlank)
+            ?: anchor.title.takeIf(String::isNotBlank)
+            ?: grades.firstOrNull { sameCourseCode(it.courseCode, anchor.code) }?.courseTitle.orEmpty()
         ConsolidatedCourseUi(
-            code = code,
-            title = attendanceItem?.courseTitle?.takeIf(String::isNotBlank) ?: slot?.title?.takeIf(String::isNotBlank) ?: grade?.courseTitle.orEmpty(),
-            faculty = attendanceItem?.faculty?.takeIf(String::isNotBlank) ?: slot?.faculty.orEmpty(),
+            id = anchor.id,
+            code = anchor.code,
+            title = title,
+            type = anchor.type.takeIf(String::isNotBlank) ?: attendanceItem?.courseType.orEmpty(),
+            faculty = attendanceItem?.faculty?.takeIf(String::isNotBlank) ?: anchor.faculty,
             attendance = attendanceItem,
-            materials = materials.filter { sameCourseCode(it.courseCode, code) },
+            materials = materials.filter { it.matchesCourse(anchor) },
+            marks = marks.filter { it.matchesCourse(anchor) },
+            messages = messages.filter { it.matchesCourse(anchor) },
         )
-    }.sortedBy { it.code }
+    }.sortedWith(compareBy<ConsolidatedCourseUi> { it.code }.thenBy { courseKindOrder(it.type) }.thenBy { it.title })
+}
+
+private data class CourseAnchor(
+    val id: String,
+    val code: String,
+    val title: String,
+    val type: String,
+    val faculty: String,
+    val strictKind: Boolean,
+) {
+    val kind: AttendanceKind = attendanceKind(type)
+}
+
+private fun AttendanceUi.matchesCourse(anchor: CourseAnchor): Boolean =
+    sameCourseCode(courseCode, anchor.code) &&
+        compatibleCourseKind(courseType, anchor.kind, anchor.strictKind) &&
+        compatibleFaculty(faculty, anchor.faculty)
+
+private fun MarkUi.matchesCourse(anchor: CourseAnchor): Boolean =
+    sameCourseCode(courseCode, anchor.code) && compatibleCourseKind("$courseCode $courseTitle $courseType", anchor.kind, anchor.strictKind)
+
+private fun AssignmentUi.matchesCourse(anchor: CourseAnchor): Boolean =
+    sameCourseCode(courseCode, anchor.code) && compatibleCourseKind("$courseCode $courseTitle", anchor.kind, anchor.strictKind)
+
+private fun app.viora.database.CourseMaterialEntity.matchesCourse(anchor: CourseAnchor): Boolean =
+    sameCourseCode(courseCode, anchor.code) && compatibleCourseKind("$courseCode $title $fileName", anchor.kind, anchor.strictKind)
+
+private fun app.viora.database.ClassMessageEntity.matchesCourse(anchor: CourseAnchor): Boolean =
+    sameCourseCode(courseCode, anchor.code) && compatibleFaculty(faculty, anchor.faculty)
+
+private fun compatibleFaculty(candidate: String, selected: String): Boolean {
+    val selectedKey = selected.facultyKey()
+    return selectedKey.isEmpty() || candidate.facultyKey().isEmpty() || candidate.facultyKey() == selectedKey
+}
+
+private fun compatibleCourseKind(value: String, selected: AttendanceKind, strict: Boolean): Boolean {
+    if (!strict || selected == AttendanceKind.UNKNOWN) return true
+    val candidate = attendanceKind(value)
+    return candidate == AttendanceKind.UNKNOWN || candidate == selected
+}
+
+private fun courseKindOrder(value: String): Int = when (attendanceKind(value)) {
+    AttendanceKind.THEORY -> 0
+    AttendanceKind.LAB -> 1
+    AttendanceKind.PROJECT -> 2
+    AttendanceKind.UNKNOWN -> 3
+}
+
+private fun VioraUiState.courseAnchorForSelection(id: String): CourseAnchor {
+    slots.firstOrNull { it.courseId == id }?.let { slot ->
+        return CourseAnchor(slot.courseId, slot.code, slot.title, slot.type, slot.faculty, strictKind = true)
+    }
+    attendance.firstOrNull { it.id == id }?.let { item ->
+        return CourseAnchor(item.id, item.courseCode, item.courseTitle, item.courseType, item.faculty, strictKind = false)
+    }
+    consolidatedCourses().firstOrNull { it.id == id }?.let { course ->
+        return CourseAnchor(course.id, course.code, course.title, course.type, course.faculty, strictKind = true)
+    }
+    val slot = slots.firstOrNull { sameCourseCode(it.code, id) }
+    return CourseAnchor(
+        id = id,
+        code = slot?.code ?: id,
+        title = slot?.title.orEmpty(),
+        type = "",
+        faculty = "",
+        strictKind = false,
+    )
 }
 
 @Composable
@@ -702,9 +817,11 @@ internal fun ScheduleScreen(
     exportIcs: () -> Unit = {},
     importIcs: () -> Unit = {},
     shareCalendarIcs: () -> Unit = {},
+    initialDate: LocalDate = LocalDate.now(academicZone),
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var confirmImport by remember { mutableStateOf(false) }
+    val canExport = !state.loading && (state.slots.isNotEmpty() || state.exams.isNotEmpty() || state.assignments.any { it.dueEpochMillis != null })
     if (confirmImport) {
         AlertDialog(
             onDismissRequest = { confirmImport = false },
@@ -718,14 +835,26 @@ internal fun ScheduleScreen(
     }
     Column(Modifier.fillMaxSize()) {
         PrimaryTabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Timetable") })
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Timeline") })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Calendar") })
         }
         if (selectedTab == 1) {
-            Box(Modifier.weight(1f)) { CalendarScreen(state) }
+            Column(Modifier.weight(1f)) {
+                CalendarInterchangeActions(
+                    canExport = canExport,
+                    loading = state.loading,
+                    message = state.calendarInterchangeMessage,
+                    exportToDeviceCalendar = exportToDeviceCalendar,
+                    exportIcs = exportIcs,
+                    importIcs = { confirmImport = true },
+                    shareCalendarIcs = shareCalendarIcs,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+                Box(Modifier.weight(1f)) { CalendarScreen(state, initialDate = initialDate) }
+            }
             return@Column
         }
-    val today = LocalDate.now()
+    val today = initialDate
     val now = LocalTime.now()
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
@@ -748,8 +877,8 @@ internal fun ScheduleScreen(
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Timetable", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    Text("Your complete weekly timetable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Timeline", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    Text("Your complete weekly timetable and imported events", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable QR") }
             }
@@ -805,16 +934,15 @@ internal fun ScheduleScreen(
             }
         }
         item {
-            val canExport = !state.loading && (state.slots.isNotEmpty() || state.exams.isNotEmpty() || state.assignments.any { it.dueEpochMillis != null })
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = exportToDeviceCalendar, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export to Viora calendar") }
-                OutlinedButton(onClick = exportIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export ICS") }
-                OutlinedButton(onClick = { confirmImport = true }, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) { Text("Import ICS") }
-                OutlinedButton(onClick = shareCalendarIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Share timetable") }
-                state.calendarInterchangeMessage?.let { message ->
-                    Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                }
-            }
+            CalendarInterchangeActions(
+                canExport = canExport,
+                loading = state.loading,
+                message = state.calendarInterchangeMessage,
+                exportToDeviceCalendar = exportToDeviceCalendar,
+                exportIcs = exportIcs,
+                importIcs = { confirmImport = true },
+                shareCalendarIcs = shareCalendarIcs,
+            )
         }
         if (state.calendar.isNotEmpty()) {
             item { SectionLabel("ACADEMIC CALENDAR") }
@@ -825,6 +953,28 @@ internal fun ScheduleScreen(
             items(visibleExams, key = ExamUi::id) { exam -> Column(Modifier.clickable { showExam(exam) }) { ExamCard(exam) } }
         }
     }
+    }
+}
+
+@Composable
+private fun CalendarInterchangeActions(
+    canExport: Boolean,
+    loading: Boolean,
+    message: String?,
+    exportToDeviceCalendar: () -> Unit,
+    exportIcs: () -> Unit,
+    importIcs: () -> Unit,
+    shareCalendarIcs: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = exportToDeviceCalendar, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export to Viora calendar") }
+        OutlinedButton(onClick = exportIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Export ICS") }
+        OutlinedButton(onClick = importIcs, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Import ICS") }
+        OutlinedButton(onClick = shareCalendarIcs, enabled = canExport, modifier = Modifier.fillMaxWidth()) { Text("Share timetable") }
+        message?.let {
+            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+        }
     }
 }
 
@@ -1129,15 +1279,17 @@ internal fun DetailScreen(
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (selection.kind) {
             "course" -> {
-                val attendance = state.attendance.firstOrNull { it.id == selection.id || sameCourseCode(it.courseCode, selection.id) }
-                val code = attendance?.courseCode ?: selection.id
+                val anchor = state.courseAnchorForSelection(selection.id)
+                val attendance = state.attendance.firstOrNull { it.id == selection.id } ?: state.attendance.firstOrNull { it.matchesCourse(anchor) }
+                val code = anchor.code
                 val title = attendance?.courseTitle?.takeIf(String::isNotBlank)
+                    ?: anchor.title.takeIf(String::isNotBlank)
                     ?: state.slots.firstOrNull { sameCourseCode(it.code, code) }?.title
                     ?: code
                 item { Text(title, style = MaterialTheme.typography.headlineMedium) }
                 attendance?.let { item { AttendanceCard(it, AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)) } }
-                val assignments = state.assignments.filter { sameCourseCode(it.courseCode, code) }
-                val materials = state.materials.filter { sameCourseCode(it.courseCode, code) }
+                val assignments = state.assignments.filter { it.matchesCourse(anchor) }
+                val materials = state.materials.filter { it.matchesCourse(anchor) }
                 val visibleMaterials = materials.filter {
                     materialQuery.isBlank() || "${it.title} ${it.fileName}".contains(materialQuery.trim(), true)
                 }
@@ -1166,8 +1318,12 @@ internal fun DetailScreen(
                     if (visibleMaterials.isEmpty()) item { Text("No materials match your search.") }
                 }
                 item { Text("Class schedule", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
-                state.slots.filter { sameCourseCode(it.code, code) }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
-                val marks = state.marks.filter { sameCourseCode(it.courseCode, code) }
+                state.slots.filter { slot ->
+                    sameCourseCode(slot.code, code) &&
+                        compatibleCourseKind(slot.type, anchor.kind, anchor.strictKind) &&
+                        compatibleFaculty(slot.faculty, anchor.faculty)
+                }.forEach { slot -> item("slot:${slot.slotId}") { ClassCard(slot) } }
+                val marks = state.marks.filter { it.matchesCourse(anchor) }
                 item { Text("Marks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
                 if (marks.isEmpty()) item { Text("No marks are cached for this course yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 marks.forEach { mark ->
@@ -1178,6 +1334,14 @@ internal fun DetailScreen(
                     }
                 }
                 state.grades.filter { sameCourseCode(it.courseCode, code) }.forEach { grade -> item("grade:${grade.courseCode}") { SummaryCard("Grade", grade.grade, grade.total?.let { "${it.cleanNumber()}/100" } ?: "") } }
+                val messages = state.messages.filter { it.matchesCourse(anchor) }
+                item { Text("Class messages", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
+                if (messages.isEmpty()) item { Text("No class messages are cached for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                messages.forEach { message ->
+                    item("message:${message.id}") {
+                        ClassMessageCard(message)
+                    }
+                }
                 item { Text("Digital assignments", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp)) }
                 if (assignments.isEmpty()) item { Text("No digital assignments are cached for this course.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 assignments.forEachIndexed { index, assignment ->
@@ -1224,6 +1388,21 @@ internal fun DetailScreen(
             }
             "exam" -> state.exams.firstOrNull { it.id == selection.id }?.let { exam -> item { ExamCard(exam) } }
             "material" -> state.materials.firstOrNull { it.id == selection.id }?.let { material -> item { MaterialDetailCard(material, state, openMaterial) } }
+        }
+    }
+}
+
+@Composable
+private fun ClassMessageCard(message: app.viora.database.ClassMessageEntity) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(message.subject.ifBlank { "Class message" }, style = MaterialTheme.typography.titleMedium)
+            Text(message.body)
+            listOf(message.faculty, message.postedEpochMillis?.asAcademicTime()).filterNotNull()
+                .filter(String::isNotBlank)
+                .joinToString(" · ")
+                .takeIf(String::isNotBlank)
+                ?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
@@ -1524,11 +1703,14 @@ internal fun VioraUiState.attendanceFor(slot: SlotWithCourse): AttendanceUi? {
 
 internal enum class AttendanceKind { THEORY, LAB, PROJECT, UNKNOWN }
 
-internal fun attendanceKind(value: String): AttendanceKind = when {
-    value.contains("lab", ignoreCase = true) -> AttendanceKind.LAB
-    value.contains("project", ignoreCase = true) -> AttendanceKind.PROJECT
-    value.contains("theory", ignoreCase = true) || value.contains("lecture", ignoreCase = true) -> AttendanceKind.THEORY
-    else -> AttendanceKind.UNKNOWN
+internal fun attendanceKind(value: String): AttendanceKind {
+    val tokens = Regex("[A-Z]+").findAll(value.uppercase(Locale.ENGLISH)).map { it.value }.toSet()
+    return when {
+        tokens.any { it in setOf("LAB", "ELA", "ELP", "LO") } -> AttendanceKind.LAB
+        tokens.any { it in setOf("PROJECT", "EPR", "PJT") } -> AttendanceKind.PROJECT
+        tokens.any { it in setOf("THEORY", "LECTURE", "ETH", "ETL") } -> AttendanceKind.THEORY
+        else -> AttendanceKind.UNKNOWN
+    }
 }
 
 private fun String.facultyKey(): String = lowercase().filter(Char::isLetterOrDigit)
