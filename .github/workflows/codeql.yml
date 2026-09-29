@@ -43,4 +43,4 @@ jobs:
       - if: matrix.language == 'java-kotlin'
         name: Build Android sources for analysis
         run: gradle assembleDebug --no-configuration-cache --stacktrace
-      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
