@@ -207,8 +207,11 @@ class VioraAppViewModel(
                             it.copy(loading = false, error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
                         }
                     }
-                    SessionState.Missing -> mutableState.update {
-                        it.copy(loading = false, error = "VTOP rejected the sign-in details")
+                    SessionState.Missing -> {
+                        graph.credentials.clear()
+                        mutableState.update {
+                            it.copy(loading = false, error = "VTOP rejected the sign-in details. Check the username and password, then try again.")
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -246,8 +249,11 @@ class VioraAppViewModel(
                     SessionState.VerificationRequired -> mutableState.update {
                         it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP requires reCAPTCHA or an account action that Viora cannot complete automatically")
                     }
-                    SessionState.Missing -> mutableState.update {
-                        it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP rejected the sign-in details")
+                    SessionState.Missing -> {
+                        graph.credentials.clear()
+                        mutableState.update {
+                            it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP rejected the sign-in details. Check the username and password, then try again.")
+                        }
                     }
                 }
             } catch (error: Exception) {

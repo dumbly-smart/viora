@@ -278,30 +278,39 @@ class HttpVtopGateway(
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
 
     private fun prepareLoginChallenge(): LoginChallenge? {
-        cookieJar.clear()
-        csrf = null
-        get(SITE_ROOT)
-        get(VTOP_ROOT)
-        val openPage = get(OPEN_PAGE)
-        updateTokens(openPage)
-        csrf?.let { setupToken ->
+        repeat(MAX_PRELOGIN_ATTEMPTS) { attempt ->
+            cookieJar.clear()
+            csrf = null
+            authorizedId = null
+
+            // CLI-Top's working VTOP flow starts a fresh server session, then
+            // gets the CAPTCHA from the prelogin/setup POST response itself.
+            val sessionHtml = get(SITE_ROOT)
+            updateTokens(sessionHtml)
+            val token = csrf
+            if (token == null) {
+                if (attempt + 1 < MAX_PRELOGIN_ATTEMPTS) Thread.sleep(600L * (attempt + 1))
+                return@repeat
+            }
+
             val setupBody = FormBody.Builder()
-                .add("_csrf", setupToken)
+                .add("_csrf", token)
                 .add("flag", "VTOP")
                 .build()
-            execute(Request.Builder().url(SETUP_PAGE).post(setupBody).build())
-        }
-
-        repeat(MAX_CAPTCHA_PAGE_ATTEMPTS) {
-            val loginPage = get(LOGIN)
-            updateTokens(loginPage)
-            val document = Jsoup.parse(loginPage)
-            if (!isRecaptchaPage(loginPage, document)) {
-                val image = extractCaptchaDataUri(document)
-                val token = csrf
-                if (image != null && token != null) return LoginChallenge(token, image)
-            }
-            if (it + 1 < MAX_CAPTCHA_PAGE_ATTEMPTS) Thread.sleep(600L * (it + 1))
+            val setupHtml = execute(
+                Request.Builder()
+                    .url(SETUP_PAGE)
+                    .header("Referer", OPEN_PAGE)
+                    .post(setupBody)
+                    .build(),
+            )
+            updateTokens(setupHtml)
+            val document = Jsoup.parse(setupHtml)
+            if (isRecaptchaPage(setupHtml, document)) return null
+            val image = extractCaptchaDataUri(document)
+            val challengeToken = csrf ?: token
+            if (image != null) return LoginChallenge(challengeToken, image)
+            if (attempt + 1 < MAX_PRELOGIN_ATTEMPTS) Thread.sleep(600L * (attempt + 1))
         }
         return null
     }
@@ -331,18 +340,31 @@ class HttpVtopGateway(
             isAuthenticated(html) -> LoginAttempt.ACTIVE
             isInvalidCredentials(html) -> LoginAttempt.INVALID_CREDENTIALS
             isMandatoryAction("${response.url}\n$html") || isRecaptchaPage(html, Jsoup.parse(html)) -> LoginAttempt.VERIFICATION_REQUIRED
-            response.url.encodedPath != "/vtop/login" -> {
-                val content = get(CONTENT)
-                updateTokens(content)
-                if (isAuthenticated(content)) LoginAttempt.ACTIVE else LoginAttempt.RETRY_CAPTCHA
+            else -> {
+                // VTOP reports rejected text CAPTCHAs and credentials on a
+                // separate endpoint; the login POST body itself is often generic.
+                val loginError = get(LOGIN_ERROR)
+                when {
+                    isInvalidCredentials(loginError) -> return LoginAttempt.INVALID_CREDENTIALS
+                    isInvalidCaptcha(loginError) -> return LoginAttempt.RETRY_CAPTCHA
+                }
+                if (response.url.encodedPath != "/vtop/login") {
+                    val content = get(CONTENT)
+                    updateTokens(content)
+                    if (isAuthenticated(content)) LoginAttempt.ACTIVE else LoginAttempt.RETRY_CAPTCHA
+                } else {
+                    LoginAttempt.RETRY_CAPTCHA
+                }
             }
-            else -> LoginAttempt.RETRY_CAPTCHA
         }
     }
 
     private fun extractCaptchaDataUri(document: org.jsoup.nodes.Document): String? {
-        if (document.selectFirst("input[name=captchaStr], input#captchaStr") == null) return null
-        return document.select("img[src]")
+        return document.select("#captchaBlock img[src]")
+            .asSequence()
+            .map { it.attr("src").trim() }
+            .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
+            ?: document.select("img[src]")
             .asSequence()
             .map { it.attr("src").trim() }
             .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
@@ -362,9 +384,12 @@ class HttpVtopGateway(
 
     private fun isInvalidCredentials(html: String): Boolean =
         Regex(
-            "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
+            "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials|loginid\\s*/\\s*password|username\\s*/\\s*password)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
             RegexOption.IGNORE_CASE,
         ).containsMatchIn(html)
+
+    private fun isInvalidCaptcha(html: String): Boolean =
+        Regex("invalid\\s+captcha", RegexOption.IGNORE_CASE).containsMatchIn(html)
 
     private fun isMandatoryAction(html: String): Boolean =
         Regex("mandatory/data/off|feedback|studentFeedback|redressal|hostel.*instruction", RegexOption.IGNORE_CASE)
@@ -465,12 +490,13 @@ class HttpVtopGateway(
         private const val BASE = "https://vtop.vit.ac.in/vtop"
         private const val MAX_MATERIAL_BYTES = 50 * 1024 * 1024
         private const val MAX_CAPTCHA_ATTEMPTS = 4
-        private const val MAX_CAPTCHA_PAGE_ATTEMPTS = 6
+        private const val MAX_PRELOGIN_ATTEMPTS = 3
         private const val CAPTCHA_LENGTH = 6
-        private const val OPEN_PAGE = "$BASE/openPage"
+        private const val OPEN_PAGE = "$BASE/open/page"
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
+        private const val LOGIN_ERROR = "$BASE/login/error"
         private const val CONTENT = "$BASE/content"
         private const val TIMETABLE_PAGE = "$BASE/academics/common/StudentTimeTable"
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"
