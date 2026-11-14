@@ -13,17 +13,18 @@ class MarksParser {
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
         val records = mutableListOf<MarkRecord>()
         document.select("table").forEachIndexed { tableIndex, table ->
-            val allRows = table.select("tr")
+            val allRows = table.directRows()
             val headerRow = allRows.firstOrNull { row ->
-                val cells = row.select("th,td").map { norm(it.text()) }
+                val cells = row.directCells().map { norm(it.text()) }
                 cells.any { it in componentHeaders } && cells.any { it in scoreHeaders || it in maximumHeaders }
             } ?: return@forEachIndexed
-            val headers = headerRow.select("th,td").map { norm(it.text()) }
+            val headers = headerRow.directCells().map { norm(it.text()) }
             val heading = table.previousElementSiblings().firstOrNull { it.text().isNotBlank() }?.text().orEmpty()
             var context = (allRows.takeWhile { it != headerRow }.lastOrNull { it.select("td[colspan],th[colspan]").isNotEmpty() }?.text() ?: heading)
                 .courseContext()
+            context = table.outerCourseContext(context)
             allRows.dropWhile { it != headerRow }.drop(1).forEachIndexed { rowIndex, row ->
-                val cells = row.select("td")
+                val cells = row.directCells().filter { it.tagName() == "td" }
                 if (cells.isEmpty()) return@forEachIndexed
                 if (cells.size == 1 && cells.single().hasAttr("colspan")) {
                     context = cells.single().text().courseContext(context)
@@ -53,6 +54,35 @@ class MarksParser {
         return if (records.isEmpty()) ParseResult.InvalidDocument("No assessment marks were found") else ParseResult.Success(records)
     }
 
+    private fun Element.outerCourseContext(fallback: CourseContext): CourseContext {
+        val containerRow = parents().firstOrNull { it.tagName() == "tr" } ?: return fallback
+        val outerTable = containerRow.parents().firstOrNull { it.tagName() == "table" } ?: return fallback
+        val outerRows = outerTable.directRows()
+        val containerIndex = outerRows.indexOfFirst { it === containerRow }
+        if (containerIndex <= 0) return fallback
+        val dataIndex = (containerIndex - 1 downTo 0).firstOrNull { index ->
+            outerRows[index].directCells().size > 1 && outerRows[index].selectFirst("table") == null
+        } ?: return fallback
+        val headerRow = (dataIndex - 1 downTo 0).firstOrNull { index ->
+            outerRows[index].directCells().map { norm(it.text()) }.any { it in courseHeaders }
+        }?.let(outerRows::get) ?: return fallback
+        val values = headerRow.directCells().map { norm(it.text()) }
+            .zip(outerRows[dataIndex].directCells().map(Element::text))
+            .toMap()
+        return CourseContext(
+            courseCode = values.find("course code", "subject code")?.trim().orEmpty().ifBlank { fallback.courseCode },
+            courseTitle = values.find("course title", "course name", "subject title", "subject name")
+                ?.trim().orEmpty().ifBlank { fallback.courseTitle },
+            courseType = values.find("course type", "type", "subject type")?.trim().orEmpty().ifBlank { fallback.courseType },
+        )
+    }
+
+    private fun Element.directRows(): List<Element> = select("tr").filter { row ->
+        row.parents().firstOrNull { it.tagName() == "table" } === this
+    }
+
+    private fun Element.directCells(): List<Element> = children().filter { it.tagName() == "th" || it.tagName() == "td" }
+
     private data class CourseContext(val courseCode: String = "", val courseTitle: String = "", val courseType: String = "")
 
     private fun String.courseContext(fallback: CourseContext = CourseContext()): CourseContext {
@@ -70,9 +100,10 @@ class MarksParser {
     }
 
     private companion object {
-        val componentHeaders = setOf("title", "assessment", "assessment title", "component", "mark component")
+        val componentHeaders = setOf("title", "mark title", "assessment", "assessment title", "component", "mark component")
         val maximumHeaders = setOf("max marks", "max mark", "maximum marks", "maximum mark")
         val scoreHeaders = setOf("scored mark", "marks scored", "score", "marks obtained", "mark obtained")
+        val courseHeaders = setOf("course code", "subject code", "course title", "course name", "course type", "subject type")
     }
 }
 

@@ -21,4 +21,17 @@ class MarksParserTest {
         assertNull(records[4].weightageMark)
         assertEquals("Published", records[4].status)
     }
+
+    @Test fun `parses nested VTOP mark title table with its outer course identity`() {
+        val html = checkNotNull(javaClass.getResource("/fixtures/marks_nested_vtop.html")).readText()
+
+        val records = (MarksParser().parse(html) as ParseResult.Success).value
+
+        assertEquals(listOf("CAT 1", "Quiz 1"), records.map { it.title })
+        assertEquals(listOf("CSE1001", "CSE1001"), records.map { it.courseCode })
+        assertEquals(listOf("Synthetic Systems", "Synthetic Systems"), records.map { it.courseTitle })
+        assertEquals(listOf("Theory Only", "Theory Only"), records.map { it.courseType })
+        assertEquals(listOf(42.0, 9.0), records.map { it.scoredMark })
+        assertEquals(listOf(12.6, null), records.map { it.weightageMark })
+    }
 }

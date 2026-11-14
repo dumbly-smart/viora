@@ -11,11 +11,15 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Solves VTOP's six-character text CAPTCHA locally using a bundled linear model. */
+fun interface CaptchaSolver {
+    fun solve(dataUri: String): String
+}
+
 class VtopCaptchaSolver private constructor(
     private val weights: Array<FloatArray>,
     private val biases: FloatArray,
-) {
-    fun solve(dataUri: String): String {
+) : CaptchaSolver {
+    override fun solve(dataUri: String): String {
         val match = DATA_URI.matchEntire(dataUri.trim())
             ?: throw IOException("VTOP returned an invalid CAPTCHA image")
         val imageBytes = runCatching { Base64.decode(match.groupValues[2], Base64.DEFAULT) }
@@ -98,7 +102,6 @@ class VtopCaptchaSolver private constructor(
         private const val CHAR_COUNT = 6
         private const val LABELS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         private val DATA_URI = Regex("^data:(image/(?:png|jpe?g));base64,(.+)$", RegexOption.IGNORE_CASE)
-
         fun fromAssets(assets: AssetManager): VtopCaptchaSolver =
             DataInputStream(BufferedInputStream(assets.open(MODEL_ASSET))).use { input ->
                 if (input.readInt() != MODEL_MAGIC) throw IOException("Invalid CAPTCHA model")

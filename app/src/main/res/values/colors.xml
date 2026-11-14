@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="viora_brand">#09090B</color>
-    <color name="viora_splash">#F8F8F8</color>
-    <color name="viora_splash_icon_background">#E4E4E4</color>
-    <color name="widget_surface">#F8F8F8</color>
-    <color name="widget_primary">#292929</color>
-    <color name="widget_secondary">#5F5F5F</color>
+    <color name="viora_splash">#0D0F14</color>
+    <color name="viora_splash_icon_background">#20232C</color>
+    <color name="widget_surface">#16181F</color>
+    <color name="widget_primary">#F4F5F9</color>
+    <color name="widget_secondary">#B4BAC9</color>
 </resources>

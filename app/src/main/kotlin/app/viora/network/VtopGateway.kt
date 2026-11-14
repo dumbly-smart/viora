@@ -12,6 +12,7 @@ sealed interface SessionState {
     data object Missing : SessionState
     data object Active : SessionState
     data object VerificationRequired : SessionState
+    data class CaptchaRequired(val imageDataUri: String) : SessionState
 }
 
 data class TimetableSnapshot(
@@ -104,6 +105,7 @@ data class ExamRecord(
 interface VtopGateway {
     suspend fun sessionState(): SessionState
     suspend fun login(username: String, password: CharArray): SessionState
+    suspend fun submitCaptcha(username: String, password: CharArray, answer: String): SessionState = SessionState.VerificationRequired
     suspend fun semesters(): List<SemesterOption>
     suspend fun timetable(semesterId: String): TimetableSnapshot
     suspend fun attendance(semesterId: String): AttendanceSnapshot

@@ -3,13 +3,17 @@ package app.viora
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
+import app.viora.database.ClassMessageEntity
 import app.viora.database.CourseMaterialEntity
+import app.viora.database.SlotWithCourse
 import app.viora.ui.VioraTheme
 import org.junit.Rule
 import org.junit.Test
@@ -47,6 +51,38 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("11:59", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Course materials").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Synthetic notes").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun courseShowsEveryMarkAcrossCodeFormatsWhenVtopTitlesDiffer() {
+        val course = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 8, 10, 10, 80.0, 2, 0, 1, 2, 0)
+        val state = VioraUiState(
+            attendance = listOf(course),
+            marks = listOf(
+                MarkUi("cat", "CSE1001", "Synthetic Course - ETH", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+                MarkUi("lab", "CSE 1001 (Lab)", "Synthetic Course Lab", "Lab", "Lab Exercise 1", 20.0, null, "Pending", null, null),
+            ),
+        )
+
+        compose.setContent {
+            VioraTheme {
+                DetailScreen(
+                    state = state,
+                    selection = DetailSelection("course", course.id),
+                    openMaterial = { _, _ -> },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Marks").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CAT 1").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Raw score: 42 / 50").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Weighted score: 12.60").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Percentage weight: 15%").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab Exercise 1").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("VTOP type: Lab").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Maximum score: 20").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Publication: Pending").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -99,6 +135,63 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("Skip allowance").assertExists()
         compose.onNodeWithText("active 80%", substring = true).assertExists()
         compose.onAllNodesWithText("Not scheduled").assertCountEquals(3)
+    }
+
+    @Test
+    fun librarySearchOpensTheMatchingLabCourse() {
+        val state = theoryAndLabCourseState()
+        var opened = DetailSelection("", "")
+
+        compose.setContent {
+            VioraTheme {
+                CoursesScreen(state) { kind, id -> opened = DetailSelection(kind, id) }
+            }
+        }
+
+        compose.onNodeWithText("Search courses").performTextInput("Lab")
+        compose.onNodeWithText("Lab courses").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Open CSE1001 Lab course").performClick()
+
+        compose.runOnIdle {
+            assertEquals(DetailSelection("course", "lab-course"), opened)
+        }
+    }
+
+    @Test
+    fun courseDetailOpenedFromLibraryPreservesLabIdentityAndMessages() {
+        compose.setContent {
+            VioraTheme {
+                DetailScreen(
+                    state = theoryAndLabCourseState(),
+                    selection = DetailSelection("course", "lab-course"),
+                    openMaterial = { _, _ -> },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Lab · Faculty Lab").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab Exercise").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lab briefing").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Bring your record notebook.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CAT 1").assertDoesNotExist()
+        compose.onNodeWithText("Theory announcement").assertDoesNotExist()
+    }
+
+    @Test
+    fun marksShowCgpaAfterEveryComponent() {
+        val state = VioraUiState(
+            marks = listOf(
+                MarkUi("cat", "CSE1001", "Synthetic Course", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+                MarkUi("fat", "CSE1001", "Synthetic Course", "Theory", "FAT", 100.0, 40.0, "Published", 81.0, 32.4),
+            ),
+            cgpa = 8.74,
+        )
+
+        compose.setContent { VioraTheme { AcademicsScreen(state, initialTab = 1) { _, _ -> } } }
+
+        compose.onNodeWithText("FAT").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("CGPA").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("8.74").assertIsDisplayed()
     }
 
     @Test
@@ -157,7 +250,15 @@ class CourseDetailScreenTest {
         compose.runOnIdle { assertEquals("CSE1001", openedCourse) }
         compose.onNodeWithText("Pending DA").assertExists()
         compose.onNodeWithText("Submitted DA").assertExists()
+        compose.onNodeWithText("Submit file").assertDoesNotExist()
+        compose.onNodeWithText("Replace submission").assertDoesNotExist()
+
+        compose.onNodeWithText("Pending DA").performClick()
         compose.onNodeWithText("Submit file").assertExists()
+        compose.onNodeWithText("Replace submission").assertDoesNotExist()
+
+        compose.onNodeWithText("Submitted DA").performClick()
+        compose.onNodeWithText("Submit file").assertDoesNotExist()
         compose.onNodeWithText("Replace submission").assertExists()
     }
 
@@ -193,7 +294,7 @@ class CourseDetailScreenTest {
     }
 
     @Test
-    fun estimatedAttendanceWindowIsLabelled() {
+    fun estimatedAttendanceSourceIsNotRepeatedInsideMilestoneRow() {
         val attendance = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 14, 20, 20, 70.0, 0, 1, 1, 0, 1)
         val projection = CourseAttendanceMilestoneUi(
             attendance = attendance,
@@ -206,6 +307,40 @@ class CourseDetailScreenTest {
 
         compose.setContent { VioraTheme { AttendanceMilestoneRow(AttendanceMilestone.FAT, projection) } }
 
-        compose.onNodeWithText("Estimated from timetable and exam dates").assertExists()
+        compose.onNodeWithText("Calculated from timetable and exam dates").assertDoesNotExist()
+        compose.onNodeWithText("Estimated from timetable and exam dates").assertDoesNotExist()
     }
+
+    @Test
+    fun attendanceShowsCalculationSourceOnceAtTheBottom() {
+        val attendance = AttendanceUi("attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty", 14, 20, 20, 70.0, 0, 1, 1, 0, 1)
+        val state = VioraUiState(attendance = listOf(attendance))
+
+        compose.setContent { VioraTheme { AcademicsScreen(state, initialTab = 2) { _, _ -> } } }
+
+        compose.onNodeWithText("Calculated from timetable and exam dates").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Calculated from timetable and exam dates").assertCountEquals(1)
+    }
+
+    private fun theoryAndLabCourseState(): VioraUiState = VioraUiState(
+        slots = listOf(
+            SlotWithCourse("theory-slot", "theory-course", "CSE1001", "Synthetic Course", "Faculty Theory", 1, 9 * 60, 10 * 60, "AB1", "Theory"),
+            SlotWithCourse("lab-slot", "lab-course", "CSE1001", "Synthetic Course", "Faculty Lab", 2, 14 * 60, 16 * 60, "AB2", "Lab"),
+        ),
+        attendance = listOf(
+            AttendanceUi("theory-attendance", "CSE1001", "Synthetic Course", "Theory", "Faculty Theory", 9, 10, 10, 90.0, 3, 0, 1, 3, 0),
+            AttendanceUi("lab-attendance", "CSE1001", "Synthetic Course", "Lab", "Faculty Lab", 4, 5, 5, 80.0, 1, 0, 2, 1, 0),
+        ),
+        marks = listOf(
+            MarkUi("cat", "CSE1001", "Synthetic Course", "Theory", "CAT 1", 50.0, 15.0, "Published", 42.0, 12.6),
+            MarkUi("lab", "CSE1001", "Synthetic Course", "Lab", "Lab Exercise", 20.0, null, "Published", 19.0, null),
+        ),
+        messages = listOf(
+            ClassMessageEntity("theory-message", "CSE1001", "Synthetic Course", "Faculty Theory", "Theory announcement", "Read chapter 1.", null, 0),
+            ClassMessageEntity("lab-message", "CSE1001", "Synthetic Course", "Faculty Lab", "Lab briefing", "Bring your record notebook.", null, 0),
+        ),
+        materials = listOf(
+            CourseMaterialEntity("semester", "lab-material", "CSE1001 Lab", "Lab manual", "lab.pdf", "/download/lab", null, 0),
+        ),
+    )
 }

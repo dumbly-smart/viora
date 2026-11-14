@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,8 @@ internal fun AcademicsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .semantics { contentDescription = "Academic record sections" },
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             tabs.forEachIndexed { index, label ->
@@ -87,32 +89,52 @@ private fun MarksScreen(state: VioraUiState) {
                         Text(section.courseTitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     section.marks.forEach { mark ->
-                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(mark.title, style = MaterialTheme.typography.titleMedium)
-                            if (mark.courseType.isNotBlank()) {
-                                Text("VTOP type: ${mark.courseType}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            when {
-                                mark.scoredMark != null && mark.maxMarks != null -> Text("Raw score: ${mark.scoredMark.displayMark()} / ${mark.maxMarks.displayMark()}")
-                                mark.scoredMark != null -> Text("Raw score: ${mark.scoredMark.displayMark()}")
-                                mark.maxMarks != null -> Text("Maximum score: ${mark.maxMarks.displayMark()}")
-                                else -> Text("Raw score unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (mark.weightageMark != null) Text("Weighted score: ${mark.weightageMark.displayMark()}")
-                            if (mark.weightagePercent != null) Text("Percentage weight: ${mark.weightagePercent.displayMark()}%")
-                            if (mark.weightageMark == null && mark.weightagePercent == null) {
-                                Text("Weightage unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text(
-                                mark.status.takeIf(String::isNotBlank)?.let { "Publication: $it" } ?: "Publication status unavailable",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        MarkDetails(mark)
                     }
                 }
             }
         }
         if (sections.isEmpty()) item { Text("No marks have been cached yet.") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("CGPA", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        state.cgpa?.displayMark() ?: "CGPA unavailable",
+                        color = if (state.cgpa == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MarkDetails(mark: MarkUi) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(mark.title, style = MaterialTheme.typography.titleMedium)
+        if (mark.courseType.isNotBlank()) {
+            Text("VTOP type: ${mark.courseType}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        when {
+            mark.scoredMark != null && mark.maxMarks != null -> Text("Raw score: ${mark.scoredMark.displayMark()} / ${mark.maxMarks.displayMark()}")
+            mark.scoredMark != null -> Text("Raw score: ${mark.scoredMark.displayMark()}")
+            mark.maxMarks != null -> Text("Maximum score: ${mark.maxMarks.displayMark()}")
+            else -> Text("Raw score unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (mark.weightageMark != null) Text("Weighted score: ${mark.weightageMark.displayMark()}")
+        if (mark.weightagePercent != null) Text("Percentage weight: ${mark.weightagePercent.displayMark()}%")
+        if (mark.weightageMark == null && mark.weightagePercent == null) {
+            Text("Weightage unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            mark.status.takeIf(String::isNotBlank)?.let { "Publication: $it" } ?: "Publication status unavailable",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -120,6 +142,7 @@ private fun MarksScreen(state: VioraUiState) {
 private fun AttendanceScreen(state: VioraUiState) {
     val ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)
     val milestones = state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
+    val showCalculationSource = !ninePointRule && state.attendance.isNotEmpty()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -154,6 +177,15 @@ private fun AttendanceScreen(state: VioraUiState) {
             }
         }
         if (state.attendance.isEmpty()) item { Text("No attendance has been cached yet.") }
+        if (showCalculationSource) {
+            item {
+                Text(
+                    "Calculated from timetable and exam dates",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 
@@ -166,9 +198,6 @@ internal fun AttendanceMilestoneRow(
         Text(milestone.label, style = MaterialTheme.typography.titleSmall)
         Column(horizontalAlignment = Alignment.End) {
             Text(projection?.stateCopy ?: "Not scheduled", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (projection?.estimatedWindow == true) {
-                Text("Estimated from timetable and exam dates", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
     }
 }
