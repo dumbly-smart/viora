@@ -278,30 +278,39 @@ class HttpVtopGateway(
     private fun get(url: String): String = execute(Request.Builder().url(url).get().build())
 
     private fun prepareLoginChallenge(): LoginChallenge? {
-        cookieJar.clear()
-        csrf = null
-        get(SITE_ROOT)
-        get(VTOP_ROOT)
-        val openPage = get(OPEN_PAGE)
-        updateTokens(openPage)
-        csrf?.let { setupToken ->
+        repeat(MAX_PRELOGIN_ATTEMPTS) { attempt ->
+            cookieJar.clear()
+            csrf = null
+            authorizedId = null
+
+            // CLI-Top's working VTOP flow starts a fresh server session, then
+            // gets the CAPTCHA from the prelogin/setup POST response itself.
+            val sessionHtml = get(SITE_ROOT)
+            updateTokens(sessionHtml)
+            val token = csrf
+            if (token == null) {
+                if (attempt + 1 < MAX_PRELOGIN_ATTEMPTS) Thread.sleep(600L * (attempt + 1))
+                return@repeat
+            }
+
             val setupBody = FormBody.Builder()
-                .add("_csrf", setupToken)
+                .add("_csrf", token)
                 .add("flag", "VTOP")
                 .build()
-            execute(Request.Builder().url(SETUP_PAGE).post(setupBody).build())
-        }
-
-        repeat(MAX_CAPTCHA_PAGE_ATTEMPTS) {
-            val loginPage = get(LOGIN)
-            updateTokens(loginPage)
-            val document = Jsoup.parse(loginPage)
-            if (!isRecaptchaPage(loginPage, document)) {
-                val image = extractCaptchaDataUri(document)
-                val token = csrf
-                if (image != null && token != null) return LoginChallenge(token, image)
-            }
-            if (it + 1 < MAX_CAPTCHA_PAGE_ATTEMPTS) Thread.sleep(600L * (it + 1))
+            val setupHtml = execute(
+                Request.Builder()
+                    .url(SETUP_PAGE)
+                    .header("Referer", OPEN_PAGE)
+                    .post(setupBody)
+                    .build(),
+            )
+            updateTokens(setupHtml)
+            val document = Jsoup.parse(setupHtml)
+            if (isRecaptchaPage(setupHtml, document)) return null
+            val image = extractCaptchaDataUri(document)
+            val challengeToken = csrf ?: token
+            if (image != null) return LoginChallenge(challengeToken, image)
+            if (attempt + 1 < MAX_PRELOGIN_ATTEMPTS) Thread.sleep(600L * (attempt + 1))
         }
         return null
     }
@@ -351,8 +360,11 @@ class HttpVtopGateway(
     }
 
     private fun extractCaptchaDataUri(document: org.jsoup.nodes.Document): String? {
-        if (document.selectFirst("input[name=captchaStr], input#captchaStr") == null) return null
-        return document.select("img[src]")
+        return document.select("#captchaBlock img[src]")
+            .asSequence()
+            .map { it.attr("src").trim() }
+            .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
+            ?: document.select("img[src]")
             .asSequence()
             .map { it.attr("src").trim() }
             .firstOrNull { it.startsWith("data:image/", ignoreCase = true) }
@@ -478,9 +490,9 @@ class HttpVtopGateway(
         private const val BASE = "https://vtop.vit.ac.in/vtop"
         private const val MAX_MATERIAL_BYTES = 50 * 1024 * 1024
         private const val MAX_CAPTCHA_ATTEMPTS = 4
-        private const val MAX_CAPTCHA_PAGE_ATTEMPTS = 6
+        private const val MAX_PRELOGIN_ATTEMPTS = 3
         private const val CAPTCHA_LENGTH = 6
-        private const val OPEN_PAGE = "$BASE/openPage"
+        private const val OPEN_PAGE = "$BASE/open/page"
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"

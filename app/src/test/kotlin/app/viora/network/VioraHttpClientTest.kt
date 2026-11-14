@@ -14,21 +14,27 @@ class VioraHttpClientTest {
     fun `VTOP certificate chain is pinned`() {
         val client = VioraHttpClient.create(InMemoryCookieStore())
 
-        assertEquals(3, client.certificatePinner.findMatchingPins("vtop.vit.ac.in").size)
+        assertEquals(5, client.certificatePinner.findMatchingPins("vtop.vit.ac.in").size)
     }
 
     @Test
     fun `VTOP requests carry the browser profile required by the login page`() {
         val requiredHeaders = mapOf(
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language" to "en-US,en;q=0.9",
             "Cache-Control" to "max-age=0",
             "Sec-Fetch-Dest" to "document",
             "Sec-Fetch-Mode" to "navigate",
-            "Sec-Fetch-Site" to "none",
+            "Sec-Fetch-Site" to "same-origin",
             "Sec-Fetch-User" to "?1",
+            "Sec-Ch-Ua" to "\"Chromium\";v=\"120\", \"Not_A Brand\";v=\"8\"",
+            "Sec-Ch-Ua-Mobile" to "?0",
+            "Sec-Ch-Ua-Platform" to "\"Linux\"",
+            "Priority" to "u=0, i",
+            "Origin" to "https://vtop.vit.ac.in",
+            "Referer" to "https://vtop.vit.ac.in/vtop/content",
             "Upgrade-Insecure-Requests" to "1",
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         val vtopBoundary = Interceptor { chain ->
             val accepted = requiredHeaders.all { (name, value) -> chain.request().header(name) == value }

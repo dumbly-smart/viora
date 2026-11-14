@@ -14,6 +14,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpVtopGatewayLoginTest {
+    @Test fun `prelogin setup response supplies captcha challenge without GET login page`() = runTest {
+        val setupChallenge = """
+            <html><body>
+            <div id="captchaBlock"><img src="data:image/jpeg;base64,synthetic"></div>
+            <input name="captchaStr">
+            <input name="_csrf" value="setup-token">
+            </body></html>
+        """.trimIndent()
+        val requests = mutableListOf<Pair<String, String>>()
+        val interceptor = Interceptor { chain ->
+            val request = chain.request()
+            requests += request.method to request.url.encodedPath
+            val html = when {
+                request.method == "GET" && request.url.encodedPath == "/" ->
+                    "<html><body><input name=\"_csrf\" value=\"root-token\"></body></html>"
+                request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup" -> setupChallenge
+                request.method == "POST" && request.url.encodedPath == "/vtop/login" ->
+                    "<html><body><div id=\"MenuBlock\"></div></body></html>"
+                else -> "<html><body></body></html>"
+            }
+            Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(html.toResponseBody("text/html".toMediaType()))
+                .build()
+        }
+        val gateway = HttpVtopGateway(
+            client = OkHttpClient.Builder().addInterceptor(interceptor).build(),
+            cookieJar = IsolatedCookieJar(MemoryCookieStore()),
+            captchaSolver = CaptchaSolver { "ABC234" },
+        )
+
+        assertEquals(SessionState.Active, gateway.login("SYNTHETIC", "not-a-real-password".toCharArray()))
+        assertTrue("GET /vtop/login" !in requests.map { "${it.first} ${it.second}" })
+        assertTrue("POST /vtop/prelogin/setup" in requests.map { "${it.first} ${it.second}" })
+    }
+
     @Test fun `credential failure reported by VTOP error endpoint is not treated as captcha failure`() = runTest {
         val challenge = """
             <html><body>
@@ -26,13 +65,13 @@ class HttpVtopGatewayLoginTest {
         val interceptor = Interceptor { chain ->
             val request = chain.request()
             val html = when {
+                request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup" -> challenge
                 request.method == "POST" && request.url.encodedPath == "/vtop/login" -> {
                     loginSubmissions++
                     "<html><body>Login response</body></html>"
                 }
                 request.url.encodedPath == "/vtop/login/error" ->
                     "<html><body>Invalid LoginId/Password</body></html>"
-                request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage" -> challenge
                 else -> "<html><body><input name=\"_csrf\" value=\"synthetic-token\"></body></html>"
             }
             Response.Builder()
@@ -65,7 +104,7 @@ class HttpVtopGatewayLoginTest {
             val request = chain.request()
             val html = if (request.method == "POST" && request.url.encodedPath == "/vtop/login") {
                 "<html><body><div class=\"alert\">Username or password is incorrect.</div></body></html>"
-            } else if (request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage") {
+            } else if (request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup") {
                 challenge
             } else {
                 "<html><body><input name=\"_csrf\" value=\"synthetic-token\"></body></html>"
@@ -145,7 +184,7 @@ class HttpVtopGatewayLoginTest {
                 val answer = Regex("(?:^|&)captchaStr=([^&]+)").find(body)?.groupValues?.get(1).orEmpty()
                 submittedAnswers += answer
                 if (answer == "ABC234") "<html><body><div id=\"MenuBlock\"></div></body></html>" else challenge
-            } else if (request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage") {
+            } else if (request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup") {
                 challenge
             } else {
                 "<html><body><input name=\"_csrf\" value=\"synthetic-token\"></body></html>"
@@ -206,7 +245,7 @@ class HttpVtopGatewayLoginTest {
                         </body></html>
                     """.trimIndent()
                 }
-                request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage" -> challenge
+                request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup" -> challenge
                 else -> "<html><body><input name=\"_csrf\" value=\"setup-token\"></body></html>"
             }
             Response.Builder()
