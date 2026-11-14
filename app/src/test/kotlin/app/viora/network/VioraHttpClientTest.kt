@@ -10,6 +10,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class VioraHttpClientTest {
+    @Test fun `Android and OkHttp trust the same VTOP certificate pins`() {
+        val config = java.io.File("src/main/res/xml/network_security_config.xml").let {
+            if (it.exists()) it else java.io.File("app/src/main/res/xml/network_security_config.xml")
+        }
+        val androidPins = Regex("<pin digest=\"SHA-256\">([^<]+)</pin>")
+            .findAll(config.readText()).map { "sha256/${it.groupValues[1]}" }.toSet()
+        val okhttpPins = VioraHttpClient.create(InMemoryCookieStore()).certificatePinner
+            .findMatchingPins("vtop.vit.ac.in").map { it.toString() }.toSet()
+        assertEquals(androidPins, okhttpPins)
+    }
+
     @Test
     fun `VTOP certificate chain is pinned`() {
         val client = VioraHttpClient.create(InMemoryCookieStore())

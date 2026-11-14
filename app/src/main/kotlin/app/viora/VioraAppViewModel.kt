@@ -181,6 +181,7 @@ class VioraAppViewModel(
 
     fun signIn() {
         val snapshot = state.value
+        if (snapshot.loading) return
         if (snapshot.username.isBlank() || snapshot.password.isBlank()) {
             mutableState.update { it.copy(error = "Enter your VTOP username and password") }
             return
@@ -214,9 +215,17 @@ class VioraAppViewModel(
                         }
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
-                val message = when (error) { is UnknownHostException -> "VTOP could not be reached. Check your connection."; is SocketTimeoutException -> "VTOP took too long to respond. Try again."; else -> "Could not connect to VTOP (${error.message?.take(80) ?: "unknown error"})" }
-                mutableState.update { it.copy(loading = false, error = message) }
+                val message = when (error) {
+                    is UnknownHostException -> "VTOP could not be reached. Check your connection."
+                    is SocketTimeoutException -> "VTOP took too long to respond. Try again."
+                    is javax.net.ssl.SSLException -> "VTOP certificate verification failed. Check your phone's date and network."
+                    is app.viora.network.VtopHttpException -> "VTOP returned HTTP ${error.statusCode}. Retry to start a fresh sign-in session."
+                    else -> "Could not connect to VTOP. Retry to start a fresh sign-in session."
+                }
+                mutableState.update { it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = message) }
             } finally {
                 password.fill('\u0000')
             }
@@ -225,6 +234,7 @@ class VioraAppViewModel(
 
     fun submitCaptcha() {
         val snapshot = state.value
+        if (snapshot.loading) return
         if (snapshot.captchaImageDataUri == null || snapshot.captchaAnswer.length != 6) {
             mutableState.update { it.copy(error = "Enter the six-character CAPTCHA") }
             return
@@ -256,9 +266,17 @@ class VioraAppViewModel(
                         }
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
-                val message = when (error) { is UnknownHostException -> "VTOP could not be reached. Check your connection."; is SocketTimeoutException -> "VTOP took too long to respond. Try again."; else -> "Could not connect to VTOP (${error.message?.take(80) ?: "unknown error"})" }
-                mutableState.update { it.copy(loading = false, error = message) }
+                val message = when (error) {
+                    is UnknownHostException -> "VTOP could not be reached. Check your connection."
+                    is SocketTimeoutException -> "VTOP took too long to respond. Try again."
+                    is javax.net.ssl.SSLException -> "VTOP certificate verification failed. Check your phone's date and network."
+                    is app.viora.network.VtopHttpException -> "VTOP returned HTTP ${error.statusCode}. Retry to start a fresh sign-in session."
+                    else -> "Could not connect to VTOP. Retry to start a fresh sign-in session."
+                }
+                mutableState.update { it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = message) }
             } finally {
                 password.fill('\u0000')
             }
