@@ -8,6 +8,8 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="false">vtop.vit.ac.in</domain>
         <pin-set>
+            <pin digest="SHA-256">wt21+lo3oTOb4CjIA1JwAA5vQ61SK+6em8bK+gybGzw=</pin>
+            <pin digest="SHA-256">a9khLOZJxlnJyrxstg/P+seiDCm+Yf3OsrXyFocBaI0=</pin>
             <pin digest="SHA-256">PqF0uOmuFtOZcGp9pKVa74qiNJv87Kf62NhZuhKfd/E=</pin>
             <pin digest="SHA-256">4a6cPehI7OG6cuDZka5NDZ7FR8a60d3auda+sKfg4Ng=</pin>
             <pin digest="SHA-256">x4QzPSC810K5/cMjb05Qm4k3Bw5zBn4lTdO/nEW/Td4=</pin>

@@ -54,31 +54,43 @@ class HttpVtopGateway(
     }
 
     override suspend fun login(username: String, password: CharArray): SessionState = withContext(Dispatchers.IO) {
-        authorizedId = username.trim()
-        pendingLoginChallenge = null
-        repeat(MAX_CAPTCHA_ATTEMPTS) {
-            val challenge = prepareLoginChallenge() ?: return@withContext SessionState.VerificationRequired
-            val answer = captchaSolver.solve(challenge.imageDataUri)
-            when (submitLoginChallenge(challenge, username, password, answer)) {
-                LoginAttempt.ACTIVE -> return@withContext SessionState.Active
-                LoginAttempt.INVALID_CREDENTIALS -> return@withContext SessionState.Missing
-                LoginAttempt.VERIFICATION_REQUIRED -> return@withContext SessionState.VerificationRequired
-                LoginAttempt.RETRY_CAPTCHA -> Unit
+        try {
+            authorizedId = username.trim()
+            pendingLoginChallenge = null
+            repeat(MAX_CAPTCHA_ATTEMPTS) {
+                val challenge = prepareLoginChallenge() ?: return@withContext SessionState.VerificationRequired
+                val answer = try { captchaSolver.solve(challenge.imageDataUri) } catch (_: IOException) {
+                    return@withContext manualCaptchaState()
+                }
+                when (submitLoginChallenge(challenge, username, password, answer)) {
+                    LoginAttempt.ACTIVE -> return@withContext SessionState.Active
+                    LoginAttempt.INVALID_CREDENTIALS -> { clearLocalSession(); return@withContext SessionState.Missing }
+                    LoginAttempt.VERIFICATION_REQUIRED -> return@withContext SessionState.VerificationRequired
+                    LoginAttempt.RETRY_CAPTCHA -> Unit
+                }
             }
+            manualCaptchaState()
+        } catch (failure: IOException) {
+            clearLocalSession()
+            throw failure
         }
-        manualCaptchaState()
     }
 
     override suspend fun submitCaptcha(username: String, password: CharArray, answer: String): SessionState = withContext(Dispatchers.IO) {
-        val normalizedAnswer = answer.trim().uppercase().filter(Char::isLetterOrDigit)
-        val challenge = pendingLoginChallenge
-        if (challenge == null || normalizedAnswer.length != CAPTCHA_LENGTH) return@withContext manualCaptchaState()
-        pendingLoginChallenge = null
-        when (submitLoginChallenge(challenge, username, password, normalizedAnswer)) {
-            LoginAttempt.ACTIVE -> SessionState.Active
-            LoginAttempt.INVALID_CREDENTIALS -> SessionState.Missing
-            LoginAttempt.VERIFICATION_REQUIRED -> SessionState.VerificationRequired
-            LoginAttempt.RETRY_CAPTCHA -> manualCaptchaState()
+        try {
+            val normalizedAnswer = answer.trim().uppercase().filter(Char::isLetterOrDigit)
+            val challenge = pendingLoginChallenge
+            if (challenge == null || normalizedAnswer.length != CAPTCHA_LENGTH) return@withContext manualCaptchaState()
+            pendingLoginChallenge = null
+            when (submitLoginChallenge(challenge, username, password, normalizedAnswer)) {
+                LoginAttempt.ACTIVE -> SessionState.Active
+                LoginAttempt.INVALID_CREDENTIALS -> { clearLocalSession(); SessionState.Missing }
+                LoginAttempt.VERIFICATION_REQUIRED -> SessionState.VerificationRequired
+                LoginAttempt.RETRY_CAPTCHA -> manualCaptchaState()
+            }
+        } catch (failure: IOException) {
+            clearLocalSession()
+            throw failure
         }
     }
 
@@ -252,7 +264,7 @@ class HttpVtopGateway(
             val body = FormBody.Builder().add("_csrf", token).add("authorizedID", id).add("fileId", fileId).build()
             return@withContext client.newCall(Request.Builder().url(COURSE_MATERIAL_DOWNLOAD).post(body).build()).execute().use { response ->
                 if (response.code == 404) throw AuthenticationException()
-                if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
+                if (!response.isSuccessful) throw VtopHttpException(response.code)
                 response.body.bytes().also {
                     require(it.size <= MAX_MATERIAL_BYTES) { "Course material is too large" }
                     if (it.looksLikeHtml()) throw IOException("VTOP returned a page instead of the requested material")
@@ -263,7 +275,7 @@ class HttpVtopGateway(
         val url = BASE.toHttpUrl().resolve(candidate) ?: throw IOException("VTOP provided an invalid material link")
         if (url.host != "vtop.vit.ac.in") throw IOException("Blocked a non-VTOP material link")
         client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
+            if (!response.isSuccessful) throw VtopHttpException(response.code)
             response.body.bytes().also { require(it.size <= MAX_MATERIAL_BYTES) { "Course material is too large" } }
         }
     }
@@ -333,7 +345,13 @@ class HttpVtopGateway(
             .add("password", String(password))
             .add("captchaStr", answer)
             .build()
-        val response = executeDocument(Request.Builder().url(LOGIN).post(body).build())
+        val originalCookies = cookieJar.loadForRequest(LOGIN.toHttpUrl())
+            .joinToString("; ") { "${it.name}=${it.value}" }
+        val response = executeDocument(
+            Request.Builder().url(LOGIN).post(body).build(),
+            client.newBuilder().followRedirects(false).build(),
+            allowRedirect = true,
+        )
         val html = response.html
         updateTokens(html)
         return when {
@@ -343,11 +361,17 @@ class HttpVtopGateway(
             else -> {
                 // VTOP reports rejected text CAPTCHAs and credentials on a
                 // separate endpoint; the login POST body itself is often generic.
-                val loginError = get(LOGIN_ERROR)
+                val loginError = executeDocument(
+                    Request.Builder().url(LOGIN_ERROR).header("Cookie", originalCookies).build(),
+                    client.newBuilder().cookieJar(okhttp3.CookieJar.NO_COOKIES).build(),
+                ).html
                 when {
                     isInvalidCredentials(loginError) -> return LoginAttempt.INVALID_CREDENTIALS
                     isInvalidCaptcha(loginError) -> return LoginAttempt.RETRY_CAPTCHA
                 }
+                val home = get(INIT_PAGE)
+                updateTokens(home)
+                if (isAuthenticated(home)) return LoginAttempt.ACTIVE
                 if (response.url.encodedPath != "/vtop/login") {
                     val content = get(CONTENT)
                     updateTokens(content)
@@ -386,7 +410,7 @@ class HttpVtopGateway(
         Regex(
             "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials|loginid\\s*/\\s*password|username\\s*/\\s*password)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
             RegexOption.IGNORE_CASE,
-        ).containsMatchIn(html)
+        ).containsMatchIn(html) || html.contains("Maximum Fail Attempts", ignoreCase = true)
 
     private fun isInvalidCaptcha(html: String): Boolean =
         Regex("invalid\\s+captcha", RegexOption.IGNORE_CASE).containsMatchIn(html)
@@ -443,14 +467,18 @@ class HttpVtopGateway(
 
     private fun execute(request: Request): String = executeDocument(request).html
 
-    private fun executeDocument(request: Request): HttpDocument = client.newCall(request).execute().use { response ->
+    private fun executeDocument(
+        request: Request,
+        transport: OkHttpClient = client,
+        allowRedirect: Boolean = false,
+    ): HttpDocument = transport.newCall(request).execute().use { response ->
         if (response.code == 404) {
             cookieJar.clear()
             csrf = null
             authorizedId = null
             throw AuthenticationException()
         }
-        if (!response.isSuccessful) throw IOException("VTOP returned HTTP ${response.code}")
+        if (!response.isSuccessful && !(allowRedirect && response.code in 300..399)) throw VtopHttpException(response.code)
         HttpDocument(response.body.string(), response.request.url)
     }
 
@@ -459,6 +487,9 @@ class HttpVtopGateway(
         document.selectFirst("input[name=_csrf]")?.attr("value")?.takeIf(String::isNotBlank)?.let { csrf = it }
         document.selectFirst("meta[name=_csrf], meta#_csrf")?.attr("content")?.takeIf(String::isNotBlank)?.let { csrf = it }
         Regex("(?:_csrf|csrfToken|csrfValue)\\s*[:=]\\s*[\"']([^\"']+)", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(1)?.trim()?.takeIf(String::isNotBlank)?.let { csrf = it }
+        // Match CLI-Top's Thymeleaf JavaScript CSRF representation.
+        Regex("""csrfValue\s*=\s*/\*([^*]+)\*/""")
             .find(html)?.groupValues?.get(1)?.trim()?.takeIf(String::isNotBlank)?.let { csrf = it }
         extractAuthorizedId(html)?.let { authorizedId = it }
     }
@@ -529,3 +560,6 @@ private fun ByteArray.looksLikeHtml(): Boolean {
 }
 
 class AuthenticationException : IOException("VTOP authentication is required")
+
+/** Contains only an HTTP status, never response bodies or request data. */
+class VtopHttpException(val statusCode: Int) : IOException("VTOP returned HTTP $statusCode")

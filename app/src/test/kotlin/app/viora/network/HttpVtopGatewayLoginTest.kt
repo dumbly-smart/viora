@@ -2,6 +2,7 @@ package app.viora.network
 
 import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -28,7 +29,7 @@ class HttpVtopGatewayLoginTest {
             requests += request.method to request.url.encodedPath
             val html = when {
                 request.method == "GET" && request.url.encodedPath == "/" ->
-                    "<html><body><input name=\"_csrf\" value=\"root-token\"></body></html>"
+                    "<html><script>var csrfValue = /*root-token*/'fallback';</script></html>"
                 request.method == "POST" && request.url.encodedPath == "/vtop/prelogin/setup" -> setupChallenge
                 request.method == "POST" && request.url.encodedPath == "/vtop/login" ->
                     "<html><body><div id=\"MenuBlock\"></div></body></html>"
@@ -264,6 +265,51 @@ class HttpVtopGatewayLoginTest {
 
         assertEquals(SessionState.Active, gateway.login("SYNTHETIC", "not-a-real-password".toCharArray()))
         assertEquals(1, contentRequests)
+    }
+
+    @Test fun `CLI redirect login initializes home and credential rejection rolls back before retry`() = runTest {
+        var rejected = true
+        var roots = 0
+        var homeRequests = 0
+        val jar = IsolatedCookieJar(MemoryCookieStore())
+        val interceptor = Interceptor { chain ->
+            val request = chain.request()
+            var code = 200
+            val html = when (request.url.encodedPath) {
+                "/" -> { roots++; "<input name=_csrf value=root-token>" }
+                "/vtop/prelogin/setup" -> "<input name=_csrf value=challenge-token><img src='data:image/png;base64,synthetic'>"
+                "/vtop/login" -> { code = 302; "" }
+                "/vtop/login/error" -> if (rejected) "Invalid LoginId/Password" else ""
+                "/vtop/init/page" -> { homeRequests++; "<input name=authorizedID value=SYNTHETIC><input name=_csrf value=home-token>" }
+                else -> error("Unexpected request path")
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code)
+                .message("Synthetic").header("Location", "/vtop/init/page")
+                .body(html.toResponseBody("text/html".toMediaType())).build()
+        }
+        val gateway = HttpVtopGateway(OkHttpClient.Builder().addInterceptor(interceptor).build(), jar, CaptchaSolver { "ABC234" })
+        assertEquals(SessionState.Missing, gateway.login("SYNTHETIC", "wrong".toCharArray()))
+        assertTrue(jar.loadForRequest("https://vtop.vit.ac.in/".toHttpUrl()).isEmpty())
+        rejected = false
+        assertEquals(SessionState.Active, gateway.login("SYNTHETIC", "correct".toCharArray()))
+        assertEquals(2, roots)
+        assertEquals(1, homeRequests)
+    }
+
+    @Test fun `solver failure offers a fresh manual challenge instead of failing connection`() = runTest {
+        var roots = 0
+        val interceptor = Interceptor { chain ->
+            val request = chain.request()
+            val html = if (request.url.encodedPath == "/") {
+                roots++; "<input name=_csrf value=root-token>"
+            } else "<input name=_csrf value=challenge-token><img src='data:image/png;base64,synthetic'>"
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(html.toResponseBody("text/html".toMediaType())).build()
+        }
+        val gateway = HttpVtopGateway(OkHttpClient.Builder().addInterceptor(interceptor).build(),
+            IsolatedCookieJar(MemoryCookieStore()), CaptchaSolver { throw java.io.IOException("Synthetic decoder failure") })
+        assertTrue(gateway.login("SYNTHETIC", "synthetic".toCharArray()) is SessionState.CaptchaRequired)
+        assertEquals(2, roots)
     }
 
     private class MemoryCookieStore : SessionCookieStore {

@@ -32,6 +32,7 @@ class SetupViewModel(
 
     private fun submit() {
         val snapshot = state.value
+        if (snapshot.loading) return
         if (snapshot.username.isBlank() || snapshot.password.isBlank()) {
             mutableState.update { it.copy(error = "Enter your VTOP username and password") }
             return
@@ -57,8 +58,10 @@ class SetupViewModel(
                         it.copy(loading = false, error = "VTOP rejected the sign-in details")
                     }
                 }
-            } catch (_: Exception) {
-                mutableState.update { it.copy(loading = false, error = "Could not connect to VTOP") }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                mutableState.update { it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = connectionError(failure)) }
             } finally {
                 password.fill('\u0000')
             }
@@ -67,6 +70,7 @@ class SetupViewModel(
 
     private fun submitCaptcha() {
         val snapshot = state.value
+        if (snapshot.loading) return
         if (snapshot.captchaImageDataUri == null || snapshot.captchaAnswer.length != 6) return
         mutableState.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
@@ -88,11 +92,21 @@ class SetupViewModel(
                         it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = "VTOP rejected the sign-in details")
                     }
                 }
-            } catch (_: Exception) {
-                mutableState.update { it.copy(loading = false, error = "Could not connect to VTOP") }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                mutableState.update { it.copy(loading = false, captchaImageDataUri = null, captchaAnswer = "", error = connectionError(failure)) }
             } finally {
                 password.fill('\u0000')
             }
         }
     }
+    private fun connectionError(failure: Exception): String = when (failure) {
+        is app.viora.network.VtopHttpException -> "VTOP returned HTTP ${failure.statusCode}. Retry to start a fresh sign-in session."
+        is javax.net.ssl.SSLException -> "VTOP certificate verification failed. Check your phone's date and network."
+        is java.net.UnknownHostException -> "VTOP could not be reached. Check your internet connection and retry."
+        is java.net.SocketTimeoutException -> "VTOP timed out. Retry to start a fresh sign-in session."
+        else -> "Could not connect to VTOP. Retry to start a fresh sign-in session."
+    }
+
 }
