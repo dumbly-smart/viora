@@ -12,6 +12,30 @@ import org.junit.Test
 
 /** Explicit opt-in probe: no credentials, response bodies, images or cookies are logged. */
 class LiveVtopConnectionTest {
+    @Test fun authenticatedSessionAndCacheSurviveProcessRestart() = kotlinx.coroutines.runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopAuthenticated") == "true")
+        val graph = VioraGraph(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue("Sign-in completed", graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false))
+        val database = graph.database.openHelper.readableDatabase
+        for (table in listOf("semesters", "courses", "class_slots")) {
+            database.query("SELECT EXISTS(SELECT 1 FROM $table)").use {
+                assertTrue("Cached $table query", it.moveToFirst())
+                assertTrue("Initial sync cached $table", it.getInt(0) == 1)
+            }
+        }
+        var session: SessionState = SessionState.Missing
+        for (attempt in 0..2) {
+            try {
+                session = graph.gateway.sessionState()
+                break
+            } catch (failure: java.io.IOException) {
+                if (attempt == 2) throw failure
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+        assertEquals("Persisted cookies authenticate after process restart", SessionState.Active, session)
+    }
+
     @Test fun rootSessionCaptchaAndLocalSolver() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopProbe") == "true")
         val store = object : SessionCookieStore {

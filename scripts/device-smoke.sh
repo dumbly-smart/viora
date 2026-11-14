@@ -6,7 +6,7 @@ APK="app/build/outputs/apk/debug/app-debug.apk"
 OUTPUT_DIR="build/device-smoke"
 FRESH=0
 OFFLINE=0
-PACKAGE="app.viora"
+PACKAGE="app.viora.debug"
 
 usage() {
     echo "usage: $0 [--apk file] [--output dir] [--fresh] [--offline]" >&2
@@ -57,7 +57,7 @@ fi
 
 "$ADB" logcat -c
 "$ADB" shell am force-stop "$PACKAGE"
-"$ADB" shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$PACKAGE/.MainActivity" > "$OUTPUT_DIR/launch.txt"
+"$ADB" shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$PACKAGE/app.viora.MainActivity" > "$OUTPUT_DIR/launch.txt"
 
 attempt=0
 pid=""
