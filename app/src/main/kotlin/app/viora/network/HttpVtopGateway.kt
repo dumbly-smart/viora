@@ -331,12 +331,22 @@ class HttpVtopGateway(
             isAuthenticated(html) -> LoginAttempt.ACTIVE
             isInvalidCredentials(html) -> LoginAttempt.INVALID_CREDENTIALS
             isMandatoryAction("${response.url}\n$html") || isRecaptchaPage(html, Jsoup.parse(html)) -> LoginAttempt.VERIFICATION_REQUIRED
-            response.url.encodedPath != "/vtop/login" -> {
-                val content = get(CONTENT)
-                updateTokens(content)
-                if (isAuthenticated(content)) LoginAttempt.ACTIVE else LoginAttempt.RETRY_CAPTCHA
+            else -> {
+                // VTOP reports rejected text CAPTCHAs and credentials on a
+                // separate endpoint; the login POST body itself is often generic.
+                val loginError = get(LOGIN_ERROR)
+                when {
+                    isInvalidCredentials(loginError) -> return LoginAttempt.INVALID_CREDENTIALS
+                    isInvalidCaptcha(loginError) -> return LoginAttempt.RETRY_CAPTCHA
+                }
+                if (response.url.encodedPath != "/vtop/login") {
+                    val content = get(CONTENT)
+                    updateTokens(content)
+                    if (isAuthenticated(content)) LoginAttempt.ACTIVE else LoginAttempt.RETRY_CAPTCHA
+                } else {
+                    LoginAttempt.RETRY_CAPTCHA
+                }
             }
-            else -> LoginAttempt.RETRY_CAPTCHA
         }
     }
 
@@ -362,9 +372,12 @@ class HttpVtopGateway(
 
     private fun isInvalidCredentials(html: String): Boolean =
         Regex(
-            "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
+            "(?:(?:invalid|incorrect)\\s+(?:username|password|credentials|loginid\\s*/\\s*password|username\\s*/\\s*password)|(?:username|password|credentials)(?:\\s*(?:or|/)\\s*(?:username|password))?\\s+(?:is\\s+)?(?:invalid|incorrect))",
             RegexOption.IGNORE_CASE,
         ).containsMatchIn(html)
+
+    private fun isInvalidCaptcha(html: String): Boolean =
+        Regex("invalid\\s+captcha", RegexOption.IGNORE_CASE).containsMatchIn(html)
 
     private fun isMandatoryAction(html: String): Boolean =
         Regex("mandatory/data/off|feedback|studentFeedback|redressal|hostel.*instruction", RegexOption.IGNORE_CASE)
@@ -471,6 +484,7 @@ class HttpVtopGateway(
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
+        private const val LOGIN_ERROR = "$BASE/login/error"
         private const val CONTENT = "$BASE/content"
         private const val TIMETABLE_PAGE = "$BASE/academics/common/StudentTimeTable"
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"

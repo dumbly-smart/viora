@@ -14,6 +14,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpVtopGatewayLoginTest {
+    @Test fun `credential failure reported by VTOP error endpoint is not treated as captcha failure`() = runTest {
+        val challenge = """
+            <html><body>
+            <input name="_csrf" value="synthetic-token">
+            <input name="captchaStr">
+            <img src="data:image/png;base64,synthetic">
+            </body></html>
+        """.trimIndent()
+        var loginSubmissions = 0
+        val interceptor = Interceptor { chain ->
+            val request = chain.request()
+            val html = when {
+                request.method == "POST" && request.url.encodedPath == "/vtop/login" -> {
+                    loginSubmissions++
+                    "<html><body>Login response</body></html>"
+                }
+                request.url.encodedPath == "/vtop/login/error" ->
+                    "<html><body>Invalid LoginId/Password</body></html>"
+                request.url.encodedPath == "/vtop/login" || request.url.encodedPath == "/vtop/openPage" -> challenge
+                else -> "<html><body><input name=\"_csrf\" value=\"synthetic-token\"></body></html>"
+            }
+            Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(html.toResponseBody("text/html".toMediaType()))
+                .build()
+        }
+        val gateway = HttpVtopGateway(
+            client = OkHttpClient.Builder().addInterceptor(interceptor).build(),
+            cookieJar = IsolatedCookieJar(MemoryCookieStore()),
+            captchaSolver = CaptchaSolver { "ABC234" },
+        )
+
+        assertEquals(SessionState.Missing, gateway.login("SYNTHETIC", "not-a-real-password".toCharArray()))
+        assertEquals(1, loginSubmissions)
+    }
+
     @Test fun `incorrect credential response is not retried as a captcha failure`() = runTest {
         val challenge = """
             <html><body>
