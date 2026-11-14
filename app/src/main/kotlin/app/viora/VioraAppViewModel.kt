@@ -197,11 +197,22 @@ class VioraAppViewModel(
                         loadSemestersAndRefresh()
                     }
                     SessionState.VerificationRequired -> {
-                        if (snapshot.rememberLogin) graph.credentials.save(snapshot.username.trim(), password)
                         mutableState.update { it.copy(loading = false, interactiveVerification = true, error = null) }
                     }
-                    SessionState.Missing -> mutableState.update {
-                        it.copy(loading = false, error = "VTOP rejected the sign-in details")
+                    SessionState.Missing -> {
+                        // A rejected saved or newly entered password must not be
+                        // retried by background sync. Let the user finish signing
+                        // in on VTOP, where they can correct credentials and any
+                        // CAPTCHA that the local solver could not handle.
+                        graph.credentials.clear()
+                        mutableState.update {
+                            it.copy(
+                                loading = false,
+                                password = "",
+                                interactiveVerification = true,
+                                error = "VTOP rejected the sign-in details. Sign in directly on VTOP to continue.",
+                            )
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -281,6 +292,17 @@ class VioraAppViewModel(
         viewModelScope.launch {
             when (runCatching { graph.gateway.importInteractiveSession(cookieHeader) }.getOrNull()) {
                 SessionState.Active -> {
+                    val snapshot = state.value
+                    val password = snapshot.password.toCharArray()
+                    try {
+                        if (snapshot.rememberLogin && snapshot.username.isNotBlank() && password.isNotEmpty()) {
+                            graph.credentials.save(snapshot.username.trim(), password)
+                        } else if (!snapshot.rememberLogin) {
+                            graph.credentials.clear()
+                        }
+                    } finally {
+                        password.fill('\u0000')
+                    }
                     graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, true).commit()
                     mutableState.update { it.copy(configured = true, interactiveVerification = false, loading = false, password = "") }
                     loadSemestersAndRefresh()

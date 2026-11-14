@@ -55,19 +55,31 @@ class HttpVtopGateway(
     override suspend fun login(username: String, password: CharArray): SessionState = withContext(Dispatchers.IO) {
         authorizedId = username.trim()
         repeat(MAX_CAPTCHA_ATTEMPTS) {
-            val challenge = prepareLoginChallenge() ?: return@withContext SessionState.VerificationRequired
-            val answer = captchaSolver.solve(challenge.imageDataUri)
-            val body = FormBody.Builder()
-                .add("_csrf", challenge.csrf)
-                .add("username", username.trim())
-                .add("password", String(password))
-                .add("captchaStr", answer)
-                .build()
-            val html = execute(Request.Builder().url(LOGIN).post(body).build())
-            updateTokens(html)
-            if (isAuthenticated(html)) return@withContext SessionState.Active
-            if (isInvalidCredentials(html)) return@withContext SessionState.Missing
-            if (isMandatoryAction(html)) return@withContext SessionState.VerificationRequired
+            try {
+                val challenge = prepareLoginChallenge()
+                    ?: return@withContext SessionState.VerificationRequired
+                val answer = captchaSolver.solve(challenge.imageDataUri)
+                val body = FormBody.Builder()
+                    .add("_csrf", challenge.csrf)
+                    .add("username", username.trim())
+                    .add("password", String(password))
+                    .add("captchaStr", answer)
+                    .build()
+                val html = execute(Request.Builder().url(LOGIN).post(body).build())
+                updateTokens(html)
+                if (isAuthenticated(html)) return@withContext SessionState.Active
+                if (isMandatoryAction(html)) return@withContext SessionState.VerificationRequired
+                when (readLoginError()) {
+                    LoginError.InvalidCredentials -> return@withContext SessionState.Missing
+                    LoginError.InvalidCaptcha -> Unit // Rebuild the session and solve a fresh challenge.
+                    LoginError.None -> if (isInvalidCredentials(html)) return@withContext SessionState.Missing
+                }
+            } catch (_: IOException) {
+                // VTOP intermittently drops the challenge/image request. Rebuild the
+                // session and challenge on the next bounded attempt; the caller opens
+                // interactive VTOP verification if automatic login cannot recover.
+            }
+            if (it + 1 < MAX_CAPTCHA_ATTEMPTS) Thread.sleep(600L * (it + 1))
         }
         SessionState.VerificationRequired
     }
@@ -308,7 +320,21 @@ class HttpVtopGateway(
             Regex("captchaType\\s*=\\s*2", RegexOption.IGNORE_CASE).containsMatchIn(html)
 
     private fun isInvalidCredentials(html: String): Boolean =
-        Regex("invalid\\s+(?:username|password|credentials)", RegexOption.IGNORE_CASE).containsMatchIn(html)
+        Regex("invalid\\s+(?:username|password|credentials|loginid/password)", RegexOption.IGNORE_CASE)
+            .containsMatchIn(html) ||
+            Regex("invalid\\s+(?:loginid|username)\\s*/\\s*password", RegexOption.IGNORE_CASE).containsMatchIn(html)
+
+    private fun readLoginError(): LoginError {
+        val html = execute(Request.Builder().url(LOGIN_ERROR).get().build())
+        return when {
+            Regex("invalid\\s+captcha", RegexOption.IGNORE_CASE).containsMatchIn(html) -> LoginError.InvalidCaptcha
+            Regex("invalid\\s+(?:loginid|username)\\s*/\\s*password", RegexOption.IGNORE_CASE).containsMatchIn(html) -> LoginError.InvalidCredentials
+            isInvalidCredentials(html) -> LoginError.InvalidCredentials
+            else -> LoginError.None
+        }
+    }
+
+    private enum class LoginError { None, InvalidCaptcha, InvalidCredentials }
 
     private fun isMandatoryAction(html: String): Boolean =
         Regex("mandatory/data/off|feedback|studentFeedback|redressal|hostel.*instruction", RegexOption.IGNORE_CASE)
@@ -412,6 +438,7 @@ class HttpVtopGateway(
         private const val INIT_PAGE = "$BASE/init/page"
         private const val SETUP_PAGE = "$BASE/prelogin/setup"
         private const val LOGIN = "$BASE/login"
+        private const val LOGIN_ERROR = "$BASE/login/error"
         private const val TIMETABLE_PAGE = "$BASE/academics/common/StudentTimeTable"
         private const val TIMETABLE_PROCESS = "$BASE/processViewTimeTable"
         private const val ATTENDANCE_PAGE = "$BASE/academics/common/StudentAttendance"

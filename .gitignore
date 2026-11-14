@@ -32,3 +32,6 @@ student-data/
 
 # Signing files must be provisioned outside Git
 keystore.properties
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
