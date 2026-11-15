@@ -4,17 +4,21 @@ Status: superseded; implementation has not started.
 
 ## Updated user requirement
 
-The user clarified that the agent must use the actual chatgpt.com website,
-not a native agent making Responses API requests with ChatGPT authorization.
+The user clarified that the agent must use ordinary Chat in the actual
+chatgpt.com website or the official ChatGPT app. It must not use ChatGPT Work,
+Codex, or a native agent making Responses API requests with ChatGPT authorization.
 The API-based proposal below must not be implemented under the earlier approval.
 Retain the agreed per-user data/action controls in the replacement design.
 
-The supported web-agent direction to evaluate is a Viora MCP connection used
-from ChatGPT's website. Confirm the intended account/plan's connector permissions,
-Android browser compatibility, and an authenticated connection back to the phone
-before selecting a relay/tunnel architecture. A plain website wrapper alone
-does not provide Viora tool access. The remaining sections document the
-superseded proposal for context.
+The supported direction to evaluate is a Viora plugin exposing MCP tools used
+from ordinary Chat. Current plugin documentation describes Chat and mobile
+support, while custom-connection setup and write access have separate account,
+workspace and surface restrictions. Verify the intended account before promising
+native-app write access. A secure reachable MCP connection back to the phone
+requires a connector service or supported tunnel; a plain website wrapper or
+app launch alone does not provide Viora tool access. A server-free share/import
+handoff is a separate, manual alternative rather than an autonomous tool bridge.
+The remaining sections document the superseded proposal for context.
 
 ## Intent and agreed requirements
 
