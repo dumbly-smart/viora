@@ -21,13 +21,16 @@ fun examSuppressionWindows(
     exams: List<ExamWindow>,
     calendar: List<ExamCalendarDate>,
     zone: ZoneId = ZoneId.of("Asia/Kolkata"),
-): List<ExamSuppressionWindow> = exams.mapNotNull { exam -> exam.examType.examSeries() to exam }
-    .filter { it.first != null }
-    .groupBy({ requireNotNull(it.first) }, { it.second })
-    .mapNotNull { (seriesKey, series) ->
-        val relatedCalendar = calendar.filter { row -> row.description().examSeries() == seriesKey }
-        val firstCachedDate = series.minOf { Instant.ofEpochMilli(it.startsEpochMillis).atZone(zone).toLocalDate() }
-        val lastCachedDate = series.maxOf { exam ->
+): List<ExamSuppressionWindow> {
+    val examSeries = exams.mapNotNull { exam -> exam.examType.examSeries()?.let { it to exam } }
+        .groupBy({ it.first }, { it.second })
+    val calendarSeries = calendar.mapNotNull { row -> row.description().examSeries()?.let { it to row } }
+        .groupBy({ it.first }, { it.second })
+    return (examSeries.keys + calendarSeries.keys).mapNotNull { seriesKey ->
+        val series = examSeries[seriesKey].orEmpty()
+        val relatedCalendar = calendarSeries[seriesKey].orEmpty()
+        val firstCachedDate = series.minOfOrNull { Instant.ofEpochMilli(it.startsEpochMillis).atZone(zone).toLocalDate() }
+        val lastCachedDate = series.maxOfOrNull { exam ->
             Instant.ofEpochMilli(exam.endsEpochMillis ?: exam.startsEpochMillis).atZone(zone).toLocalDate()
         }
         val explicitStart = relatedCalendar.filter { it.description().hasAny("begin", "start", "commence", "from") }
@@ -37,10 +40,12 @@ fun examSuppressionWindows(
         }.minOfOrNull(ExamCalendarDate::date)
         val explicitEnd = relatedCalendar.filter { it.description().hasAny("exam end", "exams end", "examination end", "examinations end", "conclude", "last exam") }
             .maxOfOrNull(ExamCalendarDate::date)
-        val start = explicitStart ?: firstCachedDate
-        val resume = explicitResume ?: explicitEnd?.plusDays(1) ?: conservativeResumeDate(lastCachedDate, calendar)
+        val start = explicitStart ?: firstCachedDate ?: return@mapNotNull null
+        val resume = explicitResume ?: explicitEnd?.plusDays(1)
+            ?: lastCachedDate?.let { conservativeResumeDate(it, calendar) } ?: return@mapNotNull null
         if (!resume.isAfter(start)) null else ExamSuppressionWindow(start, resume, explicitResume == null && explicitEnd == null)
     }.sortedBy(ExamSuppressionWindow::startDate)
+}
 
 fun ExamSuppressionWindow.suppresses(date: LocalDate): Boolean = !date.isBefore(startDate) && date.isBefore(resumeDate)
 

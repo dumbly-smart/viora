@@ -16,7 +16,6 @@ import app.viora.database.ImportedCalendarEventEntity
 import app.viora.calendar.CalendarExportProjector
 import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
-import app.viora.domain.SemesterRollover
 import app.viora.network.SemesterOption
 import app.viora.network.SessionState
 import app.viora.network.AuthenticationException
@@ -454,6 +453,7 @@ class VioraAppViewModel(
         listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
 
     fun selectSemester(semester: SemesterOption) {
+        graph.settings.edit().putString(VioraGraph.KEY_MANUAL_SEMESTER_ID, semester.id).apply()
         saveSemester(semester)
         mutableState.update { it.copy(activeSemester = semester) }
         observeTimetable(semester.id)
@@ -523,7 +523,7 @@ class VioraAppViewModel(
             .onSuccess { options ->
                 val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
                 val cachedIds = graph.database.academicDao().semesterSnapshot().map { it.id }.toSet()
-                val decision = SemesterRollover.select(options.map { it.id }, cachedIds, savedId)
+                val decision = app.viora.data.CurrentSemesterResolver(graph.gateway).resolve(options, cachedIds, savedId, graph.settings.getString(VioraGraph.KEY_MANUAL_SEMESTER_ID, null))
                 val rollover = decision.rolloverDetected
                 val selected = options.firstOrNull { it.id == decision.selectedId }
                 if (selected == null) {

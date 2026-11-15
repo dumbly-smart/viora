@@ -65,6 +65,7 @@ class VioraGraph(context: Context) {
     companion object {
         const val SETTINGS_NAME = "viora_local_settings"
         const val KEY_CONFIGURED = "configured"
+        const val KEY_MANUAL_SEMESTER_ID = "manual_semester_id"
         const val KEY_SEMESTER_ID = "active_semester_id"
         const val KEY_SEMESTER_NAME = "active_semester_name"
     }

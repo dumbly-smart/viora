@@ -123,6 +123,7 @@ interface AcademicDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertAcademicSummary(summary: AcademicSummaryEntity)
     @Query("SELECT * FROM academic_summaries WHERE id = 'current'") fun observeAcademicSummary(): Flow<AcademicSummaryEntity?>
     @Query("SELECT * FROM academic_summaries WHERE id = 'current'") suspend fun academicSummarySnapshot(): AcademicSummaryEntity?
+    @Query("SELECT * FROM academic_summaries WHERE id = 'semester:' || :semesterId") suspend fun semesterSummarySnapshot(semesterId: String): AcademicSummaryEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCalendar(rows: List<AcademicCalendarEntity>)
     @Query("DELETE FROM academic_calendar WHERE semesterId = :semesterId") suspend fun deleteCalendar(semesterId: String)
     @Query("SELECT * FROM academic_calendar WHERE semesterId = :semesterId ORDER BY dateEpochDay") fun observeCalendar(semesterId: String): Flow<List<AcademicCalendarEntity>>
@@ -154,7 +155,7 @@ interface AcademicDao {
     @Transaction suspend fun replaceImportedCalendarEvents(rows: List<ImportedCalendarEventEntity>) { deleteImportedCalendarEvents(); upsertImportedCalendarEvents(rows) }
 
     @Transaction suspend fun replaceMarks(semesterId: String, records: List<MarkEntity>, sync: SyncResourceEntity) { deleteMarks(semesterId); upsertMarks(records); upsertSyncResource(sync) }
-    @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertSyncResource(sync) }
+    @Transaction suspend fun replaceGrades(semesterId: String, records: List<GradeEntity>, summary: AcademicSummaryEntity, sync: SyncResourceEntity) { deleteGrades(semesterId); upsertGrades(records); upsertAcademicSummary(summary); upsertAcademicSummary(summary.copy(id = "semester:$semesterId")); upsertSyncResource(sync) }
 
     @Transaction
     suspend fun replaceTimetable(

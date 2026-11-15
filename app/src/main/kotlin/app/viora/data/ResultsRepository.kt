@@ -37,10 +37,15 @@ class ResultsRepository(private val dao: AcademicDao, private val gateway: VtopG
                     AcademicChangeEntity("grade:${row.courseCode}:${row.grade}:${row.total}", "grades", "Grade updated", "${row.courseCode} · ${row.grade}", now)
                 }
             })
+            val priorSummary = dao.semesterSummarySnapshot(semesterId)
+                ?: dao.academicSummarySnapshot()?.takeIf { summary ->
+                    previousGrades.isNotEmpty() && previousGrades.values.all { it.sourceEpochMillis == summary.sourceEpochMillis }
+                }
+            val gpa = grades.gpa ?: priorSummary?.gpa?.takeIf { grades.records.isEmpty() }
             dao.replaceGrades(
                 semesterId,
-                gradeRows,
-                AcademicSummaryEntity("current", grades.gpa, cgpa.cgpa, cgpa.registeredCredits, cgpa.earnedCredits, cgpa.gradeCounts.entries.joinToString(",") { "${it.key}:${it.value}" }, now),
+                gradeRows.ifEmpty { previousGrades.values.toList() },
+                AcademicSummaryEntity("current", gpa, cgpa.cgpa, cgpa.registeredCredits, cgpa.earnedCredits, cgpa.gradeCounts.entries.joinToString(",") { "${it.key}:${it.value}" }, now),
                 SyncResourceEntity(RESOURCE, "SYNCING", now, null, null),
             )
         }

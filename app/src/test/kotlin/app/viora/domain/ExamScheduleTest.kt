@@ -8,6 +8,18 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 class ExamScheduleTest {
+    @Test fun `calendar boundaries suppress classes even before exam timetable sync`() {
+        val start = LocalDate.of(2026, 11, 9)
+        val end = LocalDate.of(2026, 11, 28)
+        val windows = examSuppressionWindows(emptyList(), listOf(
+            ExamCalendarDate(start, "FAT examinations commence", "Examination"),
+            ExamCalendarDate(end, "FAT examinations conclude", "Examination"),
+        ))
+        assertEquals(1, windows.size)
+        assertTrue(windows.single().suppresses(LocalDate.of(2026, 11, 14)))
+        assertFalse(windows.single().suppresses(end.plusDays(1)))
+    }
+
     @Test fun `classes overlapping an exam window are hidden`() {
         assertTrue(overlapsExam(600, 650, 570, 660))
         assertTrue(overlapsExam(650, 700, 570, 660))

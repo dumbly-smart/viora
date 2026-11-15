@@ -111,14 +111,20 @@ class GradesParser {
     fun parse(html: String): ParseResult<GradeSnapshot> {
         val document = Jsoup.parse(html)
         if (VtopDocument.isAuthenticationPage(document)) return ParseResult.AuthenticationRequired
-        val table = document.select("table").firstOrNull { it.select("thead th").any { h -> norm(h.text()) == "grade" } }
-            ?: return ParseResult.InvalidDocument("Grade table was not found")
-        val headers = table.select("thead th").map { norm(it.text()) }
-        val rows = table.select("tbody tr").mapNotNull { row ->
+        val table = document.select("table").firstOrNull { candidate ->
+            candidate.select("tr").any { row -> row.select("th,td").any { norm(it.text()) == "grade" } }
+        } ?: return if (Regex("\\bno (?:data|records|grades) (?:found|available|published)\\b", RegexOption.IGNORE_CASE).containsMatchIn(document.text())) {
+            ParseResult.Success(GradeSnapshot(emptyList(), null))
+        } else ParseResult.InvalidDocument("Grade table was not found")
+        val tableRows = table.select("tr").filter { it.parents().firstOrNull { parent -> parent.tagName() == "table" } == table }
+        val headerIndex = tableRows.indexOfFirst { row -> row.select("th,td").any { norm(it.text()) == "grade" } }
+        if (headerIndex < 0) return ParseResult.InvalidDocument("Grade table was not found")
+        val headers = tableRows[headerIndex].select("th,td").map { norm(it.text()) }
+        val rows = tableRows.drop(headerIndex + 1).mapNotNull { row ->
             val values = headers.zip(row.select("td").map(Element::text)).toMap()
             val code = values.find("course code")?.trim().orEmpty()
             if (code.isBlank()) null else GradeRecord(code, values.find("course title").orEmpty(), values.find("course type").orEmpty(),
-                values.find("credits")?.number(), values.find("total")?.number(), values.find("grading") .orEmpty(), values.find("grade").orEmpty())
+                values.find("credits")?.number(), values.find("total")?.number(), values.find("grading").orEmpty(), values.find("grade").orEmpty())
         }
         val gpa = Regex("\\bGPA\\s*[:=-]\\s*([0-9.]+)", RegexOption.IGNORE_CASE).find(document.text())?.groupValues?.get(1)?.toDoubleOrNull()
         return if (rows.isEmpty()) ParseResult.InvalidDocument("No grade records were found") else ParseResult.Success(GradeSnapshot(rows, gpa))
@@ -138,11 +144,26 @@ class CgpaParser {
             val cells = row.select("th,td").map(Element::text)
             if (cells.size < 2) null else Regex("([SABCDENF])\\s*Grades?", RegexOption.IGNORE_CASE).find(cells[0])?.groupValues?.get(1)?.uppercase()?.let { it to (cells[1].filter(Char::isDigit).toIntOrNull() ?: 0) }
         }.toMap()
+        val summary = document.select("table").firstNotNullOfOrNull { table ->
+            val rows = table.select("tr")
+            val headerIndex = rows.indexOfFirst { row -> row.select("th,td").any { norm(it.text()) == "cgpa" } }
+            if (headerIndex < 0) return@firstNotNullOfOrNull null
+            val headers = rows[headerIndex].select("th,td").map { norm(it.text()) }
+            val cells = rows.drop(headerIndex + 1).firstOrNull { row ->
+                val values = row.select("td")
+                values.size == headers.size && values.getOrNull(headers.indexOf("cgpa"))?.text()?.toDoubleOrNull() != null
+            }?.select("td") ?: return@firstNotNullOfOrNull null
+            headers.zip(cells.map { it.text().toDoubleOrNull() }).toMap()
+        }.orEmpty()
+        val horizontalCounts = summary.mapNotNull { (header, number) ->
+            Regex("^([sabcdenf]) grades?$").matchEntire(header)?.groupValues?.get(1)?.uppercase()
+                ?.let { grade -> number?.toInt()?.let { grade to it } }
+        }.toMap()
         val result = CgpaSnapshot(
-            value("Credits Registered", "Registered Credits"),
-            value("Credits Earned", "Earned Credits"),
-            value("CGPA"),
-            counts,
+            summary["credits registered"] ?: summary["registered credits"] ?: value("Credits Registered", "Registered Credits"),
+            summary["credits earned"] ?: summary["earned credits"] ?: value("Credits Earned", "Earned Credits"),
+            summary["cgpa"] ?: value("CGPA"),
+            counts + horizontalCounts,
         )
         return if (result.cgpa == null) ParseResult.InvalidDocument("CGPA was not found") else ParseResult.Success(result)
     }

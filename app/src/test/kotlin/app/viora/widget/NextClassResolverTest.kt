@@ -14,6 +14,12 @@ class NextClassResolverTest {
     private val mondayClass = slot("monday", 1, 600, 660)
     private val tuesdayClass = slot("tuesday", 2, 540, 600)
 
+    @Test fun `exam period hides widget classes between exams`() {
+        val now = ZonedDateTime.of(2026, 8, 10, 9, 0, 0, 0, zone)
+        val calendar = listOf(calendar(2026, 8, 9, "FAT exams commence"), calendar(2026, 8, 20, "FAT exams conclude"))
+        assertNull(NextClassResolver.resolve(listOf(mondayClass, tuesdayClass), calendar, now))
+    }
+
     @Test fun `returns an in-progress class before a later class`() {
         val now = ZonedDateTime.of(2026, 8, 10, 10, 30, 0, 0, zone)
         val result = NextClassResolver.resolve(listOf(mondayClass), emptyList(), now)

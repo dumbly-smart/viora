@@ -6,6 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SemesterRolloverTest {
+    @Test fun `active exam semester takes precedence over a future registration semester`() {
+        val result = SemesterRollover.select(listOf("future", "current", "past"), setOf("future"), "future", "current")
+        assertEquals("current", result.selectedId)
+        assertFalse(result.rolloverDetected)
+    }
+
     @Test fun `new remote semester becomes active and archives previous selection`() {
         val result = SemesterRollover.select(listOf("new", "old"), setOf("old"), "old")
         assertEquals("new", result.selectedId)
