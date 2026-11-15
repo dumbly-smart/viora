@@ -1,6 +1,20 @@
 # ChatGPT agent inside Viora
 
-Status: proposed design; implementation has not started.
+Status: superseded; implementation has not started.
+
+## Updated user requirement
+
+The user clarified that the agent must use the actual chatgpt.com website,
+not a native agent making Responses API requests with ChatGPT authorization.
+The API-based proposal below must not be implemented under the earlier approval.
+Retain the agreed per-user data/action controls in the replacement design.
+
+The supported web-agent direction to evaluate is a Viora MCP connection used
+from ChatGPT's website. Confirm the intended account/plan's connector permissions,
+Android browser compatibility, and an authenticated connection back to the phone
+before selecting a relay/tunnel architecture. A plain website wrapper alone
+does not provide Viora tool access. The remaining sections document the
+superseded proposal for context.
 
 ## Intent and agreed requirements
 
