@@ -5,7 +5,7 @@ failed VTOP requests preserve valid cached snapshots.
 
 | Area | Rules and integration |
 | --- | --- |
-| Active semester | An active live exam period takes precedence over a newer registration term. Saved selection is preserved when exam discovery fails; the existing rollover policy is used when discovery provides no active-period evidence without a request failure. |
+| Active semester | An active live exam period takes precedence over a newer registration term. Explicit historical selections in settings are respected. Saved selection is preserved when exam discovery fails; the existing rollover policy is used when discovery provides no active-period evidence without a request failure. |
 | Exam periods | CAT 1, CAT 2 and FAT series suppress classes through their complete period. Explicit calendar start/end/resumption dates take precedence; calendar-only boundaries work before individual exams sync. Conservative resumption estimates remain labelled as estimates. |
 | Classes | Home, dated timetable, calendar projections, attendance projections, next-class widget and class reminders use the exam-period rules. Holidays and instructional day-order exceptions still apply. |
 | Home | Active exam periods prioritize exams in the upcoming panel. The clock advances while the screen remains open. Missing exam/calendar data is disclosed instead of presenting the weekly timetable as confirmed exam-period activity. |
@@ -33,7 +33,7 @@ and cache behavior independently of VTOP availability.
 
 ## Validation results
 
-- 187 JVM tests passed after the complete changes.
+- 188 JVM tests passed after the complete changes.
 - Live Pixel refresh passed authentication, semester resolution, all six resource
   groups, and class-reminder exam suppression. Calendar month-grid data is fetched
   through the real VTOP protocol.

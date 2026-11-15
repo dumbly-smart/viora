@@ -8,6 +8,16 @@ import java.io.IOException
 import java.lang.reflect.Proxy
 
 class CurrentSemesterResolverTest {
+    @Test fun `explicit historical selection remains selected without automatic discovery`() = runTest {
+        val gateway = Proxy.newProxyInstance(VtopGateway::class.java.classLoader, arrayOf(VtopGateway::class.java)) { _, _, _ ->
+            error("Explicit selection must not probe other semesters")
+        } as VtopGateway
+        val result = CurrentSemesterResolver(gateway).resolve(
+            listOf(SemesterOption("current", "Current term"), SemesterOption("past", "Past term")), setOf("past"), "past", "past")
+        assertEquals("past", result.selectedId)
+        assertFalse(result.rolloverDetected)
+    }
+
     @Test fun `failed exam discovery preserves saved term instead of rolling into future registration`() = runTest {
         val unused = Proxy.newProxyInstance(VtopGateway::class.java.classLoader, arrayOf(VtopGateway::class.java)) { _, _, _ ->
             error("Unexpected gateway call")

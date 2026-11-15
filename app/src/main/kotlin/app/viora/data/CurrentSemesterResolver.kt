@@ -16,7 +16,10 @@ class CurrentSemesterResolver(
     private val gateway: VtopGateway,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun resolve(options: List<SemesterOption>, cachedIds: Set<String>, savedId: String?): SemesterSelection {
+    suspend fun resolve(options: List<SemesterOption>, cachedIds: Set<String>, savedId: String?, explicitlySelectedId: String? = null): SemesterSelection {
+        explicitlySelectedId?.takeIf { selected -> options.any { it.id == selected } }?.let {
+            return SemesterSelection(it, false)
+        }
         val zone = ZoneId.of("Asia/Kolkata")
         val today = Instant.ofEpochMilli(clock()).atZone(zone).toLocalDate()
         var confirmed: String? = null

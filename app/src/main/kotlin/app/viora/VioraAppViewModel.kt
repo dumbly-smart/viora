@@ -453,6 +453,7 @@ class VioraAppViewModel(
         listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
 
     fun selectSemester(semester: SemesterOption) {
+        graph.settings.edit().putString(VioraGraph.KEY_MANUAL_SEMESTER_ID, semester.id).apply()
         saveSemester(semester)
         mutableState.update { it.copy(activeSemester = semester) }
         observeTimetable(semester.id)
@@ -522,7 +523,7 @@ class VioraAppViewModel(
             .onSuccess { options ->
                 val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
                 val cachedIds = graph.database.academicDao().semesterSnapshot().map { it.id }.toSet()
-                val decision = app.viora.data.CurrentSemesterResolver(graph.gateway).resolve(options, cachedIds, savedId)
+                val decision = app.viora.data.CurrentSemesterResolver(graph.gateway).resolve(options, cachedIds, savedId, graph.settings.getString(VioraGraph.KEY_MANUAL_SEMESTER_ID, null))
                 val rollover = decision.rolloverDetected
                 val selected = options.firstOrNull { it.id == decision.selectedId }
                 if (selected == null) {
