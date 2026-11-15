@@ -29,9 +29,21 @@ class ResultsRepositoryInstrumentedTest {
         database.close()
     }
 
-    private class MarksOnlyGateway : VtopGateway {
+    @Test fun unpublishedGradeResponsePreservesCachedGrades() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, VioraDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = database.academicDao()
+            dao.upsertGrades(listOf(GradeEntity("semester", "CSE1001", "Synthetic Course", "Theory", 3.0, 75.0, "Relative", "cached-grade", 1_000)))
+            val result = ResultsRepository(dao, MarksOnlyGateway(emptyGrades = true), clock = { 2_000 }).refresh("semester")
+            assertTrue(result.isSuccess)
+            assertEquals(listOf("cached-grade"), dao.gradeSnapshot("semester").map(GradeEntity::grade))
+        } finally { database.close() }
+    }
+
+    private class MarksOnlyGateway(private val emptyGrades: Boolean = false) : VtopGateway {
         override suspend fun marks(semesterId: String) = listOf(MarkRecord("new-mark", "CSE1001", "Synthetic Course", "Theory", "Quiz", 10.0, null, "Published", 9.0, null))
-        override suspend fun grades(semesterId: String): GradeSnapshot = throw IOException("synthetic grade failure")
+        override suspend fun grades(semesterId: String): GradeSnapshot = if (emptyGrades) GradeSnapshot(emptyList(), null) else throw IOException("synthetic grade failure")
         override suspend fun sessionState() = SessionState.Active
         override suspend fun login(username: String, password: CharArray) = SessionState.Active
         override suspend fun semesters() = emptyList<SemesterOption>()

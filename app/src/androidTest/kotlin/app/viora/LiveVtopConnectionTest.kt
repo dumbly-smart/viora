@@ -12,6 +12,54 @@ import org.junit.Test
 
 /** Explicit opt-in probe: no credentials, response bodies, images or cookies are logged. */
 class LiveVtopConnectionTest {
+    @Test fun refreshAcademicResourcesUsingSavedAccount() = kotlinx.coroutines.runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopSync") == "true")
+        val graph = VioraGraph(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertEquals("Saved account reauthenticates", app.viora.auth.SessionResolution.Ready, graph.sessions.ensureActive())
+        val options = graph.gateway.semesters()
+        val decision = app.viora.data.CurrentSemesterResolver(graph.gateway).resolve(options,
+            graph.database.academicDao().semesterSnapshot().map { it.id }.toSet(),
+            graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null))
+        val selected = options.firstOrNull { it.id == decision.selectedId }
+        assertNotNull("Current academic semester is available", selected)
+        val semester = requireNotNull(selected).id
+        val name = selected.name
+        graph.settings.edit().putString(VioraGraph.KEY_SEMESTER_ID, semester).putString(VioraGraph.KEY_SEMESTER_NAME, name).commit()
+        val outcomes = listOf(
+            "exams" to graph.exams.refresh(semester),
+            "timetable" to graph.timetable.refresh(semester, name),
+            "attendance" to graph.attendance.refresh(semester),
+            "assignments" to graph.assignments.refresh(semester),
+            "results" to graph.results.refresh(semester),
+            "calendar and messages" to graph.extras.refresh(semester, graph.database.academicDao().courses(semester).map { it.code to it.faculty }),
+        )
+        val safeReasons = setOf("Timetable grid was not found", "No assessment marks were found", "Grade table was not found", "No grade records were found", "CGPA was not found", "Exam schedule table was not found", "Exam headers were not found", "Attendance table was not found", "Attendance rows were not found", "Attendance headers were not found", "No semesters were found", "Digital assignment detail table was not found", "Digital assignment headers were not found", "Digital assignment table was not found", "Digital assignment headers were not found")
+        val failed = outcomes.filter { it.second.isFailure }.map {
+            val error = it.second.exceptionOrNull()
+            val message = error?.message.orEmpty()
+            val reason = safeReasons.firstOrNull { known -> message == known }
+                ?: Regex("VTOP returned HTTP [0-9]{3}").find(message)?.value
+                ?: error?.javaClass?.simpleName
+            "${it.first}: $reason"
+        }
+        assertTrue("Academic refresh failures: ${failed.joinToString()}", failed.isEmpty())
+        val zone = java.time.ZoneId.of("Asia/Kolkata")
+        val now = java.time.ZonedDateTime.now(zone)
+        val dao = graph.database.academicDao()
+        val exams = dao.examSnapshot(semester)
+        val calendar = dao.calendarSnapshot(semester)
+        val windows = app.viora.domain.examSuppressionWindows(
+            exams.map { app.viora.domain.ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
+            calendar.map { app.viora.domain.ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) }, zone)
+        val plans = app.viora.notifications.ReminderPlanner.create(dao.timetableSnapshot(semester), exams,
+            assignments = dao.assignmentSnapshot(semester), calendar = calendar, now = now, includeExamReminders = true)
+        assertTrue("Class reminders respect live exam suppression", plans.filter { it.channel == app.viora.notifications.VioraNotifications.CLASSES }.none { plan ->
+            val date = java.time.Instant.ofEpochMilli(plan.triggerEpochMillis).atZone(zone).toLocalDate()
+            windows.any { !date.isBefore(it.startDate) && date.isBefore(it.resumeDate) }
+        })
+        graph.reminders.schedule(semester)
+    }
+
     @Test fun authenticatedSessionAndCacheSurviveProcessRestart() = kotlinx.coroutines.runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopAuthenticated") == "true")
         val graph = VioraGraph(InstrumentationRegistry.getInstrumentation().targetContext)

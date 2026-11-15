@@ -8,11 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import app.viora.domain.suppresses
 import app.viora.MainActivity
 import app.viora.database.AcademicDao
 import app.viora.database.NotificationLedgerEntity
 import java.time.Duration
-import java.time.LocalTime
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -47,7 +47,7 @@ class VioraNotifications(
                 publishedKeys = dao.notificationLedgerKeys().toSet(),
             )
             attendancePlan?.let { publishAttendance(it) }
-            changes.filterNot { it.category == "materials" || it.category == "attendance" }.forEach { change ->
+            changes.filterNot { it.category == "materials" || it.category == "attendance" || (it.category == "exams" && !preferences.getBoolean("notify_exams", true)) || (it.category == "assignments" && !preferences.getBoolean("notify_deadlines", true)) }.forEach { change ->
                 notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) { "exams" -> "schedule"; "messages" -> "more"; else -> "courses" })
             }
         }
@@ -105,7 +105,20 @@ class VioraNotifications(
     }
 
     suspend fun deliverScheduled(key: String, channel: String, title: String, text: String, destination: String) {
-        if (!canNotify()) return
+        if (!canNotify() || inQuietHours()) return
+        if (channel == EXAMS && !preferences.getBoolean("notify_exams", true)) return
+        if (channel == DEADLINES && !preferences.getBoolean("notify_deadlines", true)) return
+        if (channel == CLASSES) {
+            val semester = preferences.getString(app.viora.VioraGraph.KEY_SEMESTER_ID, null) ?: return
+            val zone = java.time.ZoneId.of("Asia/Kolkata")
+            val today = java.time.Instant.ofEpochMilli(clock()).atZone(zone).toLocalDate()
+            val windows = app.viora.domain.examSuppressionWindows(
+                dao.examSnapshot(semester).map { app.viora.domain.ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
+                dao.calendarSnapshot(semester).map { app.viora.domain.ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
+                zone,
+            )
+            if (windows.any { it.suppresses(today) }) return
+        }
         if (channel !in setOf(CLASSES, EXAMS, DEADLINES)) return
         if ((channel == DEADLINES && destination != "tasks") || (channel != DEADLINES && destination != "schedule")) return
         notifyOnce("scheduled:$key", channel, title, text, destination)
@@ -115,7 +128,7 @@ class VioraNotifications(
         Build.VERSION.SDK_INT < 33 ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     private val preferences get() = context.getSharedPreferences("viora_local_settings", Context.MODE_PRIVATE)
-    private fun inQuietHours(): Boolean { if (!preferences.getBoolean("quiet_hours", true)) return false; val hour = LocalTime.now().hour; return hour >= 22 || hour < 7 }
+    private fun inQuietHours(): Boolean { if (!preferences.getBoolean("quiet_hours", true)) return false; val hour = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.of("Asia/Kolkata")).hour; return hour >= 22 || hour < 7 }
 
     companion object {
         const val DEADLINES = "viora-deadlines"

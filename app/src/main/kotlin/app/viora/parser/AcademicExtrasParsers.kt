@@ -10,8 +10,23 @@ import java.time.format.DateTimeFormatterBuilder
 import java.util.Locale
 
 class AcademicCalendarParser {
-    fun parse(html: String): ParseResult<List<AcademicCalendarRecord>> {
+    fun parse(html: String, month: java.time.YearMonth? = null): ParseResult<List<AcademicCalendarRecord>> {
         val doc = Jsoup.parse(html); if (VtopDocument.isAuthenticationPage(doc)) return ParseResult.AuthenticationRequired
+        val grid = doc.select("table.calendar-table td")
+        if (grid.isNotEmpty()) {
+            val context = month ?: return ParseResult.InvalidDocument("Calendar month context was not provided")
+            val records = grid.mapNotNull { cell ->
+                val parts = cell.select("span").map { it.text().trim() }.filter(String::isNotBlank)
+                val day = parts.firstNotNullOfOrNull { it.toIntOrNull() } ?: return@mapNotNull null
+                if (day !in 1..context.lengthOfMonth()) return@mapNotNull null
+                val notes = parts.filter { it.toIntOrNull() == null }
+                val title = notes.joinToString(" · ")
+                val date = context.atDay(day)
+                AcademicCalendarRecord(stable("$date-$title"), date, title, title)
+            }.distinctBy { it.id }
+            return if (records.isNotEmpty()) ParseResult.Success(records)
+            else ParseResult.InvalidDocument("Calendar grid contained no valid dates")
+        }
         val rows = doc.select("table tbody tr").mapNotNull { row ->
             val cells = row.select("td").map(Element::text); if (cells.size < 2) return@mapNotNull null
             val date = cells.firstNotNullOfOrNull(::parseDate) ?: return@mapNotNull null
@@ -19,7 +34,8 @@ class AcademicCalendarParser {
             val type = cells.firstOrNull { it.contains("holiday", true) || it.contains("exam", true) || it.contains("instruction", true) }.orEmpty().ifBlank { title }
             AcademicCalendarRecord(stable("$date-$title-$type"), date, title, type)
         }.distinctBy { it.id }
-        return ParseResult.Success(rows)
+        return if (rows.isNotEmpty() || Regex("no (?:events|data|records)", RegexOption.IGNORE_CASE).containsMatchIn(doc.text())) ParseResult.Success(rows)
+        else ParseResult.InvalidDocument("Academic calendar layout was not recognized")
     }
 }
 

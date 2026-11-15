@@ -9,6 +9,17 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 class ExamAwareScheduleTest {
+    @Test fun `calendar-only exam period suppresses dated schedule and home classes`() {
+        val date = LocalDate.of(2026, 8, 17)
+        val state = VioraUiState(slots = listOf(slot("class", 600, 650)), calendar = listOf(
+            AcademicCalendarEntity("semester", "start", date.minusDays(1).toEpochDay(), "FAT exams commence", "Examination", 0),
+            AcademicCalendarEntity("semester", "end", date.plusDays(7).toEpochDay(), "FAT exams conclude", "Examination", 0),
+        ))
+        assertEquals(emptyList<String>(), state.slotsForDate(date).map { it.slotId })
+        val now = date.atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
+        assertEquals(emptyList<HomeTimelineItem>(), state.homeTimeline(now, 7))
+    }
+
     @Test fun `schedule suppresses the complete date during a cached exam series`() {
         val date = LocalDate.of(2026, 8, 17)
         val examStart = LocalDateTime.of(2026, 8, 17, 10, 0)

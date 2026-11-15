@@ -840,7 +840,7 @@ internal fun ScheduleScreen(
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val daySlots = state.slots.filter { it.dayOfWeek == selectedDay }.sortedBy(SlotWithCourse::startMinute)
+    val daySlots = state.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute)
     val importedForDay = state.importedCalendarEvents
         .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).dayOfWeek.value == selectedDay }
         .distinctBy { event ->
@@ -875,7 +875,7 @@ internal fun ScheduleScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Timeline", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
-                    Text("Your complete weekly timetable and imported events", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (state.exams.isEmpty() && state.calendar.isEmpty()) "Weekly timetable · exam dates not synced" else "Your dated timetable and imported events", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = shareTimetableQr, enabled = state.slots.isNotEmpty() && !state.loading) { Icon(Icons.Outlined.Share, "Share timetable QR") }
             }
@@ -906,7 +906,7 @@ internal fun ScheduleScreen(
         }
         if (daySlots.isEmpty() && importedForDay.isEmpty()) {
             item {
-                EmptyStateCard("No classes", "This day has no cached timetable entries.")
+                EmptyStateCard("No classes", if (state.examSuppressionWindows().any { it.suppresses(selectedDate) }) "Classes are paused for the exam period." else "No classes are scheduled for this date.")
             }
         } else {
             items(daySlots, key = { "timeline-slot:${it.slotId}" }) { slot ->
@@ -1726,7 +1726,7 @@ internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
     val descriptions = calendar
         .filter { it.dateEpochDay == date.toEpochDay() }
         .map { "${it.title} ${it.dayType}" }
-    if (descriptions.any { it.contains("holiday", true) }) return emptyList()
+    if (descriptions.any { it.contains("holiday", true) || it.contains("no instructional day", true) || it.contains("exam day", true) }) return emptyList()
     val order = DayOfWeek.entries.firstOrNull { day ->
         descriptions.any { it.contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
     }

@@ -39,7 +39,7 @@ class ResultsRepository(private val dao: AcademicDao, private val gateway: VtopG
             })
             dao.replaceGrades(
                 semesterId,
-                gradeRows,
+                gradeRows.ifEmpty { dao.gradeSnapshot(semesterId) },
                 AcademicSummaryEntity("current", grades.gpa, cgpa.cgpa, cgpa.registeredCredits, cgpa.earnedCredits, cgpa.gradeCounts.entries.joinToString(",") { "${it.key}:${it.value}" }, now),
                 SyncResourceEntity(RESOURCE, "SYNCING", now, null, null),
             )

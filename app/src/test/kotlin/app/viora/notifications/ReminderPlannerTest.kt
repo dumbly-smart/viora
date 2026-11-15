@@ -14,6 +14,16 @@ class ReminderPlannerTest {
     private val zone = ZoneId.of("Asia/Kolkata")
     private val now = ZonedDateTime.of(2026, 8, 17, 8, 0, 0, 0, zone)
 
+    @Test fun `class reminders stay muted through calendar exam period without individual exams`() {
+        val calendar = listOf(
+            app.viora.database.AcademicCalendarEntity("semester", "start", now.toLocalDate().minusDays(1).toEpochDay(), "FAT exams commence", "Examination", 0),
+            app.viora.database.AcademicCalendarEntity("semester", "end", now.toLocalDate().plusDays(8).toEpochDay(), "FAT exams conclude", "Examination", 0),
+        )
+        val plans = ReminderPlanner.create(listOf(slot(600)), emptyList(), calendar = calendar,
+            now = now, includeExamReminders = false, classLookAheadDays = 7)
+        assertTrue(plans.none { it.channel == VioraNotifications.CLASSES })
+    }
+
     @Test fun `class reminder fires ten minutes before with twelve hour time course and room`() {
         val plans = ReminderPlanner.create(
             slots = listOf(slot(startMinute = 10 * 60)),

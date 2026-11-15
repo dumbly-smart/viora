@@ -70,7 +70,13 @@ internal fun HomeScreen(
     modifier: Modifier = Modifier,
     nowEpochMillis: Long? = null,
 ) {
-    val referenceNow = remember(nowEpochMillis) { nowEpochMillis ?: System.currentTimeMillis() }
+    var referenceNow by remember(nowEpochMillis) { mutableStateOf(nowEpochMillis ?: System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(nowEpochMillis) {
+        if (nowEpochMillis == null) while (true) {
+            kotlinx.coroutines.delay(60_000)
+            referenceNow = System.currentTimeMillis()
+        }
+    }
     val timeline = remember(state.slots, state.assignments, state.exams, state.calendar, referenceNow) {
         state.homeTimeline(referenceNow)
     }
@@ -79,7 +85,13 @@ internal fun HomeScreen(
     }
     val eventDates = remember(timeline) { timeline.academicDates() }
     val today = remember(referenceNow) { Instant.ofEpochMilli(referenceNow).atZone(academicZone).toLocalDate() }
-    val nextUp = remember(timeline) { timeline.firstOrNull { it.kind == HomeTimelineKind.CLASS } ?: timeline.firstOrNull() }
+    val examPeriod = remember(state.exams, state.calendar, today) {
+        state.examSuppressionWindows().any { !today.isBefore(it.startDate) && today.isBefore(it.resumeDate) }
+    }
+    val nextUp = remember(timeline, examPeriod) {
+        if (examPeriod) timeline.firstOrNull { it.kind == HomeTimelineKind.EXAM } ?: timeline.firstOrNull()
+        else timeline.firstOrNull { it.kind == HomeTimelineKind.CLASS } ?: timeline.firstOrNull()
+    }
     var selectedDate by remember(today) { mutableStateOf(today) }
     val selectedTimeline = remember(timeline, selectedDate) {
         timeline.filter { Instant.ofEpochMilli(it.at).atZone(academicZone).toLocalDate() == selectedDate }
@@ -118,6 +130,11 @@ internal fun HomeScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 26.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+            if (state.slots.isNotEmpty() && state.exams.isEmpty() && state.calendar.isEmpty()) {
+                item("missing-exam-dates") {
+                    Text("Exam dates haven’t synced yet. Class entries use the weekly timetable and may not apply during exams.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             item("date-rail") {
                 DateRail(today, selectedDate, eventDates) { selectedDate = it }
             }
@@ -164,7 +181,7 @@ private fun CollapsingUpcomingPanel(
                     Text("Nothing scheduled", style = MaterialTheme.typography.titleLarge)
                 } else {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { item.detailSelection()?.let(openDetail) },
+                        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = item.heroContentDescription() }.clickable(onClickLabel = item.actionLabel()) { item.detailSelection()?.let(openDetail) },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -390,8 +407,8 @@ private fun HomeTrailingIcon(kind: HomeTimelineKind) {
 @Composable
 private fun HomeEmptyState() {
     Column(Modifier.fillMaxWidth().padding(vertical = 34.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Nothing upcoming", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge)
-        Text("Your next two weeks are clear.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text("No events for this date", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleLarge)
+        Text("Select another date to see its classes, exams, and deadlines.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

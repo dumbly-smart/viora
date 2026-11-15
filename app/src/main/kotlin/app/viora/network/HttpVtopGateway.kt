@@ -208,7 +208,32 @@ class HttpVtopGateway(
 
     override suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord> = withContext(Dispatchers.IO) {
         val token = ensureAuthenticatedPage(CALENDAR_PAGE)
-        calendarParser.parse(academicPost(CALENDAR_PROCESS, token, semesterId)).valueOrThrow()
+        val id = authorizedId ?: throw AuthenticationException()
+        fun calendarBody(parameter: String? = null, group: String? = null, month: String? = null) = FormBody.Builder()
+            .add("_csrf", token).add("authorizedID", id).add("semSubId", semesterId)
+            .apply {
+                parameter?.let { add("paramReturnId", it) }
+                group?.let { add("classGroupId", it) }
+                month?.let { add("calDate", it) }
+            }.add("x", System.currentTimeMillis().toString()).build()
+        val groupHtml = execute(Request.Builder().url("$BASE/getDateForSemesterPreview")
+            .post(calendarBody("getDateForSemesterPreview")).build())
+        val groups = Jsoup.parse(groupHtml).select("select option").filter { it.attr("value").isNotBlank() }
+        val group = groups.firstOrNull { it.attr("value") == "COMB" }?.attr("value")
+            ?: groups.firstOrNull()?.attr("value") ?: "COMB"
+        val monthHtml = execute(Request.Builder().url("$BASE/getListForSemester")
+            .post(calendarBody("getListForSemester", group)).build())
+        val months = Regex("""processViewCalendar\(['"]([0-9]{2}-[A-Za-z]{3}-[0-9]{4})['"]\)""")
+            .findAll(monthHtml).map { it.groupValues[1] }.distinct().toList()
+        if (months.isEmpty()) throw IOException("VTOP did not provide academic calendar months")
+        val formatter = java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive()
+            .appendPattern("dd-MMM-uuuu").toFormatter(java.util.Locale.ENGLISH)
+        months.flatMap { month ->
+            val date = java.time.LocalDate.parse(month, formatter)
+            val html = execute(Request.Builder().url(CALENDAR_PROCESS).post(calendarBody(group = group, month = month)).build())
+            calendarParser.parse(html, java.time.YearMonth.from(date)).valueOrThrow()
+        }.distinctBy { it.id }
+
     }
 
     override suspend fun classMessages(): List<ClassMessageRecord> = withContext(Dispatchers.IO) {

@@ -97,6 +97,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
             val next = NextClassResolver.resolve(
                 slots = dao.timetableSnapshot(semesterId),
                 calendar = dao.calendarSnapshot(semesterId),
+                exams = dao.examSnapshot(semesterId).map { app.viora.domain.ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
                 now = ZonedDateTime.now(academicZone),
             )
             if (next == null) {

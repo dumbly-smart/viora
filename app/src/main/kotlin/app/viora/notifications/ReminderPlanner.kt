@@ -5,7 +5,9 @@ import app.viora.database.ExamEntity
 import app.viora.database.DigitalAssignmentEntity
 import app.viora.database.SlotWithCourse
 import app.viora.domain.ExamWindow
-import app.viora.domain.isExamPeriodActive
+import app.viora.domain.ExamCalendarDate
+import app.viora.domain.examSuppressionWindows
+import app.viora.domain.suppresses
 import app.viora.domain.isAssignmentSubmitted
 import java.time.DayOfWeek
 import java.time.ZonedDateTime
@@ -36,18 +38,19 @@ object ReminderPlanner {
     ): List<ReminderPlan> {
         val nowMillis = now.toInstant().toEpochMilli()
         val examWindows = exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }
+        val suppression = examSuppressionWindows(examWindows, calendar.map {
+            ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType)
+        }, now.zone)
         val classPlans = (0..classLookAheadDays).flatMap { offset ->
             val date = now.toLocalDate().plusDays(offset)
-            val description = calendar.firstOrNull { it.dateEpochDay == date.toEpochDay() }
-                ?.let { "${it.title} ${it.dayType}" }
-                .orEmpty()
-            if (description.contains("holiday", true)) return@flatMap emptyList()
+            val description = calendar.filter { it.dateEpochDay == date.toEpochDay() }
+                .joinToString(" ") { "${it.title} ${it.dayType}" }
+            if (suppression.any { it.suppresses(date) } || description.contains("holiday", true) || description.contains("no instructional day", true) || description.contains("exam day", true)) return@flatMap emptyList()
             val dayOrder = DayOfWeek.entries.firstOrNull {
                 description.contains("${it.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true)
             } ?: date.dayOfWeek
             slots.filter { it.dayOfWeek == dayOrder.value }.mapNotNull { slot ->
                 val starts = date.atStartOfDay(now.zone).plusMinutes(slot.startMinute.toLong())
-                if (isExamPeriodActive(examWindows, starts.toInstant().toEpochMilli(), now.zone)) return@mapNotNull null
                 val trigger = starts.minusMinutes(10).toInstant().toEpochMilli()
                 if (trigger <= nowMillis) return@mapNotNull null
                 ReminderPlan(
