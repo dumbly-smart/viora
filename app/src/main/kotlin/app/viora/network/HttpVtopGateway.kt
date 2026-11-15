@@ -223,8 +223,7 @@ class HttpVtopGateway(
             ?: groups.firstOrNull()?.attr("value") ?: "COMB"
         val monthHtml = execute(Request.Builder().url("$BASE/getListForSemester")
             .post(calendarBody("getListForSemester", group)).build())
-        val months = Regex("""processViewCalendar\(['"]([0-9]{2}-[A-Za-z]{3}-[0-9]{4})['"]\)""")
-            .findAll(monthHtml).map { it.groupValues[1] }.distinct().toList()
+        val months = calendarParser.months(monthHtml)
         if (months.isEmpty()) throw IOException("VTOP did not provide academic calendar months")
         val formatter = java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive()
             .appendPattern("dd-MMM-uuuu").toFormatter(java.util.Locale.ENGLISH)

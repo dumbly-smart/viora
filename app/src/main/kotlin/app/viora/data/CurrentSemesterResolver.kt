@@ -20,8 +20,9 @@ class CurrentSemesterResolver(
         val zone = ZoneId.of("Asia/Kolkata")
         val today = Instant.ofEpochMilli(clock()).atZone(zone).toLocalDate()
         var confirmed: String? = null
+        var discoveryFailed = false
         for (option in options.sortedBy { it.id != savedId }) {
-            val exams = try { gateway.exams(option.id) } catch (_: IOException) { continue }
+            val exams = try { gateway.exams(option.id) } catch (_: IOException) { discoveryFailed = true; continue }
             val windows = examSuppressionWindows(exams.map {
                 ExamWindow(it.startsAt.atZone(zone).toInstant().toEpochMilli(), it.endsAt?.atZone(zone)?.toInstant()?.toEpochMilli(), it.examType)
             }, emptyList(), zone)
@@ -29,6 +30,9 @@ class CurrentSemesterResolver(
                 confirmed = option.id
                 break
             }
+        }
+        if (confirmed == null && discoveryFailed && options.any { it.id == savedId }) {
+            return SemesterSelection(savedId, false)
         }
         return SemesterRollover.select(options.map { it.id }, cachedIds, savedId, confirmed)
     }

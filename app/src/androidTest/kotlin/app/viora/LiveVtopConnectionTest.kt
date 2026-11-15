@@ -33,11 +33,11 @@ class LiveVtopConnectionTest {
             "results" to graph.results.refresh(semester),
             "calendar and messages" to graph.extras.refresh(semester, graph.database.academicDao().courses(semester).map { it.code to it.faculty }),
         )
-        val safeReasons = setOf("Timetable grid was not found", "No assessment marks were found", "Grade table was not found", "No grade records were found", "CGPA was not found", "Exam schedule table was not found", "Exam headers were not found", "Attendance table was not found", "Attendance rows were not found", "Attendance headers were not found", "No semesters were found", "Digital assignment detail table was not found", "Digital assignment headers were not found", "Digital assignment table was not found", "Digital assignment headers were not found")
+        val safeReasons = setOf("VTOP did not provide academic calendar months", "Calendar grid contained no valid dates", "Academic calendar layout was not recognized", "Calendar month context was not provided", "Timetable grid was not found", "No assessment marks were found", "Grade table was not found", "No grade records were found", "CGPA was not found", "Exam schedule table was not found", "Exam headers were not found", "Attendance table was not found", "Attendance rows were not found", "Attendance headers were not found", "No semesters were found", "Digital assignment detail table was not found", "Digital assignment headers were not found", "Digital assignment table was not found", "Digital assignment headers were not found")
         val failed = outcomes.filter { it.second.isFailure }.map {
             val error = it.second.exceptionOrNull()
             val message = error?.message.orEmpty()
-            val reason = safeReasons.firstOrNull { known -> message == known }
+            val reason = safeReasons.firstOrNull { known -> message == known || message.contains("calendar: $known") }
                 ?: Regex("VTOP returned HTTP [0-9]{3}").find(message)?.value
                 ?: error?.javaClass?.simpleName
             "${it.first}: $reason"

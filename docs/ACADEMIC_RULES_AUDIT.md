@@ -5,7 +5,7 @@ failed VTOP requests preserve valid cached snapshots.
 
 | Area | Rules and integration |
 | --- | --- |
-| Active semester | An active live exam period takes precedence over a newer registration term. Saved selection and the existing rollover policy remain the fallback when there is no confirmed active exam period. |
+| Active semester | An active live exam period takes precedence over a newer registration term. Saved selection is preserved when exam discovery fails; the existing rollover policy is used when discovery provides no active-period evidence without a request failure. |
 | Exam periods | CAT 1, CAT 2 and FAT series suppress classes through their complete period. Explicit calendar start/end/resumption dates take precedence; calendar-only boundaries work before individual exams sync. Conservative resumption estimates remain labelled as estimates. |
 | Classes | Home, dated timetable, calendar projections, attendance projections, next-class widget and class reminders use the exam-period rules. Holidays and instructional day-order exceptions still apply. |
 | Home | Active exam periods prioritize exams in the upcoming panel. The clock advances while the screen remains open. Missing exam/calendar data is disclosed instead of presenting the weekly timetable as confirmed exam-period activity. |
@@ -30,3 +30,40 @@ all six academic repositories. It emits only fixed error categories and assertio
 account data, response bodies, cookies and CAPTCHA contents are not saved in test
 fixtures or committed artifacts. Synthetic Compose and Room tests cover the UI
 and cache behavior independently of VTOP availability.
+
+## Validation results
+
+- 187 JVM tests passed after the complete changes.
+- Live Pixel refresh passed authentication, semester resolution, all six resource
+  groups, and class-reminder exam suppression. Calendar month-grid data is fetched
+  through the real VTOP protocol.
+- Focused device tests passed custom-home exam priority and Room grade/GPA cache
+  preservation (three tests).
+- The broader legacy Compose suite was also attempted: 18 of 31 tests failed on
+  custom-layout assertions, visibility/scroll actions, and test-host startup.
+  That suite is not reported as passing. Its existing source is retained; the
+  new focused tests wait for the first semantics root without fixed sleeps.
+
+<details>
+<summary>Legacy UI assertions that failed in the broader audit run</summary>
+
+- `app.viora.HomeScreenTest.homeRowsOpenTheirAcademicDetail`
+- `app.viora.HomeScreenTest.todayTimelineOrdersAcademicDeadlinesChronologically`
+- `app.viora.HomeScreenTest.dashboardOpensPlanAndLibraryContent`
+- `app.viora.HomeScreenTest.homeShowsReferenceHeroAndChronologicalAcademicRows`
+- `app.viora.HomeScreenTest.dashboardDefaultsToExactlyThreeAcademicDestinations`
+- `app.viora.HomeScreenTest.attendanceDeepLinkReturnsToCoursesAfterExplicitLibrarySelection`
+- `app.viora.CalendarScreenTest.planKeepsInterchangeActionsInTimelineButNotCalendar`
+- `app.viora.CalendarScreenTest.calendarShowsEveryMarkerInTheLegendAndDayCell`
+- `app.viora.CalendarScreenTest.scheduleOffersCalendarInterchangeAndLabelsImportedEvents`
+- `app.viora.CalendarScreenTest.selectingADayShowsOnlyThatDatesEvents`
+- `app.viora.CalendarScreenTest.scheduleCalendarShowsTheSelectedDatesExam`
+- `app.viora.CalendarScreenTest.scheduleShowsCurrentTimetableBeforeInterchangeWithoutSemesterChips`
+- `app.viora.CourseDetailScreenTest.assessmentsShowWeeklyStatusesAndCourseDrillDown`
+- `app.viora.CourseDetailScreenTest.attendanceShowsCalculationSourceOnceAtTheBottom`
+- `app.viora.CourseDetailScreenTest.marksShowCgpaAfterEveryComponent`
+- `app.viora.CourseDetailScreenTest.courseDetailOpenedFromLibraryPreservesLabIdentityAndMessages`
+- `app.viora.CourseDetailScreenTest.courseShowsEveryMarkAcrossCodeFormatsWhenVtopTitlesDiffer`
+- `app.viora.CourseDetailScreenTest.courseShowsAssignmentsDueAndMaterialsAcrossCodeFormats`
+
+</details>

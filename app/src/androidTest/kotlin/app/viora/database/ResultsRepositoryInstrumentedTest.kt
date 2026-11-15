@@ -35,9 +35,13 @@ class ResultsRepositoryInstrumentedTest {
         try {
             val dao = database.academicDao()
             dao.upsertGrades(listOf(GradeEntity("semester", "CSE1001", "Synthetic Course", "Theory", 3.0, 75.0, "Relative", "cached-grade", 1_000)))
+            dao.upsertAcademicSummary(AcademicSummaryEntity("current", 8.0, 8.5, 20.0, 20.0, "", 1_000))
             val result = ResultsRepository(dao, MarksOnlyGateway(emptyGrades = true), clock = { 2_000 }).refresh("semester")
             assertTrue(result.isSuccess)
             assertEquals(listOf("cached-grade"), dao.gradeSnapshot("semester").map(GradeEntity::grade))
+            assertEquals(8.0, dao.academicSummarySnapshot()?.gpa)
+            ResultsRepository(dao, MarksOnlyGateway(emptyGrades = true), clock = { 3_000 }).refresh("semester")
+            assertEquals(8.0, dao.academicSummarySnapshot()?.gpa)
         } finally { database.close() }
     }
 

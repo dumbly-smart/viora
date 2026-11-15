@@ -10,6 +10,10 @@ import java.time.format.DateTimeFormatterBuilder
 import java.util.Locale
 
 class AcademicCalendarParser {
+    fun months(html: String): List<String> = Jsoup.parse(html).select("[onclick*=processViewCalendar]")
+        .mapNotNull { Regex("[0-9]{2}-[A-Za-z]{3}-[0-9]{4}").find(it.attr("onclick"))?.value }
+        .distinct()
+
     fun parse(html: String, month: java.time.YearMonth? = null): ParseResult<List<AcademicCalendarRecord>> {
         val doc = Jsoup.parse(html); if (VtopDocument.isAuthenticationPage(doc)) return ParseResult.AuthenticationRequired
         val grid = doc.select("table.calendar-table td")
