@@ -141,7 +141,11 @@ internal fun MarkDetails(mark: MarkUi) {
 @Composable
 private fun AttendanceScreen(state: VioraUiState) {
     val ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)
-    val milestones = state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
+    val milestones = if (ninePointRule) emptyMap() else {
+        remember(state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget) {
+            state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
+        }
+    }
     val showCalculationSource = !ninePointRule && state.attendance.isNotEmpty()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

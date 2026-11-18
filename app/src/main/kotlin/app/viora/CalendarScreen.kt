@@ -58,8 +58,8 @@ internal fun CalendarScreen(
 ) {
     var month by remember { mutableStateOf(YearMonth.from(initialDate)) }
     var selectedDate by remember { mutableStateOf(initialDate) }
-    val markers = state.calendarMarkers(month)
-    val selectedEvents = state.eventsForDate(selectedDate)
+    val markers = remember(state.calendar, state.exams, state.assignments, state.slots, month) { state.calendarMarkers(month) }
+    val selectedEvents = remember(state.calendar, state.exams, state.assignments, state.slots, selectedDate) { state.eventsForDate(selectedDate) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

@@ -9,7 +9,7 @@ fun sameCourseCode(first: String, second: String): Boolean {
     return firstKey.isNotEmpty() && firstKey == secondKey
 }
 
-private fun String.courseCodeKey(): String {
+internal fun String.courseCodeKey(): String {
     val upper = uppercase()
     return (courseCodePattern.find(upper)?.value ?: upper)
         .filter(Char::isLetterOrDigit)

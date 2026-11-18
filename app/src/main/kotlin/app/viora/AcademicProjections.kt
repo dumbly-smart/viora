@@ -1,5 +1,6 @@
 package app.viora
 
+import app.viora.database.SlotWithCourse
 import app.viora.domain.AttendanceMilestone
 import app.viora.domain.maximumSkippableOccurrences
 import app.viora.domain.sameCourseCode
@@ -35,9 +36,10 @@ internal fun VioraUiState.calendarMarkers(month: YearMonth): Map<LocalDate, Set<
     calendar.forEach { row -> row.calendarMarker()?.let { marker -> mark(LocalDate.ofEpochDay(row.dateEpochDay), marker) } }
     exams.forEach { exam -> mark(exam.startsEpochMillis.academicDate(), AcademicCalendarMarker.EXAM) }
     assignments.forEach { assignment -> assignment.dueEpochMillis?.let { due -> mark(due.academicDate(), AcademicCalendarMarker.ASSIGNMENT) } }
+    val timetable = DatedTimetable(this)
     for (day in 1..month.lengthOfMonth()) {
         val date = month.atDay(day)
-        if (slotsForDate(date).isNotEmpty()) mark(date, AcademicCalendarMarker.CLASS)
+        if (timetable.slotsForDate(date).isNotEmpty()) mark(date, AcademicCalendarMarker.CLASS)
     }
     return markers.toSortedMap().mapValues { (_, value) -> value.toSet() }
 }
@@ -162,17 +164,24 @@ data class CourseAttendanceMilestoneUi(
     val estimatedWindow: Boolean = false,
 )
 
-internal fun VioraUiState.attendanceMilestones(nowEpochMillis: Long): List<CourseAttendanceMilestoneUi> =
-    attendance.flatMap { attendance ->
+internal fun VioraUiState.attendanceMilestones(nowEpochMillis: Long): List<CourseAttendanceMilestoneUi> {
+    val timetable = DatedTimetable(this)
+    val dailySlots = mutableMapOf<LocalDate, List<SlotWithCourse>>()
+    val attendanceBySlot = mutableMapOf<SlotWithCourse, AttendanceUi?>()
+    return attendance.flatMap { row ->
         AttendanceMilestone.entries.map { milestone ->
-            attendanceMilestone(attendance, milestone, nowEpochMillis)
+            attendanceMilestone(row, milestone, nowEpochMillis, timetable, dailySlots, attendanceBySlot)
         }
     }
+}
 
 private fun VioraUiState.attendanceMilestone(
     attendance: AttendanceUi,
     milestone: AttendanceMilestone,
     nowEpochMillis: Long,
+    timetable: DatedTimetable,
+    dailySlots: MutableMap<LocalDate, List<SlotWithCourse>>,
+    attendanceBySlot: MutableMap<SlotWithCourse, AttendanceUi?>,
 ): CourseAttendanceMilestoneUi {
     val matchingExams = exams
         .filter { exam -> exam.examType.toAttendanceMilestone() == milestone && exam.matches(attendance) }
@@ -187,10 +196,10 @@ private fun VioraUiState.attendanceMilestone(
         )
     }
 
-    val occurrenceUnits = occurrenceUnitsBefore(attendance, upcomingExam.startsEpochMillis, nowEpochMillis)
+    val occurrenceUnits = occurrenceUnitsBefore(attendance, upcomingExam.startsEpochMillis, nowEpochMillis, timetable, dailySlots, attendanceBySlot)
     val examDate = Instant.ofEpochMilli(upcomingExam.startsEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
     val nowDate = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
-    val estimatedWindow = examSuppressionWindows().any { window ->
+    val estimatedWindow = timetable.suppression.any { window ->
         window.estimated && !window.resumeDate.isBefore(nowDate) && !window.startDate.isAfter(examDate)
     }
     if (occurrenceUnits.isEmpty()) {
@@ -223,12 +232,15 @@ private fun VioraUiState.occurrenceUnitsBefore(
     attendance: AttendanceUi,
     examStartsEpochMillis: Long,
     nowEpochMillis: Long,
+    timetable: DatedTimetable,
+    dailySlots: MutableMap<LocalDate, List<SlotWithCourse>>,
+    attendanceBySlot: MutableMap<SlotWithCourse, AttendanceUi?>,
 ): List<Int> {
     var date = Instant.ofEpochMilli(nowEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
     val examDate = Instant.ofEpochMilli(examStartsEpochMillis).atZone(attendanceMilestoneZone).toLocalDate()
     val occurrenceUnits = mutableListOf<Int>()
     while (date <= examDate) {
-        slotsForDate(date)
+        dailySlots.getOrPut(date) { timetable.slotsForDate(date) }
             .filter { slot ->
                 val slotStartsEpochMillis = date.atStartOfDay(attendanceMilestoneZone)
                     .plusMinutes(slot.startMinute.toLong())
@@ -236,7 +248,7 @@ private fun VioraUiState.occurrenceUnitsBefore(
                     .toEpochMilli()
                 slotStartsEpochMillis > nowEpochMillis && slotStartsEpochMillis < examStartsEpochMillis
             }
-            .filter { slot -> attendanceFor(slot)?.id == attendance.id }
+            .filter { slot -> attendanceBySlot.getOrPut(slot) { attendanceFor(slot) }?.id == attendance.id }
             .forEach { occurrenceUnits += attendance.blockSize }
         date = date.plusDays(1)
     }
