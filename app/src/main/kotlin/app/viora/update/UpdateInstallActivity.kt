@@ -54,8 +54,10 @@ class UpdateInstallActivity : ComponentActivity() {
             } else {
                 val uri = FileProvider.getUriForFile(this@UpdateInstallActivity, "$packageName.files", store.apk)
                 try {
-                    startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    @Suppress("DEPRECATION")
+                    val install = Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    startActivity(install)
                 } catch (_: android.content.ActivityNotFoundException) {
                     Toast.makeText(this@UpdateInstallActivity, "The Android package installer is unavailable", Toast.LENGTH_LONG).show()
                 }

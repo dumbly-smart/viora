@@ -21,6 +21,31 @@ class UpdaterIntegrationTest {
         assertEquals(TimeUnit.HOURS.toMillis(6), work.single().periodicityInfo?.repeatIntervalMillis)
     }
 
+    /** Optional live-upgrade fixture is app code only, supplied privately by the device runner. */
+    @Test fun suppliedUpgradeIsVerifiedAndStaged() {
+        org.junit.Assume.assumeTrue(androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("upgradeFixture") == "true")
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = File(context.filesDir, "upgrade-fixture.apk")
+        assertTrue(fixture.isFile)
+        val store = UpdateStore(context)
+        assertTrue(store.compatible(fixture))
+        val size = fixture.length()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        fixture.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count == -1) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        @Suppress("DEPRECATION")
+        val version = context.packageManager.getPackageArchiveInfo(fixture.absolutePath, 0)?.versionName.orEmpty()
+        store.stage(fixture, digest.digest().joinToString("") { "%02x".format(it) }, size, version)
+        assertTrue(store.ready())
+        store.notifyReady()
+    }
+
     @Test fun installedApkCannotBeReinstalledAsANewerVersion() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = UpdateStore(context)

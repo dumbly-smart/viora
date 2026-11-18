@@ -31,3 +31,9 @@ which use the existing automatic authentication recovery.
 Device validation must upgrade the same package with the same signing key and
 verify cache/credentials are retained without printing their contents. Never
 uninstall or clear app data as an update test on a user's installed app.
+
+GitHub connections use Android's system certificate trust, independently of the
+existing VTOP certificate pins. GitHub/CDN TLS certificates are not pinned: the
+installed APK signing key is the end-to-end update trust anchor. Even a
+compromised release transport cannot install a package signed with another key;
+checksum and monotonic version checks additionally reject corruption/rollback.
