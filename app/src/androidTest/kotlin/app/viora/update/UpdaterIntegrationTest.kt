@@ -21,6 +21,17 @@ class UpdaterIntegrationTest {
         assertEquals(TimeUnit.HOURS.toMillis(6), work.single().periodicityInfo?.repeatIntervalMillis)
     }
 
+    @Test fun liveGithubReleaseMetadataIsReachable() {
+        org.junit.Assume.assumeTrue(androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("liveGithub") == "true")
+        val request = okhttp3.Request.Builder().url("https://api.github.com/repos/dumbly-smart/viora/releases/latest").build()
+        GithubUpdateWorker.releaseClient().newCall(request).execute().use { response ->
+            assertTrue(response.isSuccessful)
+            val json = org.json.JSONObject(response.body!!.string())
+            assertTrue(json.getString("tag_name").startsWith("v"))
+            assertTrue(json.getJSONArray("assets").length() >= 2)
+        }
+    }
+
     /** Optional live-upgrade fixture is app code only, supplied privately by the device runner. */
     @Test fun suppliedUpgradeIsVerifiedAndStaged() {
         org.junit.Assume.assumeTrue(androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("upgradeFixture") == "true")

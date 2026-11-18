@@ -37,3 +37,16 @@ existing VTOP certificate pins. GitHub/CDN TLS certificates are not pinned: the
 installed APK signing key is the end-to-end update trust anchor. Even a
 compromised release transport cannot install a package signed with another key;
 checksum and monotonic version checks additionally reject corruption/rollback.
+
+## Device verification (2026-11-18)
+
+On the connected Android 16 phone, the unique six-hour schedule, invalid/equal
+version rejection, valid newer APK staging, and live public GitHub metadata
+request passed. The updater's foreground prompt, one-time source permission,
+Android update confirmation, Play Protect scan and final installation were
+exercised with two locally signed builds of the existing package (codes 15 and
+16). All ten existing account/cache files checked before and after both the
+initial deployment and the actual installer update were byte-identical. The
+test package was removed, leaving one Viora application installed. Production
+release APKs must use the same signing key as the installed release; the local
+signing key is for development and is not published as a release key.
