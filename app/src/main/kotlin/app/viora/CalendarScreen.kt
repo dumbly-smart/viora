@@ -58,8 +58,8 @@ internal fun CalendarScreen(
 ) {
     var month by remember { mutableStateOf(YearMonth.from(initialDate)) }
     var selectedDate by remember { mutableStateOf(initialDate) }
-    val markers = remember(state.calendar, state.exams, state.assignments, state.slots, month) { state.calendarMarkers(month) }
-    val selectedEvents = remember(state.calendar, state.exams, state.assignments, state.slots, selectedDate) { state.eventsForDate(selectedDate) }
+    val markers = rememberBackgroundProjection(state.calendar, state.exams, state.assignments, state.slots, month) { state.calendarMarkers(month) }
+    val selectedEvents = rememberBackgroundProjection(state.calendar, state.exams, state.assignments, state.slots, selectedDate) { state.eventsForDate(selectedDate) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -98,7 +98,7 @@ internal fun CalendarScreen(
         item {
             CalendarMonthGrid(
                 month = month,
-                markers = markers,
+                markers = markers.orEmpty(),
                 selectedDate = selectedDate,
                 onSelectDate = { selectedDate = it },
             )
@@ -110,7 +110,9 @@ internal fun CalendarScreen(
                 Text(selectedDate.format(DateTimeFormatter.ofPattern("EEEE, dd MMMM", Locale.ENGLISH)), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (selectedEvents.isEmpty()) {
+        if (selectedEvents == null) {
+            item { Text("Loading events…") }
+        } else if (selectedEvents.isEmpty()) {
             item { CalendarEmptyState() }
         } else {
             items(selectedEvents, key = AcademicDayEvent::id) { event -> CalendarEventCard(event) }

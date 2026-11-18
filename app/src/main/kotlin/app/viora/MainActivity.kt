@@ -529,11 +529,11 @@ internal fun CoursesScreen(
     state: VioraUiState,
     showDetail: (String, String) -> Unit,
 ) {
-    val courses = remember(state.slots, state.attendance, state.marks, state.grades, state.materials, state.messages, state.assignments) {
+    val courses = rememberBackgroundProjection(state.slots, state.attendance, state.marks, state.grades, state.materials, state.messages, state.assignments) {
         state.consolidatedCourses()
     }
     var query by remember { mutableStateOf("") }
-    val visibleCourses = courses.filter { course ->
+    val visibleCourses = courses.orEmpty().filter { course ->
         query.isBlank() || listOf(
             course.code,
             course.title,
@@ -572,7 +572,8 @@ internal fun CoursesScreen(
                 CourseCard(course) { showDetail("course", course.id) }
             }
         }
-        if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
+        if (courses == null) item { Text("Loading courses…") }
+        else if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
         else if (visibleCourses.isEmpty()) item { Text("No courses match your search.") }
     }
 }
@@ -849,8 +850,10 @@ internal fun ScheduleScreen(
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val datedTimetable = remember(state.slots, state.calendar, state.exams) { DatedTimetable(state) }
-    val daySlots = remember(datedTimetable, selectedDate) { datedTimetable.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute) }
+    val datedTimetable = rememberBackgroundProjection(state.slots, state.calendar, state.exams) { DatedTimetable(state) }
+    val daySlots = remember(datedTimetable, selectedDate) {
+        datedTimetable?.slotsForDate(selectedDate).orEmpty().sortedBy(SlotWithCourse::startMinute)
+    }
     val importedForDay = state.importedCalendarEvents
         .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).dayOfWeek.value == selectedDay }
         .distinctBy { event ->
@@ -914,7 +917,9 @@ internal fun ScheduleScreen(
                 }
             }
         }
-        if (daySlots.isEmpty() && importedForDay.isEmpty()) {
+        if (datedTimetable == null) {
+            item { Text("Loading timetable…") }
+        } else if (daySlots.isEmpty() && importedForDay.isEmpty()) {
             item {
                 EmptyStateCard("No classes", if (datedTimetable.suppression.any { it.suppresses(selectedDate) }) "Classes are paused for the exam period." else "No classes are scheduled for this date.")
             }

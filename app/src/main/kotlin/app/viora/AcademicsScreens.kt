@@ -142,7 +142,7 @@ internal fun MarkDetails(mark: MarkUi) {
 private fun AttendanceScreen(state: VioraUiState) {
     val ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)
     val milestones = if (ninePointRule) emptyMap() else {
-        remember(state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget) {
+        rememberBackgroundProjection(state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget) {
             state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
         }
     }
@@ -172,8 +172,9 @@ private fun AttendanceScreen(state: VioraUiState) {
                 ) {
                     AttendanceCard(attendance, ninePointRule)
                     if (!ninePointRule) {
-                        val milestonesForCourse = milestones[attendance.id].orEmpty().associateBy { it.milestone }
-                        AttendanceMilestone.entries.forEach { milestone ->
+                        val milestonesForCourse = milestones?.get(attendance.id).orEmpty().associateBy { it.milestone }
+                        if (milestones == null) Text("Calculating exam milestones…")
+                        else AttendanceMilestone.entries.forEach { milestone ->
                             AttendanceMilestoneRow(milestone, milestonesForCourse[milestone])
                         }
                     }
