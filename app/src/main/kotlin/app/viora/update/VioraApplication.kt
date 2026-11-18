@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 
 class VioraApplication : Application(), Application.ActivityLifecycleCallbacks {
     private var prompted = false
+    private var checked = false
     override fun onCreate() {
         super.onCreate()
         GithubUpdateWorker.schedule(this)
@@ -21,7 +22,12 @@ class VioraApplication : Application(), Application.ActivityLifecycleCallbacks {
     }
 
     override fun onActivityResumed(activity: Activity) {
-        if (activity !is MainActivity || prompted) return
+        if (activity !is MainActivity) return
+        if (!checked) {
+            checked = true
+            GithubUpdateWorker.checkNow(this)
+        }
+        if (prompted) return
         prompted = true
         activity.lifecycleScope.launch {
             val ready = withContext(Dispatchers.IO) { UpdateStore(activity).ready() }

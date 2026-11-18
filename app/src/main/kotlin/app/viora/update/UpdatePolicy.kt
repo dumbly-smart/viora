@@ -6,9 +6,11 @@ import java.security.MessageDigest
 
 internal object UpdatePolicy {
     const val MAX_APK_BYTES = 150L * 1024 * 1024
-    fun accepts(installedPackage: String, installedVersion: Long, installedKeys: Set<String>, candidatePackage: String, candidateVersion: Long, candidateKeys: Set<String>): Boolean =
+    fun accepts(installedPackage: String, installedVersion: Long, installedKeys: Set<String>, candidatePackage: String, candidateVersion: Long, candidateKeys: Set<String>, candidateHistory: Set<String> = emptySet()): Boolean =
         installedPackage == candidatePackage && candidateVersion > installedVersion &&
-            installedKeys.isNotEmpty() && installedKeys == candidateKeys
+            installedKeys.isNotEmpty() && (installedKeys == candidateKeys ||
+                (installedKeys.size == 1 && candidateKeys.size == 1 &&
+                    candidateHistory.containsAll(installedKeys) && candidateHistory.containsAll(candidateKeys)))
 
     fun newerRelease(candidate: String, installed: String?): Boolean {
         fun parts(value: String): List<Int>? {

@@ -28,7 +28,14 @@ if [ -z "$APKSIGNER" ] || [ -z "$ZIPALIGN" ] || [ -z "$AAPT2" ]; then
 fi
 
 "$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null
-VERIFY_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$APK")"
+if [ -n "${VIORA_VERIFY_MIN_SDK:-}" ]; then
+    case "$VIORA_VERIFY_MIN_SDK" in
+        28) VERIFY_OUTPUT="$("$APKSIGNER" verify --min-sdk-version 28 --verbose --print-certs "$APK")" ;;
+        *) echo "Only API 28 migration verification is supported" >&2; exit 1 ;;
+    esac
+else
+    VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK")"
+fi
 printf '%s\n' "$VERIFY_OUTPUT"
 
 if printf '%s\n' "$VERIFY_OUTPUT" | grep -qi "Android Debug"; then
