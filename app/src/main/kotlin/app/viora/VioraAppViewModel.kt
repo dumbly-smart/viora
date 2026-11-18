@@ -144,6 +144,10 @@ class VioraAppViewModel(
         VioraUiState(configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false), deadlineNotifications = graph.settings.getBoolean("notify_deadlines", true), examNotifications = graph.settings.getBoolean("notify_exams", true), attendanceTarget = ATTENDANCE_TARGET, quietHours = graph.settings.getBoolean("quiet_hours", true), downloadStorageBytes = graph.materialManager.storageBytes(), syncHours = graph.settings.getInt("sync_hours", 6), classCheckIns = loadClassCheckIns()),
     )
     val state: StateFlow<VioraUiState> = mutableState.asStateFlow()
+    private var sessionRecoveryJob: Job? = null
+    private var foregroundSyncJob: Job? = null
+    private var recoveryAttempts = 0
+    private var signingOut = false
     private var timetableObservation: Job? = null
     private var attendanceObservation: Job? = null
     private var assignmentObservation: Job? = null
@@ -283,17 +287,34 @@ class VioraAppViewModel(
     }
 
     fun refresh() {
+        if (state.value.loading || signingOut) return
+        sessionRecoveryJob?.cancel()
         val semester = state.value.activeSemester
         mutableState.update { it.copy(loading = true, syncMessage = "Syncing with VTOP", error = null) }
-        viewModelScope.launch {
+        foregroundSyncJob = viewModelScope.launch {
             if (semester == null) loadSemestersAndRefresh() else refreshSemester(semester)
         }
     }
 
-    fun beginReauthentication() = mutableState.update {
-        it.copy(configured = false, loading = false, password = "", error = null, captchaImageDataUri = null, captchaAnswer = "")
+    fun beginReauthentication() {
+        sessionRecoveryJob?.cancel()
+        foregroundSyncJob?.cancel()
+        mutableState.update { it.copy(configured = false, loading = false, password = "", error = null, captchaImageDataUri = null, captchaAnswer = "") }
     }
-    fun logout() { viewModelScope.launch { graph.materialManager.clearDownloads(); graph.account.eraseVioraAccount(); mutableState.value = VioraUiState() } }
+    fun logout() {
+        if (signingOut) return
+        signingOut = true
+        sessionRecoveryJob?.cancel()
+        foregroundSyncJob?.cancel()
+        viewModelScope.launch {
+            try {
+                foregroundSyncJob?.join()
+                graph.materialManager.clearDownloads()
+                graph.account.eraseVioraAccount()
+                mutableState.value = VioraUiState()
+            } finally { signingOut = false }
+        }
+    }
     fun setDeadlineNotifications(enabled: Boolean) {
         graph.settings.edit().putBoolean("notify_deadlines", enabled).apply()
         mutableState.update { it.copy(deadlineNotifications = enabled) }
@@ -466,13 +487,15 @@ class VioraAppViewModel(
     }
 
     private fun restoreSessionAndLoad() {
+        if (signingOut || state.value.loading) return
         mutableState.update { it.copy(loading = true, syncMessage = "Restoring your local session") }
-        viewModelScope.launch {
+        foregroundSyncJob = viewModelScope.launch {
             when (graph.sessions.ensureActive()) {
-                SessionResolution.Ready -> loadSemestersAndRefresh()
+                SessionResolution.Ready -> { mutableState.update { it.copy(reauthRequired = false) }; loadSemestersAndRefresh() }
                 SessionResolution.SignInRequired -> requireSignIn("Sign in again to resume synchronization")
                 SessionResolution.VerificationRequired -> requireSignIn("VTOP requires interactive verification")
-                SessionResolution.Unavailable -> useCachedDataAfterConnectionFailure()
+                SessionResolution.RecoveryPending -> scheduleSessionRecovery()
+                SessionResolution.Unavailable -> { useCachedDataAfterConnectionFailure(); scheduleSessionRecovery() }
             }
         }
     }
@@ -543,7 +566,7 @@ class VioraAppViewModel(
                 scheduler.schedule()
                 refreshSemester(selected)
             }
-            .onFailure { useCachedSemesterAfterDiscoveryFailure() }
+            .onFailure { useCachedSemesterAfterDiscoveryFailure(); scheduleSessionRecovery() }
     }
 
     private fun useCachedSemesterAfterDiscoveryFailure() {
@@ -584,40 +607,56 @@ class VioraAppViewModel(
         val profile = graph.syncDiagnostics.start("foreground")
         var diagnosticOutcome = "failure"
         try {
-        when (graph.sessions.ensureActive()) {
-            SessionResolution.Ready -> {
-                val examResult = graph.exams.refresh(semester.id)
-                val timetableResult = graph.timetable.refresh(semester.id, semester.name)
-                val attendanceResult = graph.attendance.refresh(semester.id)
-                val assignmentResult = graph.assignments.refresh(semester.id)
-                val resultsResult = graph.results.refresh(semester.id)
-                val extrasResult = graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty })
-                graph.notifications.publishUpcoming(semester.id)
-                graph.reminders.schedule(semester.id)
-                val refreshResults = listOf(examResult, timetableResult, attendanceResult, assignmentResult, resultsResult, extrasResult)
-                if (refreshResults.any { it.exceptionOrNull() is AuthenticationException }) {
-                    diagnosticOutcome = "sign-in required"
-                    requireSignIn("VTOP session expired. Sign in again to refresh and upload.")
-                    return
+            val refresh = graph.sessions.refreshResources { academicResources(semester) }
+            when (refresh.resolution) {
+                SessionResolution.Ready -> {
+                    sessionRestored()
+                    graph.notifications.publishUpcoming(semester.id)
+                    graph.reminders.schedule(semester.id)
+                    val failed = refresh.resources.count(Result<*>::isFailure)
+                    diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
+                    mutableState.update { it.copy(loading = false,
+                        syncMessage = if (failed == 0) "Academics updated" else "Updated with $failed partial failure(s)", error = null) }
                 }
-                val failed = refreshResults.count(Result<*>::isFailure)
-                diagnosticOutcome = if (failed == 0) "success" else "partial ($failed)"
-                mutableState.update {
-                    it.copy(
-                        loading = false,
-                        syncMessage = if (failed == 0) "Academics updated" else "Updated with $failed partial failure(s)",
-                        error = null,
-                    )
-                }
+                SessionResolution.SignInRequired -> { diagnosticOutcome = "credentials required"; requireSignIn("Saved VTOP credentials need attention. Your cached data is still available.") }
+                SessionResolution.VerificationRequired -> { diagnosticOutcome = "verification required"; requireSignIn("VTOP requires interactive verification. Your cached data is still available.") }
+                SessionResolution.RecoveryPending -> { diagnosticOutcome = "session retry"; scheduleSessionRecovery() }
+                SessionResolution.Unavailable -> { diagnosticOutcome = "connection retry"; useCachedDataAfterConnectionFailure(); scheduleSessionRecovery() }
             }
-            SessionResolution.SignInRequired -> { diagnosticOutcome = "sign-in required"; requireSignIn("Sign in again to refresh VTOP") }
-            SessionResolution.VerificationRequired -> { diagnosticOutcome = "verification required"; requireSignIn("VTOP requires interactive verification") }
-            SessionResolution.Unavailable -> useCachedDataAfterConnectionFailure()
-        }
         } finally {
             graph.syncDiagnostics.finish(profile, diagnosticOutcome)
             NextClassWidgetProvider.updateAll(graph.context)
             refreshDiagnostics()
+        }
+    }
+
+    private suspend fun academicResources(semester: SemesterOption): List<Result<Unit>> = listOf(
+        graph.exams.refresh(semester.id),
+        graph.timetable.refresh(semester.id, semester.name),
+        graph.attendance.refresh(semester.id),
+        graph.assignments.refresh(semester.id),
+        graph.results.refresh(semester.id),
+        graph.extras.refresh(semester.id, graph.database.academicDao().courses(semester.id).map { it.code to it.faculty }),
+    )
+
+    private fun sessionRestored() {
+        sessionRecoveryJob?.cancel()
+        sessionRecoveryJob = null
+        recoveryAttempts = 0
+        mutableState.update { it.copy(reauthRequired = false) }
+    }
+
+    private fun scheduleSessionRecovery() {
+        if (!state.value.configured || signingOut) return
+        mutableState.update { it.copy(loading = false, reauthRequired = false,
+            syncMessage = "Reconnecting to VTOP automatically", error = "Your cached data remains available while Viora retries.") }
+        if (sessionRecoveryJob?.isActive == true) return
+        val waitMillis = (15_000L shl recoveryAttempts.coerceAtMost(5)).coerceAtMost(300_000L)
+        recoveryAttempts++
+        sessionRecoveryJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(waitMillis)
+            sessionRecoveryJob = null
+            if (state.value.configured && !signingOut) restoreSessionAndLoad()
         }
     }
 
@@ -738,9 +777,9 @@ class VioraAppViewModel(
                 )
             }
         } else {
-            graph.settings.edit().putBoolean(VioraGraph.KEY_CONFIGURED, false).commit()
+            val configured = graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false)
             mutableState.update {
-                it.copy(configured = false, loading = false, password = "", syncMessage = null, error = message)
+                it.copy(configured = configured, reauthRequired = configured, loading = false, password = "", syncMessage = null, error = message)
             }
         }
     }

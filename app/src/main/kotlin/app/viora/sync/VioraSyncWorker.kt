@@ -31,24 +31,27 @@ class VioraSyncWorker(
         val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
             ?: return Result.success() to "not configured"
         val semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
-        return when (graph.sessions.ensureActive()) {
+        val refresh = graph.sessions.refreshResources {
+            listOf(
+                graph.exams.refresh(semesterId),
+                graph.timetable.refresh(semesterId, semesterName),
+                graph.attendance.refresh(semesterId),
+                graph.assignments.refresh(semesterId),
+                graph.results.refresh(semesterId),
+                graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
+            )
+        }
+        return when (refresh.resolution) {
             SessionResolution.Ready -> {
-                val results = listOf(
-                    graph.exams.refresh(semesterId),
-                    graph.timetable.refresh(semesterId, semesterName),
-                    graph.attendance.refresh(semesterId),
-                    graph.assignments.refresh(semesterId),
-                    graph.results.refresh(semesterId),
-                    graph.extras.refresh(semesterId, graph.database.academicDao().courses(semesterId).map { it.code to it.faculty }),
-                )
                 graph.notifications.publishUpcoming(semesterId)
                 graph.reminders.schedule(semesterId)
                 NextClassWidgetProvider.updateAll(applicationContext)
-                if (results.all { it.isSuccess }) Result.success() to "success"
+                if (refresh.resources.all { it.isSuccess }) Result.success() to "success"
                 else Result.retry() to "partial retry"
             }
-            SessionResolution.SignInRequired -> Result.failure() to "sign-in required"
+            SessionResolution.SignInRequired -> Result.failure() to "credentials required"
             SessionResolution.VerificationRequired -> Result.failure() to "verification required"
+            SessionResolution.RecoveryPending -> Result.retry() to "session retry"
             SessionResolution.Unavailable -> Result.retry() to "network retry"
         }
     }
