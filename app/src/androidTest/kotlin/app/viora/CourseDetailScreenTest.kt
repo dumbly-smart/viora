@@ -1,6 +1,9 @@
 package app.viora
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -211,6 +214,9 @@ class CourseDetailScreenTest {
         compose.onNodeWithText("Attendance overview").assertIsDisplayed()
         compose.onNodeWithText("7/10 classes").assertIsDisplayed()
         compose.onNodeWithText("The 9-point attendance rule applies based on the cached VTOP CGPA. Raw attendance remains visible.").assertIsDisplayed()
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(0.7f, 0f..1f)),
+        ).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Attend next", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Safe to skip", substring = true).assertDoesNotExist()
     }

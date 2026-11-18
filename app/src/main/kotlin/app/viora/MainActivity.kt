@@ -772,41 +772,55 @@ private fun CourseMaterialActions(
 }
 
 @Composable
-internal fun AttendanceCard(item: AttendanceUi, ninePointRule: Boolean = false) {
+internal fun AttendanceCard(
+    item: AttendanceUi,
+    ninePointRule: Boolean = false,
+    content: @Composable () -> Unit = {},
+) {
     val skippableMeetings = if (item.blockSize > 1) item.skippableBlocks else item.skippable
-    val healthy = ninePointRule || (item.recovery == 0 && skippableMeetings > 0)
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(item.courseCode, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            Text(
-                item.courseTitle.ifBlank { item.courseCode },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${item.attended}/${item.held} classes", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${"%.1f".format(item.percentage)}%", color = if (healthy) VioraSuccess else VioraCoral, fontWeight = FontWeight.Bold)
-            }
-            listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            when {
-                ninePointRule -> Text("9-point attendance rule applies", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                item.recovery > 0 -> Text(
-                    "Attend next ${if (item.blockSize > 1) item.recoveryBlocks else item.recovery} ${if (item.blockSize > 1) "lab blocks" else "classes"} to recover",
-                    color = VioraCoral,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                skippableMeetings == 0 -> Text("At the target · don’t skip the next class", color = VioraAmber, style = MaterialTheme.typography.labelLarge)
-                else -> Text(
-                    if (item.blockSize > 1) "Safe to skip $skippableMeetings lab ${if (skippableMeetings == 1) "class" else "classes"}" else "Safe to skip $skippableMeetings ${if (skippableMeetings == 1) "class" else "classes"}",
-                    color = VioraSuccess,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+    val accent = when {
+        ninePointRule -> MaterialTheme.colorScheme.primary
+        item.recovery > 0 -> VioraCoral
+        skippableMeetings == 0 -> VioraAmber
+        else -> VioraSuccess
+    }
+    val status = when {
+        ninePointRule -> "9-point attendance rule applies"
+        item.recovery > 0 -> {
+            val count = if (item.blockSize > 1) item.recoveryBlocks else item.recovery
+            val unit = if (item.blockSize > 1) "lab blocks" else "classes"
+            "Attend next $count $unit to recover"
+        }
+        skippableMeetings == 0 -> "At the target · don’t skip the next class"
+        else -> {
+            val type = if (item.blockSize > 1) "lab " else ""
+            "Safe to skip $skippableMeetings ${type}${if (skippableMeetings == 1) "class" else "classes"}"
+        }
+    }
+    AcademicCourseSurface {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            AcademicCourseHeading(item.courseCode, item.courseTitle)
+            val metadata = listOf(item.courseType, item.faculty).filter(String::isNotBlank).joinToString(" · ")
+            if (metadata.isNotBlank()) {
+                Text(metadata, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${"%.1f".format(item.percentage)}%", style = MaterialTheme.typography.displaySmall, color = accent)
+            Text(
+                "${item.attended}/${item.held} classes",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LinearProgressIndicator(
+                progress = { (item.percentage / 100).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = accent,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+        }
+        Text(status, color = accent, style = MaterialTheme.typography.labelLarge)
+        content()
     }
 }
 
