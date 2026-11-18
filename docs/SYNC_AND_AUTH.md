@@ -22,6 +22,26 @@ If password retention is required for re-authentication, encrypt it with an app-
 
 Viora uses its own cookie jar and never imports browser cookies. App logout is local: cancel Viora sync work and delete Viora's cookies, credentials, database, and downloads. Do not call VTOP's server-side logout endpoint, because doing so could invalidate other sessions if VTOP links them server-side. Viora cannot override any single-session policy imposed by VTOP itself.
 
+## Automatic recovery after successful setup
+
+With remembered login enabled, SessionManager serializes silent authentication
+across foreground and background graphs. Expired-session authentication errors
+trigger a fresh local sign-in. Exhausted text-CAPTCHA attempts return a retryable
+recovery state rather than requesting the username and password again.
+
+Foreground and background resource reads reconnect and retry once if their
+session expires in the middle of sync. A second expiry is deferred rather than
+looping. Foreground retries back off from 15 seconds up to five minutes while
+the ViewModel is alive; WorkManager also retries transient recovery failures.
+Valid caches and the configured account remain visible throughout recovery.
+User refresh can retry sooner, and logout cancels pending recovery before wiping
+local state. These read retries never replay an assessment upload.
+
+Missing/rejected saved credentials or VTOP-required interactive verification can
+still require user attention. They produce an explicit dashboard action, not an
+automatic navigation back to setup after an account has been configured. Choosing
+not to retain credentials and explicit local logout retain their existing meaning.
+
 ## Foreground sync
 
 Every cold start and user refresh enqueues unique sync work. Apply a short freshness window to avoid duplicate traffic during rotations/relaunches. Fetch independent resources concurrently with a small cap; serialize calls that share CSRF/session state.

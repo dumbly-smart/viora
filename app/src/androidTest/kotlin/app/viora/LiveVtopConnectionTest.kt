@@ -12,6 +12,31 @@ import org.junit.Test
 
 /** Explicit opt-in probe: no credentials, response bodies, images or cookies are logged. */
 class LiveVtopConnectionTest {
+    @Test fun expiredSessionRecoversWithoutReturningToSetup() = kotlinx.coroutines.runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopRecovery") == "true")
+        val graph = VioraGraph(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertTrue("Account was successfully configured", graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false))
+        val credentials = graph.credentials.load()
+        assertNotNull("Remembered login is available", credentials)
+        credentials?.destroy()
+        val semester = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+        graph.gateway.clearLocalSession()
+        assertEquals("Expired session recovers without typed credentials", app.viora.auth.SessionResolution.Ready, graph.sessions.ensureActive())
+        var reads = 0
+        val refresh = graph.sessions.refreshResources {
+            reads++
+            if (reads == 1) {
+                graph.gateway.clearLocalSession()
+                listOf(Result.failure(AuthenticationException()))
+            } else listOf(runCatching { graph.gateway.semesters(); Unit })
+        }
+        assertEquals("Mid-refresh recovery succeeds", app.viora.auth.SessionResolution.Ready, refresh.resolution)
+        assertEquals("Resource reads retry once", 2, reads)
+        assertTrue("Resource refresh completes", refresh.resources.all { it.isSuccess })
+        assertTrue("Recovery keeps account configured", graph.settings.getBoolean(VioraGraph.KEY_CONFIGURED, false))
+        assertEquals("Recovery keeps selected semester", semester, graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null))
+    }
+
     @Test fun refreshAcademicResourcesUsingSavedAccount() = kotlinx.coroutines.runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveVtopSync") == "true")
         val graph = VioraGraph(InstrumentationRegistry.getInstrumentation().targetContext)
