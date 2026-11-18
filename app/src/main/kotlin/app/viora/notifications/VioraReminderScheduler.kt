@@ -13,6 +13,9 @@ import app.viora.database.AcademicDao
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -25,7 +28,11 @@ class VioraReminderScheduler(
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val preferences = context.getSharedPreferences("viora_reminder_schedule", Context.MODE_PRIVATE)
 
-    suspend fun schedule(semesterId: String) {
+    suspend fun schedule(semesterId: String) = withContext(Dispatchers.IO) {
+        schedulingMutex.withLock { scheduleAlarms(semesterId) }
+    }
+
+    private suspend fun scheduleAlarms(semesterId: String) {
         val now = ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), ACADEMIC_ZONE)
         val plans = ReminderPlanner.create(
             slots = dao.timetableSnapshot(semesterId),
@@ -37,12 +44,12 @@ class VioraReminderScheduler(
             includeExamReminders = context.getSharedPreferences(VioraGraph.SETTINGS_NAME, Context.MODE_PRIVATE)
                 .getBoolean("notify_exams", true),
         )
-        val plannedIds = plans.map { hash(it.id) }.toSet()
+        val keyedPlans = plans.map { hash(it.id) to it }
+        val plannedIds = keyedPlans.mapTo(mutableSetOf()) { it.first }
         preferences.getStringSet(KEY_IDS, emptySet()).orEmpty().minus(plannedIds).forEach { id ->
             pendingIntent(id, null, PendingIntent.FLAG_NO_CREATE)?.let(alarms::cancel)
         }
-        plans.forEach { plan ->
-            val id = hash(plan.id)
+        keyedPlans.forEach { (id, plan) ->
             val operation = requireNotNull(pendingIntent(id, plan, PendingIntent.FLAG_UPDATE_CURRENT))
             if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) {
                 alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, plan.triggerEpochMillis, operation)
@@ -79,6 +86,7 @@ class VioraReminderScheduler(
         .joinToString("") { "%02x".format(it) }
 
     companion object {
+        private val schedulingMutex = Mutex()
         private val ACADEMIC_ZONE = ZoneId.of("Asia/Kolkata")
         private const val KEY_IDS = "scheduled_ids"
         const val ACTION_REMINDER = "app.viora.action.REMINDER"

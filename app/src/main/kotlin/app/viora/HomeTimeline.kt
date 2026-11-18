@@ -45,9 +45,10 @@ internal fun VioraUiState.homeTimeline(
     val assessmentWeekExclusive = now.toLocalDate().plusDays((8 - now.dayOfWeek.value).toLong()).atStartOfDay(academicZone).toInstant().toEpochMilli()
     val timeFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 
+    val timetable = DatedTimetable(this)
     val classItems = (0L until lookAheadDays).flatMap { offset ->
         val date = now.toLocalDate().plusDays(offset)
-        slotsForDate(date).mapNotNull { slot ->
+        timetable.slotsForDate(date).mapNotNull { slot ->
             val start = date.atStartOfDay(academicZone).plusMinutes(slot.startMinute.toLong())
             val end = date.atStartOfDay(academicZone).plusMinutes(slot.endMinute.toLong())
             if (end.toInstant().toEpochMilli() <= nowEpochMillis || start.toInstant().toEpochMilli() >= horizonExclusive) return@mapNotNull null

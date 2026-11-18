@@ -43,17 +43,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -104,8 +99,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -135,6 +128,7 @@ import app.viora.domain.AttendanceCalculator
 import app.viora.domain.classCheckInKey
 import app.viora.domain.classPhase
 import app.viora.domain.sameCourseCode
+import app.viora.domain.courseCodeKey
 import app.viora.domain.ExamWindow
 import app.viora.domain.ExamCalendarDate
 import app.viora.domain.ExamSuppressionWindow
@@ -373,7 +367,9 @@ internal fun Dashboard(
                     }
                 }
             }
-            AnimatedContent(targetState = detail to selected, label = "dashboard destination") { (activeDetail, destination) ->
+            androidx.compose.runtime.key(detail, selected) {
+                val activeDetail = detail
+                val destination = selected
                 if (activeDetail != null) DetailScreen(state, activeDetail, openMaterial, downloadMaterial, downloadMaterials, uploadAssignment) else when (destination) {
                     0 -> HomeScreen(state = state, refresh = refresh, reauthenticate = reauthenticate, openDetail = { detail = it })
                     1 -> ScheduleScreen(
@@ -533,9 +529,11 @@ internal fun CoursesScreen(
     state: VioraUiState,
     showDetail: (String, String) -> Unit,
 ) {
-    val courses = state.consolidatedCourses()
+    val courses = rememberBackgroundProjection(state.slots, state.attendance, state.marks, state.grades, state.materials, state.messages, state.assignments) {
+        state.consolidatedCourses()
+    }
     var query by remember { mutableStateOf("") }
-    val visibleCourses = courses.filter { course ->
+    val visibleCourses = courses.orEmpty().filter { course ->
         query.isBlank() || listOf(
             course.code,
             course.title,
@@ -574,7 +572,8 @@ internal fun CoursesScreen(
                 CourseCard(course) { showDetail("course", course.id) }
             }
         }
-        if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
+        if (courses == null) item { Text("Loading courses…") }
+        else if (courses.isEmpty()) item { Text("No courses have been cached yet.") }
         else if (visibleCourses.isEmpty()) item { Text("No courses match your search.") }
     }
 }
@@ -647,20 +646,31 @@ internal fun VioraUiState.consolidatedCourses(): List<ConsolidatedCourseUi> {
             anchors[item.id] = CourseAnchor(item.id, item.courseCode, item.courseTitle, item.courseType, item.faculty, strictKind = true)
         }
     }
-    (assignments.map { it.courseCode } + grades.map { it.courseCode } + marks.map { it.courseCode } + materials.map { it.courseCode } + messages.map { it.courseCode })
+    val gradesByCode = grades.groupBy { it.courseCode.courseCodeKey() }
+    val representedCodes = anchors.values.mapTo(mutableSetOf()) { it.code.courseCodeKey() }
+    (assignments.asSequence().map { it.courseCode } + grades.asSequence().map { it.courseCode } +
+        marks.asSequence().map { it.courseCode } + materials.asSequence().map { it.courseCode } +
+        messages.asSequence().map { it.courseCode })
         .filter(String::isNotBlank)
         .forEach { code ->
-            if (anchors.values.none { sameCourseCode(it.code, code) }) {
-                val grade = grades.firstOrNull { sameCourseCode(it.courseCode, code) }
+            val key = code.courseCodeKey()
+            if (key.isEmpty() || representedCodes.add(key)) {
+                val grade = gradesByCode[key]?.firstOrNull().takeIf { key.isNotEmpty() }
                 anchors[code] = CourseAnchor(code, code, grade?.courseTitle.orEmpty(), "", "", strictKind = false)
             }
         }
+    val attendanceById = attendance.groupBy { it.id }
+    val attendanceByCode = attendance.groupBy { it.courseCode.courseCodeKey() }
+    val marksByCode = marks.groupBy { it.courseCode.courseCodeKey() }
+    val materialsByCode = materials.groupBy { it.courseCode.courseCodeKey() }
+    val messagesByCode = messages.groupBy { it.courseCode.courseCodeKey() }
     return anchors.values.map { anchor ->
-        val attendanceItem = attendance.firstOrNull { it.id == anchor.id }
-            ?: attendance.firstOrNull { it.matchesCourse(anchor) }
+        val codeKey = anchor.code.courseCodeKey().takeIf(String::isNotEmpty)
+        val attendanceItem = attendanceById[anchor.id]?.firstOrNull()
+            ?: attendanceByCode[codeKey]?.firstOrNull { it.matchesCourse(anchor) }
         val title = attendanceItem?.courseTitle?.takeIf(String::isNotBlank)
             ?: anchor.title.takeIf(String::isNotBlank)
-            ?: grades.firstOrNull { sameCourseCode(it.courseCode, anchor.code) }?.courseTitle.orEmpty()
+            ?: gradesByCode[codeKey]?.firstOrNull()?.courseTitle.orEmpty()
         ConsolidatedCourseUi(
             id = anchor.id,
             code = anchor.code,
@@ -668,9 +678,9 @@ internal fun VioraUiState.consolidatedCourses(): List<ConsolidatedCourseUi> {
             type = anchor.type.takeIf(String::isNotBlank) ?: attendanceItem?.courseType.orEmpty(),
             faculty = attendanceItem?.faculty?.takeIf(String::isNotBlank) ?: anchor.faculty,
             attendance = attendanceItem,
-            materials = materials.filter { it.matchesCourse(anchor) },
-            marks = marks.filter { it.matchesCourse(anchor) },
-            messages = messages.filter { it.matchesCourse(anchor) },
+            materials = materialsByCode[codeKey].orEmpty().filter { it.matchesCourse(anchor) },
+            marks = marksByCode[codeKey].orEmpty().filter { it.matchesCourse(anchor) },
+            messages = messagesByCode[codeKey].orEmpty().filter { it.matchesCourse(anchor) },
         )
     }.sortedWith(compareBy<ConsolidatedCourseUi> { it.code }.thenBy { courseKindOrder(it.type) }.thenBy { it.title })
 }
@@ -840,7 +850,10 @@ internal fun ScheduleScreen(
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val daySlots = state.slotsForDate(selectedDate).sortedBy(SlotWithCourse::startMinute)
+    val datedTimetable = rememberBackgroundProjection(state.slots, state.calendar, state.exams) { DatedTimetable(state) }
+    val daySlots = remember(datedTimetable, selectedDate) {
+        datedTimetable?.slotsForDate(selectedDate).orEmpty().sortedBy(SlotWithCourse::startMinute)
+    }
     val importedForDay = state.importedCalendarEvents
         .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).dayOfWeek.value == selectedDay }
         .distinctBy { event ->
@@ -904,9 +917,11 @@ internal fun ScheduleScreen(
                 }
             }
         }
-        if (daySlots.isEmpty() && importedForDay.isEmpty()) {
+        if (datedTimetable == null) {
+            item { Text("Loading timetable…") }
+        } else if (daySlots.isEmpty() && importedForDay.isEmpty()) {
             item {
-                EmptyStateCard("No classes", if (state.examSuppressionWindows().any { it.suppresses(selectedDate) }) "Classes are paused for the exam period." else "No classes are scheduled for this date.")
+                EmptyStateCard("No classes", if (datedTimetable.suppression.any { it.suppresses(selectedDate) }) "Classes are paused for the exam period." else "No classes are scheduled for this date.")
             }
         } else {
             items(daySlots, key = { "timeline-slot:${it.slotId}" }) { slot ->
@@ -984,7 +999,7 @@ internal fun AssessmentsScreen(
     nowEpochMillis: Long = System.currentTimeMillis(),
 ) {
     val dueThisWeek = state.assessmentsDueThisWeek(nowEpochMillis)
-    val courseGroups = state.assessmentCourseGroups()
+    val courseGroups = remember(state.assignments) { state.assessmentCourseGroups() }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -1154,23 +1169,13 @@ private fun ClassCard(
     whenText: String? = null,
     timelineFocused: Boolean = true,
 ) {
-    val focusAlpha by animateFloatAsState(
-        targetValue = if (timelineFocused) 1f else 0.42f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "timeline-course-alpha",
-    )
-    val focusBlur by animateDpAsState(
-        targetValue = if (timelineFocused) 0.dp else 1.2.dp,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "timeline-course-blur",
-    )
     val accent = when (checkIn) {
         ClassCheckIn.ATTENDED -> VioraSuccess
         ClassCheckIn.MISSED -> VioraCoral
         null -> if (phase == ClassPhase.LIVE) VioraBlue else MaterialTheme.colorScheme.outlineVariant
     }
     Surface(
-        Modifier.fillMaxWidth().animateContentSize().alpha(focusAlpha).blur(focusBlur),
+        Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = when {
             phase == ClassPhase.LIVE -> VioraBlue.copy(alpha = 0.09f)
@@ -1270,10 +1275,13 @@ internal fun DetailScreen(
 ) {
     var materialQuery by remember(selection.kind, selection.id) { mutableStateOf("") }
     var expandedAssessmentId by remember(selection.kind, selection.id) { mutableStateOf<String?>(null) }
+    val courseAnchor = remember(selection, state.slots, state.attendance, state.assignments, state.marks, state.grades, state.materials, state.messages) {
+        if (selection.kind == "course") state.courseAnchorForSelection(selection.id) else null
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (selection.kind) {
             "course" -> {
-                val anchor = state.courseAnchorForSelection(selection.id)
+                val anchor = courseAnchor ?: return@LazyColumn
                 val attendance = state.attendance.firstOrNull { it.id == selection.id } ?: state.attendance.firstOrNull { it.matchesCourse(anchor) }
                 val code = anchor.code
                 val title = attendance?.courseTitle?.takeIf(String::isNotBlank)
@@ -1721,19 +1729,30 @@ private fun VioraUiState.courseNameFor(slot: SlotWithCourse): String {
     } ?: slot.title.takeIf(String::isNotBlank) ?: slot.code
 }
 
-internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> {
-    if (examSuppressionWindows().any { it.suppresses(date) }) return emptyList()
-    val descriptions = calendar
-        .filter { it.dateEpochDay == date.toEpochDay() }
-        .map { "${it.title} ${it.dayType}" }
-    if (descriptions.any { it.contains("holiday", true) || it.contains("no instructional day", true) || it.contains("exam day", true) }) return emptyList()
-    val order = DayOfWeek.entries.firstOrNull { day ->
-        descriptions.any { it.contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
+internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> =
+    DatedTimetable(this).slotsForDate(date)
+
+/** Index one snapshot for projections that visit multiple dates. */
+internal class DatedTimetable(state: VioraUiState) {
+    val suppression = state.examSuppressionWindows()
+    private val slotsByDay = state.slots.groupBy(SlotWithCourse::dayOfWeek)
+    private val calendarByDate = state.calendar.groupBy { it.dateEpochDay }
+    private val examsByDate = state.exams.groupBy {
+        Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).toLocalDate()
     }
-    val examsToday = examsForDate(date)
-    return slots.filter { slot ->
-        slot.dayOfWeek == (order ?: date.dayOfWeek).value && examsToday.none { exam ->
-            overlapsExam(slot.startMinute, slot.endMinute, exam.startMinute(), exam.endMinute())
+
+    fun slotsForDate(date: LocalDate): List<SlotWithCourse> {
+        if (suppression.any { it.suppresses(date) }) return emptyList()
+        val descriptions = calendarByDate[date.toEpochDay()].orEmpty().map { "${it.title} ${it.dayType}" }
+        if (descriptions.any { it.contains("holiday", true) || it.contains("no instructional day", true) || it.contains("exam day", true) }) return emptyList()
+        val order = DayOfWeek.entries.firstOrNull { day ->
+            descriptions.any { it.contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
+        }
+        val slots = slotsByDay[(order ?: date.dayOfWeek).value].orEmpty()
+        val examsToday = examsByDate[date].orEmpty()
+        if (examsToday.isEmpty()) return slots
+        return slots.filter { slot ->
+            examsToday.none { exam -> overlapsExam(slot.startMinute, slot.endMinute, exam.startMinute(), exam.endMinute()) }
         }
     }
 }
@@ -1743,10 +1762,6 @@ internal fun VioraUiState.examSuppressionWindows(): List<ExamSuppressionWindow> 
     calendar = calendar.map { ExamCalendarDate(LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
     zone = academicZone,
 )
-
-private fun VioraUiState.examsForDate(date: LocalDate): List<ExamUi> = exams
-    .filter { Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).toLocalDate() == date }
-    .sortedBy(ExamUi::startsEpochMillis)
 
 private fun ExamUi.startMinute(): Int {
     val time = Instant.ofEpochMilli(startsEpochMillis).atZone(academicZone).toLocalTime()

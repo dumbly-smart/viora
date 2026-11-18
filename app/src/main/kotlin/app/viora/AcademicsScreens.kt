@@ -16,6 +16,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -141,7 +142,17 @@ internal fun MarkDetails(mark: MarkUi) {
 @Composable
 private fun AttendanceScreen(state: VioraUiState) {
     val ninePointRule = AttendanceNotificationPolicy.hasNinePointRule(state.cgpa)
-    val milestones = state.attendanceMilestones(System.currentTimeMillis()).groupBy { it.attendance.id }
+    val milestones = if (ninePointRule) emptyMap() else {
+        val now = produceState(System.currentTimeMillis()) {
+            while (true) {
+                kotlinx.coroutines.delay(60_000L - value % 60_000L)
+                value = System.currentTimeMillis()
+            }
+        }.value
+        rememberBackgroundProjection(state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget, now) {
+            state.attendanceMilestones(now).groupBy { it.attendance.id }
+        }
+    }
     val showCalculationSource = !ninePointRule && state.attendance.isNotEmpty()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -168,8 +179,9 @@ private fun AttendanceScreen(state: VioraUiState) {
                 ) {
                     AttendanceCard(attendance, ninePointRule)
                     if (!ninePointRule) {
-                        val milestonesForCourse = milestones[attendance.id].orEmpty().associateBy { it.milestone }
-                        AttendanceMilestone.entries.forEach { milestone ->
+                        val milestonesForCourse = milestones?.get(attendance.id).orEmpty().associateBy { it.milestone }
+                        if (milestones == null) Text("Calculating exam milestones…")
+                        else AttendanceMilestone.entries.forEach { milestone ->
                             AttendanceMilestoneRow(milestone, milestonesForCourse[milestone])
                         }
                     }
