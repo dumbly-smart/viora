@@ -131,6 +131,14 @@ With an attached API 26+ device or emulator, run
 `scripts/device-smoke.sh --fresh`. Its screenshots, UI dumps, and logs remain
 private local artifacts.
 
+## App updates
+
+`update/` is a separate public GitHub-release transport, six-hour WorkManager
+job, private APK store, and Android installer entry. It never uses the VTOP
+client or account data. Updates verify checksum, package, signing identity and
+version, and preserve the installed app's local storage. See
+[GITHUB_UPDATES.md](GITHUB_UPDATES.md) for publication and installation behavior.
+
 ## Why no backend initially
 
 A server would require holding student credentials or reusable sessions, creates a high-value breach target, and adds operating cost. Keep authentication and scraping on-device. A future backend may distribute app configuration or parser health metadata, but must not receive personal academic data or VTOP secrets.

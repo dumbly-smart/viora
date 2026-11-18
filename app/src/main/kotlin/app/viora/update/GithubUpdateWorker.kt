@@ -1,0 +1,116 @@
+package app.viora.update
+
+import android.content.Context
+import androidx.work.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+/** Public release transport: deliberately has no connection to the VTOP client or account. */
+class GithubUpdateWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            val store = UpdateStore(applicationContext)
+            val staged = store.ready()
+            if (staged) store.notifyReady()
+            val client = releaseClient()
+            val json = JSONObject(readSmall(client, LATEST, 512 * 1024))
+            if (json.optBoolean("draft") || json.optBoolean("prerelease")) return@withContext Result.success()
+            val assets = json.getJSONArray("assets")
+            val tag = json.getString("tag_name").removePrefix("v")
+            if (!tag.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) return@withContext Result.success()
+            // A release APK never replaces a differently named development package.
+            if (applicationContext.packageName != "app.viora") return@withContext Result.success()
+            @Suppress("DEPRECATION")
+            val installed = applicationContext.packageManager.getPackageInfo(applicationContext.packageName, 0)
+            if (!UpdatePolicy.newerRelease(tag, installed.versionName)) return@withContext Result.success()
+            if (staged && store.preferences.getString("version", null) == tag) return@withContext Result.success()
+            val apkName = "Viora-$tag.apk"
+            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }.singleOrNull { it.optString("name") == apkName }
+                ?: return@withContext Result.success()
+            val size = apk.getLong("size")
+            if (size !in 1..UpdatePolicy.MAX_APK_BYTES) return@withContext Result.failure()
+            val url = apk.getString("browser_download_url")
+            if (!UpdatePolicy.releaseUrl(url)) return@withContext Result.failure()
+            val checksumAsset = (0 until assets.length()).map { assets.getJSONObject(it) }.singleOrNull { it.optString("name") == "$apkName.sha256" }
+            val digest = apk.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
+                ?: checksumAsset?.getString("browser_download_url")?.takeIf(UpdatePolicy::releaseUrl)?.let {
+                    readSmall(client, it, 4096).trim().split(Regex("\\s+")).first()
+                } ?: return@withContext Result.failure()
+            if (!digest.matches(Regex("[a-fA-F0-9]{64}"))) return@withContext Result.failure()
+            val partial = File(store.directory, "download.part")
+            try {
+                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("Release download unavailable")
+                    val body = response.body ?: throw IOException("Empty release")
+                    if (body.contentLength() > size) throw IOException("Oversized release")
+                    body.byteStream().use { input -> partial.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            total += read
+                            if (total > size) throw IOException("Oversized release")
+                            output.write(buffer, 0, read)
+                        }
+                    } }
+                }
+                if (!UpdatePolicy.matches(partial.inputStream(), size, digest) || !store.compatible(partial)) {
+                    return@withContext Result.success()
+                }
+                store.stage(partial, digest, size, tag)
+                store.notifyReady()
+            } finally { partial.delete() }
+            Result.success()
+        } catch (_: IOException) {
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
+        } catch (_: org.json.JSONException) { Result.failure() }
+    }
+
+    companion object {
+        const val WORK_NAME = "viora-github-update"
+        private const val LATEST = "https://api.github.com/repos/dumbly-smart/viora/releases/latest"
+        fun schedule(context: Context) {
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                WORK_NAME, ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<GithubUpdateWorker>(6, TimeUnit.HOURS)
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build())
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES).build(),
+            )
+        }
+        internal fun releaseClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).callTimeout(10, TimeUnit.MINUTES)
+            .followSslRedirects(false)
+            .addNetworkInterceptor { chain ->
+                val url = chain.request().url
+                if (url.scheme != "https" || url.port != 443 || url.host !in setOf("api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")) {
+                    throw IOException("Disallowed release host")
+                }
+                chain.proceed(chain.request().newBuilder().header("User-Agent", "Viora-Updater")
+                    .header("Accept", "application/vnd.github+json").build())
+            }.build()
+        private fun readSmall(client: OkHttpClient, url: String, max: Int): String =
+            client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Release metadata unavailable")
+                val body = response.body ?: throw IOException("Empty metadata")
+                body.byteStream().use { input ->
+                    val buffer = java.io.ByteArrayOutputStream()
+                    val chunk = ByteArray(8192)
+                    while (buffer.size() <= max) {
+                        val count = input.read(chunk, 0, minOf(chunk.size, max + 1 - buffer.size()))
+                        if (count == -1) break
+                        buffer.write(chunk, 0, count)
+                    }
+                    val bytes = buffer.toByteArray()
+                    if (bytes.size > max) throw IOException("Oversized metadata")
+                    bytes.toString(Charsets.UTF_8)
+                }
+            }
+    }
+}
