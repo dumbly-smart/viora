@@ -34,6 +34,11 @@ Logging out clears Viora's saved account and local academic data without logging
 
 Grab the newest APK from [GitHub Releases](https://github.com/dumbly-smart/viora/releases/latest), open it on your Android phone and tap **Install**.
 
+Viora checks GitHub for stable updates every six hours when Android permits
+background work, downloads compatible updates, and offers installation. Confirm
+the Android update prompt; your login and cached data remain in place. See
+[app update details](docs/GITHUB_UPDATES.md).
+
 Android may ask you to allow installs from your browser or file manager since the APK is downloaded directly. You can turn that permission back off after installing. When there is a newer version, install it over the old one to keep your local data.
 
 Only download Viora from this repository's Releases page.
