@@ -149,6 +149,24 @@ client or account data. Updates verify checksum, package, signing identity and
 version, and preserve the installed app's local storage. See
 [GITHUB_UPDATES.md](GITHUB_UPDATES.md) for publication and installation behavior.
 
+## Native agent
+
+The agent supports user-provided OpenAI, Gemini, and OpenRouter API keys and
+model IDs. A dedicated client sends chat to the selected provider over HTTPS
+with redirects disabled. It shares no VTOP cookies or account credentials.
+Android Keystore encrypts the API key at rest. Users can remove the key or
+choose Off, Ask first, or Open automatically for native actions.
+
+The model selects a typed action from a fixed list. Viora runs local
+lookups, opens existing screens, or fetches and downloads course materials
+through its VTOP and private-storage integrations. Academic records and
+action results stay on the device. Downloads by teacher require a verified
+faculty match. Assessment requests match explicit file labels or module numbers
+in an announcement from the same course and faculty within the current term.
+Missing portions do not cause unrelated files to be downloaded. Download
+previews and saved file opening stay inside the native conversation. Assignment
+uploads still use the native document picker and existing submission flow.
+
 ## Why no backend initially
 
 A server would require holding student credentials or reusable sessions, creates a high-value breach target, and adds operating cost. Keep authentication and scraping on-device. A future backend may distribute app configuration or parser health metadata, but must not receive personal academic data or VTOP secrets.

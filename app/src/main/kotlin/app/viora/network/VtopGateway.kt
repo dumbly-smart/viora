@@ -43,7 +43,7 @@ data class CalendarGroup(val id: String, val name: String)
 
 data class AcademicCalendarRecord(val id: String, val date: LocalDate, val title: String, val dayType: String)
 data class ClassMessageRecord(val id: String, val courseCode: String, val courseTitle: String, val faculty: String, val subject: String, val body: String, val postedAt: LocalDateTime?)
-data class CourseMaterialRecord(val id: String, val courseCode: String, val title: String, val fileName: String, val downloadPath: String, val postedAt: LocalDateTime?)
+data class CourseMaterialRecord(val id: String, val courseCode: String, val title: String, val fileName: String, val downloadPath: String, val postedAt: LocalDateTime?, val faculty: String = "")
 
 data class AttendanceSnapshot(val records: List<AttendanceRecord>)
 

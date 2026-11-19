@@ -81,7 +81,7 @@ class CourseMaterialParser {
             if (fileId.isBlank()) return@mapIndexedNotNull null
             val title = listOf(module.takeIf(String::isNotBlank)?.let { "Module $it" }, topic).filterNotNull().filter(String::isNotBlank).joinToString(" · ").ifBlank { "Course material ${index + 1}" }
             val postedAt = cells[3].select("div.mt-1 span").getOrNull(1)?.text()?.let { VtopDateParser.dateAndTime(it, "12:00 AM") }
-            CourseMaterialRecord(stable("$courseCode-$fileId"), courseCode, title, topic.ifBlank { title }, "fileId:$fileId", postedAt)
+            CourseMaterialRecord(stable("$courseCode-$fileId"), courseCode, title, topic.ifBlank { title }, "fileId:$fileId", postedAt, facultyText)
         }
         return ParseResult.Success(rows)
     }

@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     state.activeSemester?.let { graph.reminders.schedule(it.id) }
                 }
                 if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, { assignment -> pendingAssignmentUploadId = assignment.id; assignmentDocument.launch(arrayOf("*/*")) }, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value, model::selectCalendarGroup)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, { assignment -> pendingAssignmentUploadId = assignment.id; assignmentDocument.launch(arrayOf("*/*")) }, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value, model::selectCalendarGroup, { startActivity(Intent(this, app.viora.agent.AgentActivity::class.java)) })
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -294,17 +294,18 @@ internal fun Dashboard(
     shareCalendarIcs: () -> Unit,
     initialDestination: String?,
     selectCalendarGroup: (String?) -> Unit = {},
+    openAgent: () -> Unit = {},
 ) {
     val initialRoute = initialDestination?.substringBefore('#')
     var selected by remember(initialDestination) {
         mutableIntStateOf(when (initialRoute) {
             "schedule" -> 1
-            "courses", "attendance", "tasks" -> 2
+            "courses", "marks", "attendance", "tasks" -> 2
             else -> 0
         })
     }
     var librarySection by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "tasks") 1 else 0) }
-    var academicsTab by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "attendance") 2 else 0) }
+    var academicsTab by remember(initialDestination) { mutableIntStateOf(when (initialRoute) { "marks" -> 1; "attendance" -> 2; else -> 0 }) }
     var showProfileSheet by remember(initialDestination) { mutableStateOf(initialRoute == "more") }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
     if (showProfileSheet) {
@@ -322,6 +323,7 @@ internal fun Dashboard(
                 clearDownloads,
                 clearAcademicCache,
                 selectCalendarGroup,
+                openAgent,
             )
         }
     }
@@ -1560,9 +1562,10 @@ private fun CalendarProgramPicker(state: VioraUiState, selectGroup: (String?) ->
     }
 }
 
-@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption?) -> Unit, setSyncHours: (Int) -> Unit, refreshDiagnostics: () -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit, selectCalendarGroup: (String?) -> Unit) {
+@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption?) -> Unit, setSyncHours: (Int) -> Unit, refreshDiagnostics: () -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit, selectCalendarGroup: (String?) -> Unit, openAgent: () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("More", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
+        item { TextButton(onClick = openAgent) { Text("Viora Agent") } }
         item { OutlinedTextField(value = state.searchQuery, onValueChange = setSearchQuery, label = { Text("Search cached academics") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         if (state.searchQuery.isNotBlank()) {
             val q = state.searchQuery.trim()

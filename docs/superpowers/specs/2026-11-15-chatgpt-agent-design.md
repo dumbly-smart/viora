@@ -1,6 +1,6 @@
 # ChatGPT agent inside Viora
 
-Status: superseded; implementation has not started.
+Status: historical. The later request for a native agent with user-provided model keys is implemented separately in the app. See [Native agent](../../ARCHITECTURE.md#native-agent).
 
 ## Updated user requirement
 
