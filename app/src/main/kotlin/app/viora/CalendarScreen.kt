@@ -205,15 +205,22 @@ private fun CalendarDayCell(
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            markers.sortedBy(AcademicCalendarMarker::ordinal).take(MARKERS_PER_ROW).forEach { marker ->
-                Box(
-                    Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(marker.color())
-                        .semantics { contentDescription = "Calendar marker: ${marker.displayName()}" },
-                )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            markers.sortedBy(AcademicCalendarMarker::ordinal).chunked(MARKERS_PER_ROW).forEach { markerRow ->
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    markerRow.forEach { marker ->
+                        Box(
+                            Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(marker.color())
+                                .semantics { contentDescription = "Calendar marker: ${marker.displayName()}" },
+                        )
+                    }
+                }
             }
         }
     }
