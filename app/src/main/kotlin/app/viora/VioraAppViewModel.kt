@@ -352,7 +352,11 @@ class VioraAppViewModel(
     fun setAttendanceTarget(target: Int) { mutableState.update { state -> state.copy(attendanceTarget = ATTENDANCE_TARGET, attendance = state.attendance.reproject(ATTENDANCE_TARGET, state.plannedMissedBlocks)) } }
     fun setPlannedMissedBlocks(blocks: Int) = mutableState.update { state -> state.copy(plannedMissedBlocks = blocks.coerceIn(0, 10), attendance = state.attendance.reproject(state.attendanceTarget, blocks.coerceIn(0, 10))) }
     fun setSearchQuery(query: String) = mutableState.update { it.copy(searchQuery = query.take(80)) }
-    fun setQuietHours(enabled: Boolean) { graph.settings.edit().putBoolean("quiet_hours", enabled).apply(); mutableState.update { it.copy(quietHours = enabled) } }
+    fun setQuietHours(enabled: Boolean) {
+        graph.settings.edit().putBoolean("quiet_hours", enabled).apply()
+        mutableState.update { it.copy(quietHours = enabled) }
+        state.value.activeSemester?.let { semester -> viewModelScope.launch { graph.reminders.schedule(semester.id) } }
+    }
     fun uploadAssignment(assignmentId: String, uri: Uri) {
         val assignment = state.value.assignments.firstOrNull { it.id == assignmentId }
         if (assignment?.dueEpochMillis == null || assignment.dueEpochMillis <= System.currentTimeMillis()) {
@@ -492,6 +496,7 @@ class VioraAppViewModel(
         calendar = snapshot.calendar,
         exams = snapshot.exams,
         assignments = snapshot.assignments,
+        semesterName = snapshot.activeSemester?.name,
     )
 
     private fun calendarName(snapshot: VioraUiState): String =

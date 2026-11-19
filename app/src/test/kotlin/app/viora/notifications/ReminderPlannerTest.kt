@@ -115,6 +115,28 @@ class ReminderPlannerTest {
         assertEquals(22, java.time.Instant.ofEpochMilli(plans.single().triggerEpochMillis).atZone(zone).hour)
     }
 
+    @Test fun `winter classes start on December 2 even when no calendar is cached`() {
+        val dec1 = ZonedDateTime.of(2026, 12, 1, 8, 0, 0, 0, zone)
+        val days = listOf(slot(600).copy(dayOfWeek = 2), slot(600).copy(dayOfWeek = 3))
+        val plans = ReminderPlanner.create(days, emptyList(), calendar = emptyList(), now = dec1,
+            includeExamReminders = false, classLookAheadDays = 1, semesterName = "Winter Semester 2026-27")
+        assertEquals(listOf(dec1.toLocalDate().plusDays(1).toEpochDay()), plans.map { it.classDateEpochDay })
+    }
+
+    @Test fun `quiet hours move evening deadline reminders earlier and never warn after due`() {
+        val late = now.plusDays(3).withHour(23)
+        val early = now.plusDays(3).withHour(15)
+        fun reminders(due: ZonedDateTime, status: String) = ReminderPlanner.create(
+            emptyList(), emptyList(), assignments = listOf(assignment(due, status)), calendar = emptyList(),
+            now = now, includeExamReminders = false, quietHours = true,
+        )
+        assertEquals(listOf(9, 9, 21), reminders(late, "Not uploaded").map {
+            java.time.Instant.ofEpochMilli(it.triggerEpochMillis).atZone(zone).hour
+        })
+        assertEquals(2, reminders(early, "Not uploaded").size)
+        assertEquals(21, java.time.Instant.ofEpochMilli(reminders(late, "Uploaded").single().triggerEpochMillis).atZone(zone).hour)
+    }
+
     private fun slot(startMinute: Int) = SlotWithCourse(
         slotId = "slot",
         courseId = "course",

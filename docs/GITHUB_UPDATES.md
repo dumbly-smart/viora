@@ -73,8 +73,10 @@ public X.509 certificate and output proof path. The helper uses the old private
 key to authorize the new public certificate. It does not require the new
 private key or export the old key. Only base64 of the public proof is stored as
 `VIORA_SIGNING_LINEAGE_BASE64` in GitHub Secrets. Installed-data transfer is
-allowed; old-key rollback, shared UID, signature permissions and authenticator
-capabilities are disabled.
+allowed, and the bridge carries Android's signature permission capability so
+the rotated package can retain ownership of the AndroidX receiver permission it
+already declared. Old-key rollback, shared UID and authenticator capabilities
+are disabled.
 
 The existing release workflow signs and verifies the optional migration APK
 with the production key, retaining the ordinary primary APK unchanged.

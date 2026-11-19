@@ -20,10 +20,11 @@ object NextClassResolver {
         now: ZonedDateTime,
         searchDays: Long = 7,
         exams: List<ExamWindow> = emptyList(),
+        semesterName: String? = null,
     ): NextClass? {
         val rules = AcademicClassCalendar(calendar.map {
             ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType)
-        }, exams, now.zone)
+        }, exams, now.zone, semesterName)
         for (offset in 0..searchDays) {
             val date = now.toLocalDate().plusDays(offset)
             val day = rules.timetableDay(date) ?: continue
