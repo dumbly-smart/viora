@@ -34,7 +34,7 @@ class CurrentSemesterResolverTest {
         assertFalse(result.rolloverDetected)
     }
 
-    @Test fun `keeps the FAT term until next term instruction starts even if both terms are cached`() = runTest {
+    @Test fun `moves after program FAT even when next term instruction starts later`() = runTest {
         val unused = Proxy.newProxyInstance(VtopGateway::class.java.classLoader, arrayOf(VtopGateway::class.java)) { _, _, _ ->
             error("Unexpected gateway call")
         } as VtopGateway
@@ -52,13 +52,43 @@ class CurrentSemesterResolverTest {
         }.resolve(options, setOf("current", "next"), "current")
 
         assertEquals("current", resolve(finalDay).selectedId)
-        assertEquals("current", resolve(nextStart.minusDays(1)).selectedId)
+        assertEquals("next", resolve(finalDay.plusDays(1)).selectedId)
         assertEquals("next", resolve(nextStart).selectedId)
         assertTrue(resolve(nextStart).rolloverDetected)
 
         nextStart = finalDay
         assertEquals("current", resolve(finalDay).selectedId)
         assertEquals("next", resolve(finalDay.plusDays(1)).selectedId)
+    }
+
+    @Test fun `personal FAT ending early does not start the next semester`() = runTest {
+        val unused = Proxy.newProxyInstance(VtopGateway::class.java.classLoader, arrayOf(VtopGateway::class.java)) { _, _, _ ->
+            error("Unexpected gateway call")
+        } as VtopGateway
+        val personalDay = LocalDate.of(2026, 11, 17)
+        val programDay = personalDay.plusDays(3)
+        var finalNote = "FAT examinations conclude at 6:30 PM"
+        val gateway = object : VtopGateway by unused {
+            override suspend fun exams(semesterId: String) = listOf(
+                ExamRecord("fat", "CSE1001", "Synthetic Course", "FAT", personalDay.atTime(9, 0), personalDay.atTime(12, 0), "", "")
+            )
+            override suspend fun academicCalendar(semesterId: String) = when (semesterId) {
+                "current" -> listOf(AcademicCalendarRecord("fat-last", programDay, finalNote, "Exam day"))
+                else -> emptyList()
+            }
+        }
+        val options = listOf(SemesterOption("next", "Next term"), SemesterOption("current", "Current term"))
+        suspend fun resolve(date: LocalDate, hour: Int, minute: Int = 0) = CurrentSemesterResolver(gateway) {
+            date.atTime(hour, minute).atZone(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
+        }.resolve(options, setOf("current"), "current").selectedId
+
+        assertEquals("current", resolve(personalDay, 13))
+        assertEquals("current", resolve(programDay, 18, 29))
+        assertEquals("next", resolve(programDay, 18, 30))
+        for (note in listOf("FAT examinations commence", "Final examination")) {
+            finalNote = note
+            assertEquals("current", resolve(programDay.plusDays(1), 12))
+        }
     }
 
     @Test fun `first setup uses FAT exam records when calendar is missing`() = runTest {

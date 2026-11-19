@@ -173,7 +173,18 @@ class VioraAppViewModel(
         viewModelScope.launch { graph.database.academicDao().observeSyncResources().collect { resources -> mutableState.update { it.copy(syncResources = resources) } } }
         viewModelScope.launch { graph.database.academicDao().observeChanges().collect { changes -> mutableState.update { it.copy(recentChanges = changes) } } }
         viewModelScope.launch { graph.materialManager.states.collect { downloads -> mutableState.update { it.copy(downloads = downloads, downloadStorageBytes = graph.materialManager.storageBytes()) } } }
-        viewModelScope.launch { graph.database.academicDao().observeSemesters().collect { semesters -> mutableState.update { it.copy(cachedSemesters = semesters) } } }
+        viewModelScope.launch {
+            graph.database.academicDao().observeSemesters().collect { semesters ->
+                mutableState.update { it.copy(cachedSemesters = semesters) }
+                val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+                val current = state.value
+                if (current.configured && !current.loading && !signingOut &&
+                    savedId != current.activeSemester?.id && semesters.any { it.id == savedId && it.active }
+                ) {
+                    observeSavedSemester()
+                }
+            }
+        }
         viewModelScope.launch {
             graph.database.academicDao().observeImportedCalendarEvents()
                 .catch { mutableState.update { state -> state.copy(error = "Could not read imported calendar events") } }
@@ -535,9 +546,13 @@ class VioraAppViewModel(
             graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null),
         ) ?: return null
         mutableState.update { current ->
-            current.copy(
+            val snapshot = if (current.activeSemester?.id == semester.id) current else {
+                current.copy(slots = emptyList(), exams = emptyList(), calendar = emptyList())
+            }
+            snapshot.copy(
                 activeSemester = semester,
-                semesters = current.semesters.ifEmpty { listOf(semester) },
+                semesters = if (snapshot.semesters.any { it.id == semester.id }) snapshot.semesters
+                    else listOf(semester) + snapshot.semesters,
             )
         }
         observeTimetable(semester.id)
