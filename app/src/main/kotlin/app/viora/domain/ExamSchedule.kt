@@ -3,6 +3,7 @@ package app.viora.domain
 import java.time.Instant
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 
 private const val EXAM_LEAD_TIME_MILLIS = 7L * 24 * 60 * 60 * 1000
@@ -60,6 +61,52 @@ fun finalExamDates(exams: List<ExamWindow>, calendar: List<ExamCalendarDate>, zo
     }.map { it.date }
     if (dates.isEmpty()) return null
     return dates.min() to dates.max()
+}
+
+private val finalExamClosing = Regex(
+    """\b(?:conclud\w*|complet\w*|ends?|end\s+of|last\s+(?:exam(?:ination)?|slot|day))\b""",
+    RegexOption.IGNORE_CASE,
+)
+private val closingClock = Regex(
+    """\b(?:conclud\w*|complet\w*|ends?)\s+at\s+(\d{1,2}):(\d{2})(?:\s*(AM|PM)\b)?""",
+    RegexOption.IGNORE_CASE,
+)
+
+/** Personal slots may extend a known program boundary, but cannot establish it. */
+fun programFatCompletionMillis(
+    exams: List<ExamWindow>,
+    calendar: List<ExamCalendarDate>,
+    zone: ZoneId,
+): Long? {
+    val finalRows = calendar.filter {
+        it.kind() == AcademicDayKind.EXAM && it.description().examSeries() == "fat"
+    }
+    val lastDay = finalRows.maxOfOrNull { it.date } ?: return null
+    val closingRows = finalRows.filter { it.date == lastDay && finalExamClosing.containsMatchIn(it.description()) }
+    if (closingRows.isEmpty()) return null
+    val closingTimes = closingRows.map { row -> closingTime(row.description()) }
+    val programEnd = if (closingTimes.any { it == null }) lastDay.plusDays(1).atStartOfDay(zone)
+        else lastDay.atTime(closingTimes.filterNotNull().max()).atZone(zone)
+    val personalEnd = exams.filter { it.examType.examSeries() == "fat" }.maxOfOrNull {
+        it.endsEpochMillis ?: Instant.ofEpochMilli(it.startsEpochMillis).atZone(zone).toLocalDate()
+            .plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    }
+    val programEndMillis = programEnd.toInstant().toEpochMilli()
+    return maxOf(programEndMillis, personalEnd ?: programEndMillis)
+}
+
+private fun closingTime(description: String): LocalTime? {
+    val match = closingClock.find(description) ?: return null
+    val hour = match.groupValues[1].toInt()
+    val minute = match.groupValues[2].toInt()
+    val period = match.groupValues[3]
+    val hourOfDay = when {
+        period.isEmpty() && hour in 0..23 -> hour
+        period.equals("AM", true) && hour in 1..12 -> hour % 12
+        period.equals("PM", true) && hour in 1..12 -> hour % 12 + 12
+        else -> return null
+    }
+    return if (minute in 0..59) LocalTime.of(hourOfDay, minute) else null
 }
 
 fun ExamSuppressionWindow.suppresses(date: LocalDate): Boolean = !date.isBefore(startDate) && date.isBefore(resumeDate)

@@ -84,8 +84,11 @@ the dated timetable rules. Instructional day orders can override the weekday.
 Non-instructional dates and exam days do not show recurring classes. The
 weekly timetable fills dates with no VTOP exception. CAT windows can resume
 class scheduling after the break. FAT ends the term's recurring classes.
-Automatic semester selection honors VTOP FAT and instruction dates and switches
-to the next term when its classes start. A manually selected term remains
+Automatic semester selection switches on sync after the selected program's
+official FAT ends, even when its next term starts later. Personal exam completion
+does not trigger rollover. If VTOP gives an end date without an end time, the
+cutoff is midnight in Asia/Kolkata. If VTOP does not identify the program's
+FAT end, the current term stays selected. A manually selected term remains
 available for browsing, and Settings can return to automatic selection.
 The calendar program picker lists the current semester's VTOP calendar groups.
 Foreground sync and background rollover use the saved group. If VTOP does not

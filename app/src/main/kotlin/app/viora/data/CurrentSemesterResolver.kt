@@ -6,6 +6,7 @@ import app.viora.domain.ExamWindow
 import app.viora.domain.SemesterSelection
 import app.viora.domain.finalExamDates
 import app.viora.domain.kind
+import app.viora.domain.programFatCompletionMillis
 import app.viora.domain.semesterInstructionStart
 import app.viora.network.AuthenticationException
 import app.viora.network.SemesterOption
@@ -31,29 +32,25 @@ class CurrentSemesterResolver(
         val ids = options.map { it.id }
         if (explicitlySelectedId in ids) return SemesterSelection(explicitlySelectedId, false)
         val zone = ZoneId.of("Asia/Kolkata")
-        val today = Instant.ofEpochMilli(clock()).atZone(zone).toLocalDate()
+        val now = clock()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val savedIndex = ids.indexOf(savedId)
         if (savedIndex == 0 || options.isEmpty()) return SemesterSelection(ids.firstOrNull(), false)
 
         if (savedIndex > 0 && savedId != null) {
             val calendar = calendar(savedId) ?: cachedCalendar
             val exams = exams(savedId, zone) ?: cachedExams
-            val finalDay = finalExamDates(exams, calendar, zone)?.second
-                ?: return SemesterSelection(savedId, false)
-            if (today <= finalDay) return SemesterSelection(savedId, false)
+            val fatEnd = programFatCompletionMillis(exams, calendar, zone)
+            if (fatEnd == null || now < fatEnd) return SemesterSelection(savedId, false)
 
-            // VTOP can list several terms. Wait for instruction in the next
-            // published term before displaying its weekly timetable.
-            var next: Pair<String, LocalDate>? = null
+            // VTOP lists newer terms ahead of the saved term. Skip an
+            // intervening term only if its FAT is already known to be over.
             for (option in options.take(savedIndex).asReversed()) {
-                val candidate = calendar(option.id) ?: continue
-                val begins = instructionDate(candidate) ?: continue
-                if (begins > today) continue
-                val ends = finalExamDates(emptyList(), candidate, zone)?.second
-                if (ends != null && today > ends) continue
-                if (next == null || begins < next.second) next = option.id to begins
+                val candidateCalendar = calendar(option.id).orEmpty()
+                val candidateEnd = programFatCompletionMillis(emptyList(), candidateCalendar, zone)
+                if (candidateEnd == null || now < candidateEnd) return SemesterSelection(option.id, true)
             }
-            return SemesterSelection(next?.first ?: savedId, next != null)
+            return SemesterSelection(savedId, false)
         }
 
         // On first setup use the latest term that has started, while
@@ -63,9 +60,11 @@ class CurrentSemesterResolver(
             val calendar = calendar(option.id).orEmpty()
             val begins = instructionDate(calendar)
             if (begins != null && begins > today) continue
-            val final = finalExamDates(emptyList(), calendar, zone)
-                ?: finalExamDates(exams(option.id, zone).orEmpty(), emptyList(), zone)
-            if (final != null && today in final.first..final.second) {
+            val personalExams = if (finalExamDates(emptyList(), calendar, zone) == null) exams(option.id, zone).orEmpty()
+                else emptyList()
+            val final = finalExamDates(personalExams, calendar, zone)
+            val fatEnd = programFatCompletionMillis(personalExams, calendar, zone)
+            if (final != null && today >= final.first && (fatEnd == null || now < fatEnd)) {
                 active = option.id
                 break
             }
