@@ -130,6 +130,7 @@ import app.viora.domain.classPhase
 import app.viora.domain.sameCourseCode
 import app.viora.domain.courseCodeKey
 import app.viora.domain.ExamWindow
+import app.viora.domain.AcademicClassCalendar
 import app.viora.domain.ExamCalendarDate
 import app.viora.domain.ExamSuppressionWindow
 import app.viora.domain.examSuppressionWindows as buildExamSuppressionWindows
@@ -205,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     state.activeSemester?.let { graph.reminders.schedule(it.id) }
                 }
                 if (state.configured) {
-                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, { assignment -> pendingAssignmentUploadId = assignment.id; assignmentDocument.launch(arrayOf("*/*")) }, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value)
+                    Dashboard(state, model::refresh, model::selectSemester, model::beginReauthentication, model::logout, model::setDeadlineNotifications, model::setExamNotifications, model::openMaterial, model::downloadMaterial, model::downloadMaterials, { assignment -> pendingAssignmentUploadId = assignment.id; assignmentDocument.launch(arrayOf("*/*")) }, model::setSearchQuery, model::setQuietHours, model::setSyncHours, model::refreshDiagnostics, model::clearDownloads, model::clearAcademicCache, model::shareTimetableQr, model::markClass, ::requestDeviceCalendarExport, { createIcsDocument.launch("viora-timetable.ics") }, { openIcsDocument.launch(arrayOf("text/calendar", "text/*", "application/octet-stream")) }, model::shareCalendarIcs, notificationDestination.value, model::selectCalendarGroup)
                 } else {
                     SetupScreen(
                         state = SetupState(
@@ -270,7 +271,7 @@ private val destinations = listOf(
 internal fun Dashboard(
     state: VioraUiState,
     refresh: () -> Unit,
-    selectSemester: (app.viora.network.SemesterOption) -> Unit,
+    selectSemester: (app.viora.network.SemesterOption?) -> Unit,
     reauthenticate: () -> Unit,
     logout: () -> Unit,
     setDeadlineNotifications: (Boolean) -> Unit,
@@ -292,6 +293,7 @@ internal fun Dashboard(
     importIcs: () -> Unit,
     shareCalendarIcs: () -> Unit,
     initialDestination: String?,
+    selectCalendarGroup: (String?) -> Unit = {},
 ) {
     val initialRoute = initialDestination?.substringBefore('#')
     var selected by remember(initialDestination) {
@@ -319,6 +321,7 @@ internal fun Dashboard(
                 refreshDiagnostics,
                 clearDownloads,
                 clearAcademicCache,
+                selectCalendarGroup,
             )
         }
     }
@@ -1527,7 +1530,37 @@ private fun ResultsScreen(state: VioraUiState) {
     }
 }
 
-@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption) -> Unit, setSyncHours: (Int) -> Unit, refreshDiagnostics: () -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit) {
+@Composable
+private fun CalendarProgramPicker(state: VioraUiState, selectGroup: (String?) -> Unit) {
+    val groups = state.calendarGroupsBySemester[state.activeSemester?.id].orEmpty()
+    val selected = groups.firstOrNull { it.id == state.calendarGroupId }
+    val current = selected?.name ?: if (state.calendarGroupId == null) "VTOP default" else "Saved program"
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text("Calendar program")
+        Box {
+            TextButton(
+                onClick = { expanded = true },
+                enabled = !state.loading && (groups.isNotEmpty() || state.calendarGroupId != null),
+            ) { Text(current) }
+            androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("VTOP default") },
+                    onClick = { expanded = false; selectGroup(null) },
+                )
+                groups.forEach { group ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(group.name) },
+                        onClick = { expanded = false; selectGroup(group.id) },
+                    )
+                }
+            }
+        }
+        if (groups.isEmpty()) Text("Sync with VTOP to load calendar programs.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable private fun MoreScreen(state: VioraUiState, logout: () -> Unit, setDeadlineNotifications: (Boolean) -> Unit, setExamNotifications: (Boolean) -> Unit, setSearchQuery: (String) -> Unit, setQuietHours: (Boolean) -> Unit, selectSemester: (app.viora.network.SemesterOption?) -> Unit, setSyncHours: (Int) -> Unit, refreshDiagnostics: () -> Unit, clearDownloads: () -> Unit, clearAcademicCache: () -> Unit, selectCalendarGroup: (String?) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("More", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
         item { OutlinedTextField(value = state.searchQuery, onValueChange = setSearchQuery, label = { Text("Search cached academics") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
@@ -1558,7 +1591,8 @@ private fun ResultsScreen(state: VioraUiState) {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Exam reminders"); Switch(checked = state.examNotifications, onCheckedChange = setExamNotifications) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Quiet hours"); Text("10 PM–7 AM", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(checked = state.quietHours, onCheckedChange = setQuietHours) } }
         item { Text("Sync and storage", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-        item { Column { Text("Active semester"); state.semesters.take(3).forEach { semester -> TextButton(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester, modifier = Modifier.fillMaxWidth()) { Text(semester.name) } } } }
+        item { Column { Text("Active semester"); TextButton(onClick = { selectSemester(null) }) { Text("Follow current semester") }; state.semesters.take(3).forEach { semester -> TextButton(onClick = { selectSemester(semester) }, enabled = semester != state.activeSemester, modifier = Modifier.fillMaxWidth()) { Text(semester.name) } } } }
+        item { CalendarProgramPicker(state, selectCalendarGroup) }
         if (state.rolloverDetected) item { Text("A new semester was detected. Older cached semesters remain archived below.", color = MaterialTheme.colorScheme.primary) }
         if (state.cachedSemesters.any { !it.active }) item { Text("Archived: ${state.cachedSemesters.filterNot { it.active }.joinToString { it.name }}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Column { Text("Background sync: every ${state.syncHours} hours"); listOf(listOf(1, 3, 6), listOf(12, 24)).forEach { group -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { group.forEach { hours -> TextButton(onClick = { setSyncHours(hours) }, enabled = hours != state.syncHours) { Text("${hours}h") } } } } } }
@@ -1748,21 +1782,20 @@ internal fun VioraUiState.slotsForDate(date: LocalDate): List<SlotWithCourse> =
 
 /** Index one snapshot for projections that visit multiple dates. */
 internal class DatedTimetable(state: VioraUiState) {
-    val suppression = state.examSuppressionWindows()
+    private val rules = AcademicClassCalendar(
+        state.calendar.map { ExamCalendarDate(LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
+        state.exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
+        academicZone,
+    )
+    val suppression = rules.suppression
     private val slotsByDay = state.slots.groupBy(SlotWithCourse::dayOfWeek)
-    private val calendarByDate = state.calendar.groupBy { it.dateEpochDay }
     private val examsByDate = state.exams.groupBy {
         Instant.ofEpochMilli(it.startsEpochMillis).atZone(academicZone).toLocalDate()
     }
 
     fun slotsForDate(date: LocalDate): List<SlotWithCourse> {
-        if (suppression.any { it.suppresses(date) }) return emptyList()
-        val descriptions = calendarByDate[date.toEpochDay()].orEmpty().map { "${it.title} ${it.dayType}" }
-        if (descriptions.any { it.contains("holiday", true) || it.contains("no instructional day", true) || it.contains("exam day", true) }) return emptyList()
-        val order = DayOfWeek.entries.firstOrNull { day ->
-            descriptions.any { it.contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", true) }
-        }
-        val slots = slotsByDay[(order ?: date.dayOfWeek).value].orEmpty()
+        val day = rules.timetableDay(date) ?: return emptyList()
+        val slots = slotsByDay[day.value].orEmpty()
         val examsToday = examsByDate[date].orEmpty()
         if (examsToday.isEmpty()) return slots
         return slots.filter { slot ->

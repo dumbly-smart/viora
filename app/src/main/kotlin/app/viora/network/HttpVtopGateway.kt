@@ -17,6 +17,9 @@ import app.viora.domain.sameCourseCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.Cookie
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,7 +45,11 @@ class HttpVtopGateway(
     private val calendarParser: AcademicCalendarParser = AcademicCalendarParser(),
     private val messageParser: ClassMessageParser = ClassMessageParser(),
     private val materialParser: CourseMaterialParser = CourseMaterialParser(),
+    private val selectedCalendarGroup: () -> String? = { null },
 ) : VtopGateway {
+    private val mutableCalendarGroups = MutableStateFlow<Map<String, List<CalendarGroup>>>(emptyMap())
+    val calendarGroups = mutableCalendarGroups.asStateFlow()
+
     @Volatile private var authorizedId: String? = null
     @Volatile private var csrf: String? = null
     @Volatile private var pendingLoginChallenge: LoginChallenge? = null
@@ -218,9 +225,15 @@ class HttpVtopGateway(
             }.add("x", System.currentTimeMillis().toString()).build()
         val groupHtml = execute(Request.Builder().url("$BASE/getDateForSemesterPreview")
             .post(calendarBody("getDateForSemesterPreview")).build())
-        val groups = Jsoup.parse(groupHtml).select("select option").filter { it.attr("value").isNotBlank() }
-        val group = groups.firstOrNull { it.attr("value") == "COMB" }?.attr("value")
-            ?: groups.firstOrNull()?.attr("value") ?: "COMB"
+        val groups = calendarParser.groups(groupHtml)
+        mutableCalendarGroups.update { it + (semesterId to groups) }
+        val selected = selectedCalendarGroup()
+        val group = if (selected == null) {
+            groups.firstOrNull { it.id == "COMB" }?.id ?: groups.firstOrNull()?.id ?: "COMB"
+        } else {
+            groups.firstOrNull { it.id == selected }?.id
+                ?: throw IOException("The selected calendar program is unavailable for this semester")
+        }
         val monthHtml = execute(Request.Builder().url("$BASE/getListForSemester")
             .post(calendarBody("getListForSemester", group)).build())
         val months = calendarParser.months(monthHtml)

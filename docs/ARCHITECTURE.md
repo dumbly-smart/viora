@@ -79,12 +79,19 @@ instant and before the relevant exam. For projected units `F` and skipped units
 `(a + F - S) * 100 >= p * (h + F)`, so later attended classes can recover a
 currently low percentage and lab blocks remain indivisible.
 
-The same global CAT/FAT suppression windows drive Home, Schedule, calendar
-export, and attendance planning. Explicit VIT calendar end/resumption rows win;
-otherwise Viora suppresses through the latest cached exam in the series and
-resumes on the next valid instructional Monday or explicit day-order date. The
-fallback is surfaced as an estimate. These values are planning aids, not
-institutional attendance rulings.
+Calendar, Home, Schedule, calendar export, widgets, and class reminders share
+the dated timetable rules. Instructional day orders can override the weekday.
+Non-instructional dates and exam days do not show recurring classes. The
+weekly timetable fills dates with no VTOP exception. CAT windows can resume
+class scheduling after the break. FAT ends the term's recurring classes.
+Automatic semester selection honors VTOP FAT and instruction dates and switches
+to the next term when its classes start. A manually selected term remains
+available for browsing, and Settings can return to automatic selection.
+The calendar program picker lists the current semester's VTOP calendar groups.
+Foreground sync and background rollover use the saved group. If VTOP does not
+offer that selection for a semester, Viora retains the last synced calendar
+and reports a sync failure for that calendar rather than substituting another
+program.
 
 ## Academic views
 

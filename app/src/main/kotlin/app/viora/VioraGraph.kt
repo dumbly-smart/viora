@@ -31,6 +31,7 @@ import app.viora.assignment.AssignmentUploadRepository
 class VioraGraph(context: Context) {
     private val appContext = context.applicationContext
     val context: Context get() = appContext
+    val settings = appContext.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE)
     val secureBlobs = EncryptedPreferencesBlobStore(
         appContext,
         AndroidKeystoreCipher("viora.local.v1"),
@@ -42,6 +43,7 @@ class VioraGraph(context: Context) {
         VioraHttpClient.create(cookieJar),
         cookieJar,
         VtopCaptchaSolver.fromAssets(appContext.assets),
+        selectedCalendarGroup = { settings.getString(KEY_CALENDAR_GROUP, null) },
     )
     val database = VioraDatabase.get(appContext)
     val timetable = TimetableRepository(database.academicDao(), gateway)
@@ -60,11 +62,11 @@ class VioraGraph(context: Context) {
     val account = LocalAccountManager(appContext, gateway, credentials, secureBlobs)
     val timetableSync = TimetableSyncCoordinator(sessions, timetable)
     val syncDiagnostics = SyncDiagnostics(appContext)
-    val settings = appContext.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE)
 
     companion object {
         const val SETTINGS_NAME = "viora_local_settings"
         const val KEY_CONFIGURED = "configured"
+        const val KEY_CALENDAR_GROUP = "calendar_group"
         const val KEY_MANUAL_SEMESTER_ID = "manual_semester_id"
         const val KEY_SEMESTER_ID = "active_semester_id"
         const val KEY_SEMESTER_NAME = "active_semester_name"

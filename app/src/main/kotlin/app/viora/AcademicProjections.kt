@@ -1,5 +1,10 @@
 package app.viora
 
+import app.viora.domain.AcademicDayKind
+import app.viora.domain.ExamCalendarDate
+import app.viora.domain.kind
+import app.viora.domain.weekdayOrder
+
 import app.viora.database.SlotWithCourse
 import app.viora.domain.AttendanceMilestone
 import app.viora.domain.maximumSkippableOccurrences
@@ -116,16 +121,14 @@ internal fun VioraUiState.eventsForDate(date: LocalDate): List<AcademicDayEvent>
 )
 
 private fun app.viora.database.AcademicCalendarEntity.calendarMarker(): AcademicCalendarMarker? {
-    val description = "$title $dayType"
-    return when {
-        description.hasWeekdayOrder() -> AcademicCalendarMarker.DAY_ORDER
-        description.contains("holiday", ignoreCase = true) -> AcademicCalendarMarker.HOLIDAY
-        else -> AcademicCalendarMarker.CALENDAR
+    if (title.isBlank() && dayType.isBlank()) return null
+    val day = ExamCalendarDate(LocalDate.ofEpochDay(dateEpochDay), title, dayType)
+    return when (day.kind()) {
+        AcademicDayKind.HOLIDAY -> AcademicCalendarMarker.HOLIDAY
+        AcademicDayKind.EXAM -> AcademicCalendarMarker.EXAM
+        AcademicDayKind.INSTRUCTIONAL -> if (day.weekdayOrder() != null) AcademicCalendarMarker.DAY_ORDER else AcademicCalendarMarker.CALENDAR
+        AcademicDayKind.OTHER -> AcademicCalendarMarker.CALENDAR
     }
-}
-
-private fun String.hasWeekdayOrder(): Boolean = java.time.DayOfWeek.entries.any { day ->
-    contains("${day.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)} order", ignoreCase = true)
 }
 
 private fun Long.academicDate(): LocalDate = Instant.ofEpochMilli(this).atZone(academicCalendarZone).toLocalDate()

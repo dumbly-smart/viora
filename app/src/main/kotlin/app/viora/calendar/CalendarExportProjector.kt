@@ -5,7 +5,7 @@ import app.viora.ExamUi
 import app.viora.VioraUiState
 import app.viora.database.AcademicCalendarEntity
 import app.viora.database.SlotWithCourse
-import app.viora.slotsForDate
+import app.viora.DatedTimetable
 import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
@@ -23,13 +23,13 @@ object CalendarExportProjector {
         exams: List<ExamUi>,
         assignments: List<AssignmentUi>,
     ): List<CalendarInterchangeEvent> {
-        val state = VioraUiState(slots = slots, calendar = calendar, exams = exams, assignments = assignments)
+        val timetable = DatedTimetable(VioraUiState(slots = slots, calendar = calendar, exams = exams))
         val endDate = fromDate.plusDays(179)
         val semesterKey = stablePart(semesterId)
         val events = mutableListOf<CalendarInterchangeEvent>()
         var date = fromDate
         while (!date.isAfter(endDate)) {
-            state.slotsForDate(date).forEach { slot ->
+            timetable.slotsForDate(date).forEach { slot ->
                 if (slot.startMinute !in 0 until 24 * 60 || slot.endMinute <= slot.startMinute || slot.endMinute > 24 * 60) return@forEach
                 val start = date.atStartOfDay(zone).plusMinutes(slot.startMinute.toLong()).toInstant()
                 val end = date.atStartOfDay(zone).plusMinutes(slot.endMinute.toLong()).toInstant()

@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.viora.VioraGraph
+import app.viora.data.resolveCurrentSemester
 import app.viora.auth.LocalAccountManager
 import app.viora.auth.SessionResolution
 import app.viora.widget.NextClassWidgetProvider
@@ -28,11 +29,25 @@ class VioraSyncWorker(
     }
 
     private suspend fun runSync(graph: VioraGraph): Pair<Result, String> {
-        val semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
+        var semesterId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
             ?: return Result.success() to "not configured"
-        val semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
+        var semesterName = graph.settings.getString(VioraGraph.KEY_SEMESTER_NAME, null) ?: semesterId
         val refresh = graph.sessions.refreshResources {
+            val discovery = runCatching {
+                val options = graph.gateway.semesters()
+                val selection = resolveCurrentSemester(graph, options)
+                options.firstOrNull { it.id == selection.selectedId }?.let { selected ->
+                    if (selected.id != semesterId) {
+                        graph.settings.edit().putString(VioraGraph.KEY_SEMESTER_ID, selected.id)
+                            .putString(VioraGraph.KEY_SEMESTER_NAME, selected.name).commit()
+                        semesterId = selected.id
+                        semesterName = selected.name
+                    }
+                }
+                Unit
+            }
             listOf(
+                discovery,
                 graph.exams.refresh(semesterId),
                 graph.timetable.refresh(semesterId, semesterName),
                 graph.attendance.refresh(semesterId),
