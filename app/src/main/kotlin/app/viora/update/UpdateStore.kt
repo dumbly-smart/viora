@@ -27,7 +27,11 @@ internal class UpdateStore(private val context: Context) {
             info.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet().orEmpty()
         } else info.signatures?.map { it.toCharsString() }?.toSet().orEmpty()
         fun version(info: PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        return UpdatePolicy.accepts(current.packageName, version(current), keys(current), candidate.packageName, version(candidate), keys(candidate))
+        return UpdatePolicy.accepts(current.packageName, version(current), keys(current), candidate.packageName, version(candidate), keys(candidate),
+            if (Build.VERSION.SDK_INT >= 28 && candidate.signingInfo?.hasMultipleSigners() == false) {
+                candidate.signingInfo?.signingCertificateHistory?.map { it.toCharsString() }?.toSet().orEmpty()
+            } else emptySet(),
+        )
     }
 
     fun ready(): Boolean = synchronized(fileLock) {

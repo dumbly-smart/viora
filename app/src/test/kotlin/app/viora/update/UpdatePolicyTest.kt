@@ -12,6 +12,14 @@ class UpdatePolicyTest {
         assertFalse(UpdatePolicy.accepts("app.viora", 12, emptySet(), "app.viora", 13, emptySet()))
     }
 
+    @Test fun `only forward single signer rotation with current key in history is allowed`() {
+        assertTrue(UpdatePolicy.accepts("app.viora", 16, setOf("old"), "app.viora", 17, setOf("new"), setOf("old", "new")))
+        assertFalse(UpdatePolicy.accepts("app.viora", 16, setOf("old"), "app.viora", 17, setOf("new"), setOf("new")))
+        assertFalse(UpdatePolicy.accepts("app.viora", 16, setOf("old"), "app.viora", 17, setOf("new"), setOf("old")))
+        assertFalse(UpdatePolicy.accepts("app.viora", 16, setOf("old", "other"), "app.viora", 17, setOf("new"), setOf("old", "other", "new")))
+        assertFalse(UpdatePolicy.accepts("app.viora", 17, setOf("new"), "app.viora", 18, setOf("old"), setOf("old")))
+    }
+
     @Test fun `release downloads must belong to this repository`() {
         assertTrue(UpdatePolicy.releaseUrl("https://github.com/dumbly-smart/viora/releases/download/v0.2.0/Viora-0.2.0.apk"))
         listOf("http://github.com/dumbly-smart/viora/releases/download/v1/a.apk", "https://github.com/evil/viora/releases/download/v1/a.apk", "https://github.com.evil.com/dumbly-smart/viora/releases/download/v1/a.apk", "https://github.com/dumbly-smart/viora/releases/download/../a.apk").forEach {

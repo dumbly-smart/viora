@@ -40,7 +40,7 @@ jobs:
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             version_name="${GITHUB_REF_NAME#v}"
-            version_code="${GITHUB_RUN_NUMBER}"
+            version_code="$((1000 + GITHUB_RUN_NUMBER))"
           else
             version_name="$INPUT_VERSION_NAME"
             version_code="$INPUT_VERSION_CODE"
@@ -69,21 +69,24 @@ jobs:
           release_apk="app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk"
           mv "$source_apk" "$release_apk"
           scripts/verify-release-apk.sh "$release_apk"
+      - name: Sign and verify optional Android 9+ migration APK
+        shell: bash
+        env:
+          VIORA_SIGNING_LINEAGE_BASE64: ${{ secrets.VIORA_SIGNING_LINEAGE_BASE64 }}
+        run: scripts/build-migration-apk.sh "app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Viora-${{ env.VIORA_VERSION_NAME }}-signed
           path: |
-            app/build/outputs/apk/release/Viora-${{ env.VIORA_VERSION_NAME }}.apk
-            app/build/outputs/apk/release/Viora-${{ env.VIORA_VERSION_NAME }}.apk.sha256
+            app/build/outputs/apk/release/Viora-${{ env.VIORA_VERSION_NAME }}*.apk
+            app/build/outputs/apk/release/Viora-${{ env.VIORA_VERSION_NAME }}*.apk.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Publish tagged GitHub release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk
-          app/build/outputs/apk/release/Viora-${VIORA_VERSION_NAME}.apk.sha256
-          --title "Viora ${VIORA_VERSION_NAME}"
-          --generate-notes
+        shell: bash
+        run: |
+          assets=(app/build/outputs/apk/release/Viora-"${VIORA_VERSION_NAME}"*.apk app/build/outputs/apk/release/Viora-"${VIORA_VERSION_NAME}"*.apk.sha256)
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Viora ${VIORA_VERSION_NAME}" --generate-notes --verify-tag
