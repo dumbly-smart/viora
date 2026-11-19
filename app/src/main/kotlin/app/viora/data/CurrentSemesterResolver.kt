@@ -48,7 +48,7 @@ class CurrentSemesterResolver(
             for (option in options.take(savedIndex).asReversed()) {
                 val candidate = calendar(option.id) ?: continue
                 val begins = instructionDate(candidate) ?: continue
-                if (begins <= finalDay || begins > today) continue
+                if (begins > today) continue
                 val ends = finalExamDates(emptyList(), candidate, zone)?.second
                 if (ends != null && today > ends) continue
                 if (next == null || begins < next.second) next = option.id to begins
@@ -56,17 +56,24 @@ class CurrentSemesterResolver(
             return SemesterSelection(next?.first ?: savedId, next != null)
         }
 
-        // On first setup prefer the latest term whose instruction has started.
-        // Overlapping registration calendars do not override an ongoing FAT.
+        // On first setup use the latest term that has started, while
+        // giving an ongoing FAT in the immediately preceding term priority.
+        var active: String? = null
         for (option in options) {
-            val calendar = calendar(option.id) ?: continue
-            val begins = instructionDate(calendar) ?: continue
-            val ends = finalExamDates(emptyList(), calendar, zone)?.second
-            if (begins <= today && (ends == null || today <= ends)) {
-                return SemesterSelection(option.id, cachedIds.isNotEmpty() && option.id !in cachedIds)
+            val calendar = calendar(option.id).orEmpty()
+            val begins = instructionDate(calendar)
+            if (begins != null && begins > today) continue
+            val final = finalExamDates(emptyList(), calendar, zone)
+                ?: finalExamDates(exams(option.id, zone).orEmpty(), emptyList(), zone)
+            if (final != null && today in final.first..final.second) {
+                active = option.id
+                break
             }
+            if (active != null) break
+            if (begins != null && (final == null || today < final.first)) active = option.id
         }
-        return SemesterSelection(ids.first(), false)
+        val selected = active ?: ids.first()
+        return SemesterSelection(selected, active != null && cachedIds.isNotEmpty() && selected !in cachedIds)
     }
 
     private fun instructionDate(calendar: List<ExamCalendarDate>): LocalDate? =

@@ -39,7 +39,7 @@ class CurrentSemesterResolverTest {
             error("Unexpected gateway call")
         } as VtopGateway
         val finalDay = LocalDate.of(2026, 11, 20)
-        val nextStart = finalDay.plusDays(10)
+        var nextStart = finalDay.plusDays(10)
         val gateway = object : VtopGateway by unused {
             override suspend fun exams(semesterId: String): List<ExamRecord> = emptyList()
             override suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord> =
@@ -55,5 +55,33 @@ class CurrentSemesterResolverTest {
         assertEquals("current", resolve(nextStart.minusDays(1)).selectedId)
         assertEquals("next", resolve(nextStart).selectedId)
         assertTrue(resolve(nextStart).rolloverDetected)
+
+        nextStart = finalDay
+        assertEquals("current", resolve(finalDay).selectedId)
+        assertEquals("next", resolve(finalDay.plusDays(1)).selectedId)
+    }
+
+    @Test fun `first setup uses FAT exam records when calendar is missing`() = runTest {
+        val unused = Proxy.newProxyInstance(VtopGateway::class.java.classLoader, arrayOf(VtopGateway::class.java)) { _, _, _ ->
+            error("Unexpected gateway call")
+        } as VtopGateway
+        val today = LocalDate.of(2026, 11, 19)
+        val gateway = object : VtopGateway by unused {
+            override suspend fun exams(semesterId: String): List<ExamRecord> =
+                if (semesterId == "current") listOf(
+                    ExamRecord("fat", "CSE1001", "Synthetic Course", "FAT", today.atTime(9, 0), today.atTime(12, 0), "", "")
+                ) else emptyList()
+
+            override suspend fun academicCalendar(semesterId: String): List<AcademicCalendarRecord> =
+                if (semesterId == "next") listOf(
+                    AcademicCalendarRecord("start", today.plusDays(7), "Commencement of classes", "Instructional Day")
+                ) else throw IOException("Synthetic missing calendar")
+        }
+        val options = listOf(SemesterOption("next", "Next term"), SemesterOption("current", "Current term"))
+        val result = CurrentSemesterResolver(gateway) {
+            today.atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli()
+        }.resolve(options, emptySet(), null)
+
+        assertEquals("current", result.selectedId)
     }
 }
