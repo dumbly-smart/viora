@@ -4,8 +4,6 @@ import java.time.Instant
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.TextStyle
-import java.util.Locale
 
 private const val EXAM_LEAD_TIME_MILLIS = 7L * 24 * 60 * 60 * 1000
 
@@ -40,22 +38,39 @@ fun examSuppressionWindows(
         }.minOfOrNull(ExamCalendarDate::date)
         val explicitEnd = relatedCalendar.filter { it.description().hasAny("exam end", "exams end", "examination end", "examinations end", "conclude", "last exam") }
             .maxOfOrNull(ExamCalendarDate::date)
-        val start = explicitStart ?: firstCachedDate ?: return@mapNotNull null
+        val datedExams = relatedCalendar.filter { it.kind() == AcademicDayKind.EXAM }
+        val start = explicitStart ?: listOfNotNull(firstCachedDate, datedExams.minOfOrNull { it.date }).minOrNull()
+            ?: return@mapNotNull null
         val resume = explicitResume ?: explicitEnd?.plusDays(1)
-            ?: lastCachedDate?.let { conservativeResumeDate(it, calendar) } ?: return@mapNotNull null
+            ?: listOfNotNull(lastCachedDate, datedExams.maxOfOrNull { it.date }).maxOrNull()
+                ?.let { if (seriesKey == "fat") it.plusDays(1) else conservativeResumeDate(it, calendar) }
+            ?: return@mapNotNull null
         if (!resume.isAfter(start)) null else ExamSuppressionWindow(start, resume, explicitResume == null && explicitEnd == null)
     }.sortedBy(ExamSuppressionWindow::startDate)
+}
+
+/** First and last FAT dates for one semester, excluding later administrative events. */
+fun finalExamDates(exams: List<ExamWindow>, calendar: List<ExamCalendarDate>, zone: ZoneId): Pair<LocalDate, LocalDate>? {
+    val dates = exams.filter { it.examType.examSeries() == "fat" }.flatMap {
+        listOf(it.startsEpochMillis, it.endsEpochMillis ?: it.startsEpochMillis).map { value ->
+            Instant.ofEpochMilli(value).atZone(zone).toLocalDate()
+        }
+    } + calendar.filter {
+        it.description().examSeries() == "fat" && it.kind() == AcademicDayKind.EXAM
+    }.map { it.date }
+    if (dates.isEmpty()) return null
+    return dates.min() to dates.max()
 }
 
 fun ExamSuppressionWindow.suppresses(date: LocalDate): Boolean = !date.isBefore(startDate) && date.isBefore(resumeDate)
 
 private fun conservativeResumeDate(lastExamDate: LocalDate, calendar: List<ExamCalendarDate>): LocalDate {
     val explicitOrder = calendar.asSequence()
-        .filter { it.date.isAfter(lastExamDate) && it.description().hasWeekdayOrder() && !it.description().contains("holiday", true) }
+        .filter { it.date.isAfter(lastExamDate) && it.weekdayOrder() != null && it.kind() == AcademicDayKind.INSTRUCTIONAL }
         .minByOrNull(ExamCalendarDate::date)
         ?.date
     var monday = lastExamDate.plusDays(1)
-    while (monday.dayOfWeek != DayOfWeek.MONDAY || calendar.any { it.date == monday && it.description().contains("holiday", true) }) {
+    while (monday.dayOfWeek != DayOfWeek.MONDAY || calendar.any { it.date == monday && it.kind() == AcademicDayKind.HOLIDAY }) {
         monday = monday.plusDays(1)
     }
     return listOfNotNull(explicitOrder, monday).minOrNull() ?: monday
@@ -63,14 +78,10 @@ private fun conservativeResumeDate(lastExamDate: LocalDate, calendar: List<ExamC
 
 private fun ExamCalendarDate.description(): String = "$title $dayType"
 private fun String.hasAny(vararg signals: String): Boolean = signals.any { contains(it, ignoreCase = true) }
-private fun String.hasWeekdayOrder(): Boolean = DayOfWeek.entries.any { day ->
-    contains("${day.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} order", ignoreCase = true)
-}
-
-private fun String.examSeries(): String? = when {
+internal fun String.examSeries(): String? = when {
     Regex("\\bcat\\s*[- ]*(?:2|ii)\\b", RegexOption.IGNORE_CASE).containsMatchIn(this) -> "cat2"
     Regex("\\bcat\\s*[- ]*(?:1|i)\\b", RegexOption.IGNORE_CASE).containsMatchIn(this) -> "cat1"
-    Regex("\\bfat\\b", RegexOption.IGNORE_CASE).containsMatchIn(this) -> "fat"
+    Regex("\\b(?:fat|final assessment (?:test|exam(?:ination)?)|final exam(?:ination)?s?)\\b", RegexOption.IGNORE_CASE).containsMatchIn(this) -> "fat"
     else -> null
 }
 

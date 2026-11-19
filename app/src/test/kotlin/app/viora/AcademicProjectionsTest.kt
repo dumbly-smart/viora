@@ -278,9 +278,9 @@ class AcademicProjectionsTest {
 
         assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[normalDate])
         assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[instructionalDate])
-        assertEquals(setOf(AcademicCalendarMarker.CALENDAR), markers[examDayDate])
+        assertEquals(setOf(AcademicCalendarMarker.EXAM), markers[examDayDate])
         assertEquals(
-            AcademicDayEvent("calendar:semester:exam-day", AcademicCalendarMarker.CALENDAR, null, "CAT exam day", "Exam day"),
+            AcademicDayEvent("calendar:semester:exam-day", AcademicCalendarMarker.EXAM, null, "CAT exam day", "Exam day"),
             events.single(),
         )
     }

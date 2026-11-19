@@ -289,6 +289,10 @@ class VioraAppViewModel(
     fun refresh() {
         if (state.value.loading || signingOut) return
         sessionRecoveryJob?.cancel()
+        if (graph.settings.getString(VioraGraph.KEY_MANUAL_SEMESTER_ID, null) == null) {
+            restoreSessionAndLoad()
+            return
+        }
         val semester = state.value.activeSemester
         mutableState.update { it.copy(loading = true, syncMessage = "Syncing with VTOP", error = null) }
         foregroundSyncJob = viewModelScope.launch {
@@ -473,10 +477,15 @@ class VioraAppViewModel(
     private fun calendarName(snapshot: VioraUiState): String =
         listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
 
-    fun selectSemester(semester: SemesterOption) {
+    fun selectSemester(semester: SemesterOption?) {
+        if (semester == null) {
+            graph.settings.edit().remove(VioraGraph.KEY_MANUAL_SEMESTER_ID).apply()
+            refresh()
+            return
+        }
         graph.settings.edit().putString(VioraGraph.KEY_MANUAL_SEMESTER_ID, semester.id).apply()
         saveSemester(semester)
-        mutableState.update { it.copy(activeSemester = semester) }
+        mutableState.update { it.copy(activeSemester = semester, slots = emptyList(), exams = emptyList(), calendar = emptyList()) }
         observeTimetable(semester.id)
         observeAttendance(semester.id)
         observeAssignments(semester.id)
@@ -542,11 +551,11 @@ class VioraAppViewModel(
     }
 
     private suspend fun loadSemestersAndRefresh() {
-        runCatching { graph.gateway.semesters() }
-            .onSuccess { options ->
-                val savedId = graph.settings.getString(VioraGraph.KEY_SEMESTER_ID, null)
-                val cachedIds = graph.database.academicDao().semesterSnapshot().map { it.id }.toSet()
-                val decision = app.viora.data.CurrentSemesterResolver(graph.gateway).resolve(options, cachedIds, savedId, graph.settings.getString(VioraGraph.KEY_MANUAL_SEMESTER_ID, null))
+        runCatching {
+            val options = graph.gateway.semesters()
+            options to app.viora.data.resolveCurrentSemester(graph, options)
+        }
+            .onSuccess { (options, decision) ->
                 val rollover = decision.rolloverDetected
                 val selected = options.firstOrNull { it.id == decision.selectedId }
                 if (selected == null) {
@@ -555,7 +564,10 @@ class VioraAppViewModel(
                 }
                 saveSemester(selected)
                 mutableState.update {
-                    it.copy(semesters = options, activeSemester = selected, loading = false, rolloverDetected = rollover, syncMessage = if (rollover) "New semester detected; previous data was archived" else null)
+                    val snapshot = if (it.activeSemester?.id != selected.id) {
+                        it.copy(slots = emptyList(), exams = emptyList(), calendar = emptyList())
+                    } else it
+                    snapshot.copy(semesters = options, activeSemester = selected, loading = false, rolloverDetected = rollover, syncMessage = if (rollover) "New semester detected; previous data was archived" else null)
                 }
                 observeTimetable(selected.id)
                 observeAttendance(selected.id)
