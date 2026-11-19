@@ -8,7 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import app.viora.domain.suppresses
+import app.viora.VioraGraph
+import app.viora.domain.AcademicClassCalendar
+import app.viora.domain.ExamCalendarDate
+import app.viora.domain.ExamWindow
+import java.time.LocalDate
+import java.time.ZoneId
 import app.viora.MainActivity
 import app.viora.database.AcademicDao
 import app.viora.database.NotificationLedgerEntity
@@ -48,7 +53,13 @@ class VioraNotifications(
             )
             attendancePlan?.let { publishAttendance(it) }
             changes.filterNot { it.category == "materials" || it.category == "attendance" || (it.category == "exams" && !preferences.getBoolean("notify_exams", true)) || (it.category == "assignments" && !preferences.getBoolean("notify_deadlines", true)) }.forEach { change ->
-                notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) { "exams" -> "schedule"; "messages" -> "more"; else -> "courses" })
+                notifyOnce("change:${change.id}", if (change.category == "exams") EXAMS else UPDATES, change.title, change.detail, when (change.category) {
+                    "exams", "timetable" -> "schedule"
+                    "messages" -> "more"
+                    "assignments" -> "tasks"
+                    "marks", "grades" -> "marks"
+                    else -> "courses"
+                })
             }
         }
     }
@@ -104,20 +115,28 @@ class VioraNotifications(
         manager.notify(key.hashCode(), notification)
     }
 
-    suspend fun deliverScheduled(key: String, channel: String, title: String, text: String, destination: String) {
+    suspend fun deliverScheduled(
+        key: String,
+        channel: String,
+        title: String,
+        text: String,
+        destination: String,
+        semesterId: String,
+        classDateEpochDay: Long? = null,
+    ) {
         if (!canNotify() || inQuietHours()) return
+        if (preferences.getString(VioraGraph.KEY_SEMESTER_ID, null) != semesterId) return
         if (channel == EXAMS && !preferences.getBoolean("notify_exams", true)) return
         if (channel == DEADLINES && !preferences.getBoolean("notify_deadlines", true)) return
         if (channel == CLASSES) {
-            val semester = preferences.getString(app.viora.VioraGraph.KEY_SEMESTER_ID, null) ?: return
-            val zone = java.time.ZoneId.of("Asia/Kolkata")
-            val today = java.time.Instant.ofEpochMilli(clock()).atZone(zone).toLocalDate()
-            val windows = app.viora.domain.examSuppressionWindows(
-                dao.examSnapshot(semester).map { app.viora.domain.ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
-                dao.calendarSnapshot(semester).map { app.viora.domain.ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
-                zone,
+            val date = classDateEpochDay?.let(LocalDate::ofEpochDay) ?: return
+            val rules = AcademicClassCalendar(
+                dao.calendarSnapshot(semesterId).map { ExamCalendarDate(LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
+                dao.examSnapshot(semesterId).map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
+                ZoneId.of("Asia/Kolkata"),
+                preferences.getString(VioraGraph.KEY_SEMESTER_NAME, null),
             )
-            if (windows.any { it.suppresses(today) }) return
+            if (rules.timetableDay(date) == null) return
         }
         if (channel !in setOf(CLASSES, EXAMS, DEADLINES)) return
         if ((channel == DEADLINES && destination != "tasks") || (channel != DEADLINES && destination != "schedule")) return

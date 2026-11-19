@@ -15,8 +15,10 @@ public class CreateSigningLineage {
         }
         var oldSigner = new SigningCertificateLineage.SignerConfig.Builder(key, oldCert).build();
         var newSigner = new SigningCertificateLineage.SignerConfig.Builder((KeyConfig) null, newCert).build();
+        // Android checks signature permission ownership when the same package
+        // redeclares AndroidX's non-exported receiver permission after rotation.
         var capabilities = new SigningCertificateLineage.SignerCapabilities.Builder()
-            .setInstalledData(true).setSharedUid(false).setPermission(false).setAuth(false).setRollback(false).build();
+            .setInstalledData(true).setSharedUid(false).setPermission(true).setAuth(false).setRollback(false).build();
         new SigningCertificateLineage.Builder(oldSigner, newSigner).setOriginalCapabilities(capabilities)
             .setMinSdkVersion(28).build().writeToFile(new File(args[1]));
         System.out.println("Created public rotation proof; no private key exported.");

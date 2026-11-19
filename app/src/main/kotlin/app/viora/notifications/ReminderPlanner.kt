@@ -19,6 +19,7 @@ data class ReminderPlan(
     val title: String,
     val text: String,
     val destination: String,
+    val classDateEpochDay: Long? = null,
 )
 
 object ReminderPlanner {
@@ -32,12 +33,14 @@ object ReminderPlanner {
         now: ZonedDateTime,
         includeExamReminders: Boolean,
         classLookAheadDays: Long = 14,
+        semesterName: String? = null,
+        quietHours: Boolean = false,
     ): List<ReminderPlan> {
         val nowMillis = now.toInstant().toEpochMilli()
         val examWindows = exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) }
         val rules = AcademicClassCalendar(calendar.map {
             ExamCalendarDate(java.time.LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType)
-        }, examWindows, now.zone)
+        }, examWindows, now.zone, semesterName)
         val classPlans = (0..classLookAheadDays).flatMap { offset ->
             val date = now.toLocalDate().plusDays(offset)
             val dayOrder = rules.timetableDay(date) ?: return@flatMap emptyList()
@@ -52,6 +55,7 @@ object ReminderPlanner {
                     title = "Class in 10 minutes",
                     text = details(starts, slot.code, slot.venue),
                     destination = "schedule",
+                    classDateEpochDay = date.toEpochDay(),
                 )
             }
         }
@@ -76,18 +80,19 @@ object ReminderPlanner {
         val assignmentPlans = assignments.flatMap { assignment ->
             val due = assignment.dueEpochMillis?.toZoned(now) ?: return@flatMap emptyList()
             val submitted = isAssignmentSubmitted(assignment.status, assignment.lastUpload)
+            val eveningHour = if (quietHours) 21 else 22
             val times = if (submitted) {
-                listOf(due.toLocalDate().atTime(22, 0).atZone(now.zone) to "DA submitted")
+                listOf(due.toLocalDate().atTime(eveningHour, 0).atZone(now.zone) to "DA submitted")
             } else {
                 listOf(
                     due.toLocalDate().minusDays(2).atTime(9, 0).atZone(now.zone) to "DA due in 2 days",
                     due.toLocalDate().atTime(9, 0).atZone(now.zone) to "DA due today",
-                    due.toLocalDate().atTime(22, 0).atZone(now.zone) to "DA due tonight",
+                    due.toLocalDate().atTime(eveningHour, 0).atZone(now.zone) to "DA due tonight",
                 )
             }
             times.mapNotNull { (at, title) ->
                 val trigger = at.toInstant().toEpochMilli()
-                if (trigger <= nowMillis) return@mapNotNull null
+                if (trigger <= nowMillis || (!submitted && !at.isBefore(due))) return@mapNotNull null
                 ReminderPlan(
                     id = "assignment:${assignment.id}:${assignment.dueEpochMillis}:${if (submitted) "submitted" else title}",
                     triggerEpochMillis = trigger,

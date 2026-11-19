@@ -22,8 +22,12 @@ object CalendarExportProjector {
         calendar: List<AcademicCalendarEntity>,
         exams: List<ExamUi>,
         assignments: List<AssignmentUi>,
+        semesterName: String? = null,
     ): List<CalendarInterchangeEvent> {
-        val timetable = DatedTimetable(VioraUiState(slots = slots, calendar = calendar, exams = exams))
+        val timetable = DatedTimetable(VioraUiState(
+            activeSemester = semesterName?.let { app.viora.network.SemesterOption(semesterId, it) },
+            slots = slots, calendar = calendar, exams = exams,
+        ))
         val endDate = fromDate.plusDays(179)
         val semesterKey = stablePart(semesterId)
         val events = mutableListOf<CalendarInterchangeEvent>()

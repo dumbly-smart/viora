@@ -299,12 +299,12 @@ internal fun Dashboard(
     var selected by remember(initialDestination) {
         mutableIntStateOf(when (initialRoute) {
             "schedule" -> 1
-            "courses", "attendance", "tasks" -> 2
+            "courses", "attendance", "tasks", "marks" -> 2
             else -> 0
         })
     }
     var librarySection by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "tasks") 1 else 0) }
-    var academicsTab by remember(initialDestination) { mutableIntStateOf(if (initialRoute == "attendance") 2 else 0) }
+    var academicsTab by remember(initialDestination) { mutableIntStateOf(when (initialRoute) { "marks" -> 1; "attendance" -> 2; else -> 0 }) }
     var showProfileSheet by remember(initialDestination) { mutableStateOf(initialRoute == "more") }
     var detail by remember { mutableStateOf<DetailSelection?>(null) }
     if (showProfileSheet) {
@@ -867,7 +867,7 @@ internal fun ScheduleScreen(
     val nowMinute = now.hour * 60 + now.minute
     var selectedDay by remember { mutableIntStateOf(today.dayOfWeek.value) }
     val selectedDate = today.plusDays(((selectedDay - today.dayOfWeek.value + 7) % 7).toLong())
-    val datedTimetable = rememberBackgroundProjection(state.slots, state.calendar, state.exams) { DatedTimetable(state) }
+    val datedTimetable = rememberBackgroundProjection(state.activeSemester?.name, state.slots, state.calendar, state.exams) { DatedTimetable(state) }
     val daySlots = remember(datedTimetable, selectedDate) {
         datedTimetable?.slotsForDate(selectedDate).orEmpty().sortedBy(SlotWithCourse::startMinute)
     }
@@ -1786,6 +1786,7 @@ internal class DatedTimetable(state: VioraUiState) {
         state.calendar.map { ExamCalendarDate(LocalDate.ofEpochDay(it.dateEpochDay), it.title, it.dayType) },
         state.exams.map { ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
         academicZone,
+        state.activeSemester?.name,
     )
     val suppression = rules.suppression
     private val slotsByDay = state.slots.groupBy(SlotWithCourse::dayOfWeek)

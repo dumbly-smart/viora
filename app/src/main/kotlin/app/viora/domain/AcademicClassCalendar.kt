@@ -33,13 +33,25 @@ fun semesterInstructionStart(calendar: List<ExamCalendarDate>): LocalDate? =
     calendar.filter { it.kind() == AcademicDayKind.INSTRUCTIONAL && termStart.containsMatchIn("${it.title} ${it.dayType}") }
         .minOfOrNull { it.date }
 
+/** Confirmed first day for the upcoming Winter 2026–27 term. */
+internal fun confirmedInstructionStart(semesterName: String?): LocalDate? {
+    val normalized = semesterName.orEmpty().lowercase().replace(Regex("[^a-z0-9]"), "")
+    return LocalDate.of(2026, 12, 2).takeIf {
+        normalized in setOf("wintersemester202627", "wintersemester20262027", "winter202627", "winter20262027")
+    }
+}
+
 class AcademicClassCalendar(
     calendar: List<ExamCalendarDate>,
     exams: List<ExamWindow>,
     zone: ZoneId,
+    semesterName: String? = null,
 ) {
     private val rowsByDate = calendar.groupBy { it.date }
-    private val firstInstruction = semesterInstructionStart(calendar)
+    private val firstInstruction = listOfNotNull(
+        semesterInstructionStart(calendar),
+        confirmedInstructionStart(semesterName),
+    ).maxOrNull()
     private val finalExamStart = finalExamDates(exams, calendar, zone)?.first
     val suppression = examSuppressionWindows(exams, calendar, zone)
 

@@ -99,6 +99,7 @@ class NextClassWidgetProvider : AppWidgetProvider() {
                 calendar = dao.calendarSnapshot(semesterId),
                 exams = dao.examSnapshot(semesterId).map { app.viora.domain.ExamWindow(it.startsEpochMillis, it.endsEpochMillis, it.examType) },
                 now = ZonedDateTime.now(academicZone),
+                semesterName = settings.getString(VioraGraph.KEY_SEMESTER_NAME, null),
             )
             if (next == null) {
                 views.setTextViewText(R.id.widget_eyebrow, "SCHEDULE")

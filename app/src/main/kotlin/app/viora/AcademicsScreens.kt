@@ -187,7 +187,7 @@ private fun AttendanceScreen(state: VioraUiState) {
                 value = System.currentTimeMillis()
             }
         }.value
-        rememberBackgroundProjection(state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget, now) {
+        rememberBackgroundProjection(state.activeSemester?.name, state.attendance, state.slots, state.exams, state.calendar, state.attendanceTarget, now) {
             state.attendanceMilestones(now).groupBy { it.attendance.id }
         }
     }
