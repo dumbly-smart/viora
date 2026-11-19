@@ -5,6 +5,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AcademicExtrasParsersTest {
+    @Test fun `calendar programs retain branch names and their VTOP request values`() {
+        val html = """<select id="semester"><option value="term">Fall</option></select>
+            <select name="classGroupId">
+            <option value="0">Select class group</option>
+            <option value="SYN-CSE">B.Tech CSE</option>
+            <option value="SYN-MECH">B.Tech Mechanical</option>
+            <option value="COMB">B.Tech All</option></select>"""
+        assertEquals(
+            listOf("SYN-CSE" to "B.Tech CSE", "SYN-MECH" to "B.Tech Mechanical", "COMB" to "B.Tech All"),
+            AcademicCalendarParser().groups(html).map { it.id to it.name },
+        )
+    }
+
     @Test fun `calendar month links decode HTML entities and accept JavaScript argument variations`() {
         val html = """<a onclick="javascript:processViewCalendar(&#39;01-NOV-2026&#39;);">November</a>
             <a onclick="processViewCalendar(this, &quot;01-DEC-2026&quot;)">December</a>"""

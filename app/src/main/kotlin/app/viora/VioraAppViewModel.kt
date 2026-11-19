@@ -17,6 +17,7 @@ import app.viora.calendar.CalendarExportProjector
 import app.viora.data.MaterialDownloadState
 import app.viora.domain.AttendanceCalculator
 import app.viora.network.SemesterOption
+import app.viora.network.CalendarGroup
 import app.viora.network.SessionState
 import app.viora.network.AuthenticationException
 import app.viora.sync.SyncOutcome
@@ -82,6 +83,8 @@ data class VioraUiState(
     val classCheckIns: Map<String, ClassCheckIn> = emptyMap(),
     val importedCalendarEvents: List<ImportedCalendarEventEntity> = emptyList(),
     val calendarInterchangeMessage: String? = null,
+    val calendarGroupId: String? = null,
+    val calendarGroupsBySemester: Map<String, List<CalendarGroup>> = emptyMap(),
 )
 enum class ClassCheckIn { ATTENDED, MISSED }
 data class MarkUi(
@@ -157,6 +160,12 @@ class VioraAppViewModel(
 
     init {
         graph.settings.edit().putInt("attendance_target", ATTENDANCE_TARGET).apply()
+        mutableState.update { it.copy(calendarGroupId = graph.settings.getString(VioraGraph.KEY_CALENDAR_GROUP, null)) }
+        viewModelScope.launch {
+            graph.gateway.calendarGroups.collect { groups ->
+                mutableState.update { it.copy(calendarGroupsBySemester = groups) }
+            }
+        }
         viewModelScope.launch {
             graph.materialManager.organizeLegacyDownloads()
             mutableState.update { it.copy(downloadStorageBytes = graph.materialManager.storageBytes()) }
@@ -476,6 +485,13 @@ class VioraAppViewModel(
 
     private fun calendarName(snapshot: VioraUiState): String =
         listOf("Viora", snapshot.activeSemester?.name).filterNotNull().joinToString(" · ")
+
+    fun selectCalendarGroup(id: String?) {
+        if (signingOut || state.value.loading || state.value.calendarGroupId == id) return
+        graph.settings.edit().putString(VioraGraph.KEY_CALENDAR_GROUP, id).apply()
+        mutableState.update { it.copy(calendarGroupId = id) }
+        refresh()
+    }
 
     fun selectSemester(semester: SemesterOption?) {
         if (semester == null) {

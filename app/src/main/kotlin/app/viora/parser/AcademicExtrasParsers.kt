@@ -1,6 +1,7 @@
 package app.viora.parser
 
 import app.viora.network.AcademicCalendarRecord
+import app.viora.network.CalendarGroup
 import app.viora.network.ClassMessageRecord
 import app.viora.network.CourseMaterialRecord
 import org.jsoup.Jsoup
@@ -10,6 +11,17 @@ import java.time.format.DateTimeFormatterBuilder
 import java.util.Locale
 
 class AcademicCalendarParser {
+    fun groups(html: String): List<CalendarGroup> {
+        val selects = Jsoup.parse(html).select("select")
+        val classGroups = selects.filter { it.id().contains("classGroup", true) || it.attr("name").contains("classGroup", true) }
+        return (classGroups.ifEmpty { selects }).flatMap { it.select("option") }.mapNotNull { option ->
+            val id = option.attr("value").trim()
+            val name = option.text().trim()
+            if (id.isBlank() || id == "0" || id == "-1" || name.isBlank() || name.startsWith("select", true)) null
+            else CalendarGroup(id, name)
+        }.distinctBy(CalendarGroup::id)
+    }
+
     fun months(html: String): List<String> = Jsoup.parse(html).select("[onclick*=processViewCalendar]")
         .mapNotNull { Regex("[0-9]{2}-[A-Za-z]{3}-[0-9]{4}").find(it.attr("onclick"))?.value }
         .distinct()

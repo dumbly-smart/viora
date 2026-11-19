@@ -87,6 +87,11 @@ class scheduling after the break. FAT ends the term's recurring classes.
 Automatic semester selection honors VTOP FAT and instruction dates and switches
 to the next term when its classes start. A manually selected term remains
 available for browsing, and Settings can return to automatic selection.
+The calendar program picker lists the current semester's VTOP calendar groups.
+Foreground sync and background rollover use the saved group. If VTOP does not
+offer that selection for a semester, Viora retains the last synced calendar
+and reports a sync failure for that calendar rather than substituting another
+program.
 
 ## Academic views
 
